@@ -23,16 +23,63 @@ if(useLovelyTensors):
 	lt.monkey_patch()
 
 #recursive algorithm selection:
-useAlgorithmTransformer = False
+useAlgorithmTransformer = True
 useAlgorithmRNN = False
-useAlgorithmSANI = True
+useAlgorithmSANI = False
 
+recursiveLayers = False	#optional
+memoryTraceBias = False	 #optional	#nncustom.Linear adjusts training/inference based on network prior activations
+simulatedDendriticBranches = False	#optional #nncustom.Linear simulates multiple independent fully connected weights per neuron
+
+if(recursiveLayers or memoryTraceBias or simulatedDendriticBranches):
+	useSyntacticBiases = True
+else:
+	useSyntacticBiases = False
+if(memoryTraceBias or simulatedDendriticBranches):
+	useLinearCustom = True
+else:
+	debugCustomLinearFunctionClass = False
+	if(debugCustomLinearFunctionClass):
+		useLinearCustom = True
+	else:
+		useLinearCustom = False
+if(not simulatedDendriticBranches):
+	debugIndependentTestDisablePostInit = False
+if(useLinearCustom):
+	useModuleLinearTemplateCurrent = True	#use current version of class Linear(nn.Module) from https://github.com/pytorch/pytorch/blob/master/torch/nn/modules/linear.py (instead of https://pytorch.org/docs/master/notes/extending.html)
+	useAutoResizeInput = False	#legacy implementation	#required for original python LinearFunction implementation (compared to C++ implementation and modified python LinearFunction)	#see https://discuss.pytorch.org/t/exact-python-implementation-of-linear-function-class/170177
+	
+if(memoryTraceBias):
+	#FUTURE: require update of SBNLPpt_data to ensure that continuous/contiguous textual input (for inference) is provided
+	memoryTraceBiasHalflife = 2.0	#number of batches of batchSize=1 (ie sequences) to pass before memoryTrace is halved
+	memoryTraceWeightDirectionDependent = True
+	memoryTraceSigned = False	#initialise (dependent var)
+	if(memoryTraceWeightDirectionDependent):
+		memoryTraceWeightDependent = True	#optional: memory trace dependent on the strength of the weights
+		memoryTraceSigned = True	#optional: calculate positive/negative memory trace: positive memory trace calculated based on true positives and true negatives, negative memory trace calculated based on false positives and false negatives
+	if(memoryTraceSigned):
+		normaliseActivationSparsity = False
+	else:
+		normaliseActivationSparsity = True
+	
+if(simulatedDendriticBranches):
+	numberOfIndependentDendriticBranches = 2	#10	#2	#depends on GPU RAM (note recursiveLayers reduces RAM usage)
+	normaliseActivationSparsity = True
+else:
+	numberOfIndependentDendriticBranches = 1
+	
+if(useAlgorithmTransformer):
+	if(not useSyntacticBiases):
+		officialRobertaBaseModel = False	#optional	#loads official huggingface model with default parameters - https://huggingface.co/roberta-base/tree/main
+	else:
+		officialRobertaBaseModel = False	#mandatory
+	
 relativeFolderLocations = False
 userName = 'user'	#default: user
 
 useSmallDatasetDebug = False
 useSingleHiddenLayerDebug = False
-usePretainedModelDebug = False	#executes stateTestDataset only
+usePretrainedModelDebug = False	#executes stateTestDataset only	#useAlgorithmTransformer only
 useSmallBatchSizeDebug = False
 
 useSmallTokenizerTrainNumberOfFiles = True	#used during rapid testing only (FUTURE: assign est 80 hours to perform full tokenisation train)
@@ -60,9 +107,14 @@ elif(useAlgorithmRNN):
 	batchSize = 8
 	learningRate = 1e-4
 elif(useAlgorithmSANI):
-	batchSize = 8	#8	#2	#depends on GPU memory
+	batchSize = 8	#4	#8	#2	#depends on GPU memory
 	learningRate = 1e-4
-
+	
+if(simulatedDendriticBranches):
+	batchSize = batchSize//4	#requires more GPU RAM (reduced batchSize)
+if(memoryTraceBias):
+	batchSize = 1	#CHECKTHIS - memoryTraceBias algorithm requires continuous/contiguous textual input (for inference)
+	
 if(useSmallBatchSizeDebug):
 	batchSize = 1	#use small batch size to enable simultaneous execution (GPU ram limited) 
 	
@@ -78,7 +130,7 @@ if(relativeFolderLocations):
 else:
 	downloadCacheFolder = '/media/' + userName + '/datasets/cache'
 	dataFolder = '/media/' + userName + '/datasets/data'
-	modelFolderName = '/media/' + userName + '/large/source/ANNpython/SBNLPpt/model'
+	modelFolderName = '/media/' + userName + '/large/source/ANNpython/SBNLPpt/model'	#modelTemp, model
 
 modelSaveNumberOfBatches = 1000	#resave model after x training batches
 

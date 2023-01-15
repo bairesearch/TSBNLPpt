@@ -23,11 +23,16 @@ See RobertaForMaskedLM tutorial;
 	
 """
 
+import torch as pt
+
 from SBNLPpt_globalDefs import *
 import SBNLPpt_data
-
-from SBNLPpt_transformerModel import recursiveLayers
-
+from transformers import RobertaConfig
+if(usePretrainedModelDebug):
+	from transformers import RobertaForMaskedLM
+else:
+	from SBNLPpt_transformerModel import RobertaForMaskedLM
+	
 if(recursiveLayers):
 	from SBNLPpt_transformerModel import sharedLayerWeights
 	from SBNLPpt_transformerModel import sharedLayerWeightsOutput
@@ -37,13 +42,15 @@ if(recursiveLayers):
 else:
 	recursiveLayersNormaliseNumParameters = False	#mandatory
 	
-if(not usePretainedModelDebug):
+if(not usePretrainedModelDebug):
 
-	if(useSingleHiddenLayerDebug):
-		numberOfHiddenLayers = 1
+	if(officialRobertaBaseModel):
+		numberOfHiddenLayers = 12	#default values
 	else:
-		numberOfHiddenLayers = 6	#default: 6
-
+		if(useSingleHiddenLayerDebug):
+			numberOfHiddenLayers = 1
+		else:
+			numberOfHiddenLayers = 6	#default: 6
 	hiddenLayerSize = 768	#default: 768
 	numberOfAttentionHeads = 12	#default: 12
 	intermediateSize = 3072	#default: 3072
@@ -90,14 +97,6 @@ if(not usePretainedModelDebug):
 			pass	#model size = 255.6MB
 		
 
-import torch
-from transformers import RobertaConfig
-if(recursiveLayers):
-	from SBNLPpt_transformerModel import RobertaForMaskedLM
-else:
-	from transformers import RobertaForMaskedLM
-	
-
 
 def createModel():
 	print("creating new model")	
@@ -122,14 +121,14 @@ def loadModel():
 def saveModel(model):
 	model.save_pretrained(modelFolderName)
 
-def propagate(device, model, tokenizer, batch):
+def propagate(device, model, tokenizer, batch):	
 	inputIDs = batch['inputIDs'].to(device)
 	attentionMask = batch['attentionMask'].to(device)
 	labels = batch['labels'].to(device)
 	
 	outputs = model(inputIDs, attention_mask=attentionMask, labels=labels)
 
-	predictionMask = torch.where(inputIDs==customMaskTokenID, 1.0, 0.0)	#maskTokenIndexFloat = maskTokenIndex.float()	
+	predictionMask = pt.where(inputIDs==customMaskTokenID, 1.0, 0.0)	#maskTokenIndexFloat = maskTokenIndex.float()	
 	accuracy = SBNLPpt_data.getAccuracy(tokenizer, inputIDs, predictionMask, labels, outputs.logits)
 	loss = outputs.loss
 	

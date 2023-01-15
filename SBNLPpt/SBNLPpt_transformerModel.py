@@ -47,11 +47,12 @@ import torch
 import torch.utils.checkpoint
 from torch import nn
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
+import nncustom
 
-recursiveLayers = True
+from SBNLPpt_globalDefs import *
 
-sharedLayerWeights = False
-sharedLayerWeightsOutput = False
+sharedLayerWeights = False	#initialise (dependent var)
+sharedLayerWeightsOutput = False	#initialise (dependent var)
 if(recursiveLayers):
 	sharedLayerWeights = False	#orig recursiveLayers implementation
 	if(sharedLayerWeights):
@@ -131,13 +132,13 @@ class RobertaSharedLayerModules:
 		attention_head_size = int(config.hidden_size / config.num_attention_heads)
 		all_head_size = num_attention_heads * attention_head_size
 		
-		self.robertaSelfAttentionSharedLayerQuery = nn.Linear(config.hidden_size, all_head_size)
-		self.robertaSelfAttentionSharedLayerKey = nn.Linear(config.hidden_size, all_head_size)
-		self.robertaSelfAttentionSharedLayerValue = nn.Linear(config.hidden_size, all_head_size)
-		self.robertaIntermediateSharedLayerDense = nn.Linear(config.hidden_size, config.intermediate_size)
+		self.robertaSelfAttentionSharedLayerQuery = nncustom.Linear(config.hidden_size, all_head_size)
+		self.robertaSelfAttentionSharedLayerKey = nncustom.Linear(config.hidden_size, all_head_size)
+		self.robertaSelfAttentionSharedLayerValue = nncustom.Linear(config.hidden_size, all_head_size)
+		self.robertaIntermediateSharedLayerDense = nncustom.Linear(config.hidden_size, config.intermediate_size)
 		if(sharedLayerWeightsOutput):
-			self.RobertaOutputSharedLayerOutput = nn.Linear(config.intermediate_size, config.hidden_size)
-			self.RobertaSelfOutputSharedLayerOutput = nn.Linear(config.hidden_size, config.hidden_size) 
+			self.RobertaOutputSharedLayerOutput = nncustom.Linear(config.intermediate_size, config.hidden_size)
+			self.RobertaSelfOutputSharedLayerOutput = nncustom.Linear(config.hidden_size, config.hidden_size) 
 
 class RobertaEmbeddings(nn.Module):
 	"""
@@ -245,9 +246,9 @@ class RobertaSelfAttention(nn.Module):
 			self.key = robertaSharedLayerModules.robertaSelfAttentionSharedLayerKey
 			self.value = robertaSharedLayerModules.robertaSelfAttentionSharedLayerValue
 		else:
-			self.query = nn.Linear(config.hidden_size, self.all_head_size)
-			self.key = nn.Linear(config.hidden_size, self.all_head_size)
-			self.value = nn.Linear(config.hidden_size, self.all_head_size)
+			self.query = nncustom.Linear(config.hidden_size, self.all_head_size)
+			self.key = nncustom.Linear(config.hidden_size, self.all_head_size)
+			self.value = nncustom.Linear(config.hidden_size, self.all_head_size)
 
 		self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 		self.position_embedding_type = position_embedding_type or getattr(
@@ -366,7 +367,7 @@ class RobertaSelfOutput(nn.Module):
 		if(sharedLayerWeightsOutput):
 			self.dense = robertaSharedLayerModules.RobertaSelfOutputSharedLayerOutput
 		else:
-			self.dense = nn.Linear(config.hidden_size, config.hidden_size)
+			self.dense = nncustom.Linear(config.hidden_size, config.hidden_size)
 		self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 		self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
@@ -434,7 +435,7 @@ class RobertaIntermediate(nn.Module):
 		if(sharedLayerWeights):
 			self.dense = robertaSharedLayerModules.robertaIntermediateSharedLayerDense
 		else:
-			self.dense = nn.Linear(config.hidden_size, config.intermediate_size)
+			self.dense = nncustom.Linear(config.hidden_size, config.intermediate_size)
 		if isinstance(config.hidden_act, str):
 			self.intermediate_act_fn = ACT2FN[config.hidden_act]
 		else:
@@ -453,7 +454,7 @@ class RobertaOutput(nn.Module):
 		if(sharedLayerWeightsOutput):
 			self.dense = robertaSharedLayerModules.RobertaOutputSharedLayerOutput
 		else:
-			self.dense = nn.Linear(config.intermediate_size, config.hidden_size)
+			self.dense = nncustom.Linear(config.intermediate_size, config.hidden_size)
 		self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 		self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
@@ -661,7 +662,7 @@ class RobertaEncoder(nn.Module):
 class RobertaPooler(nn.Module):
 	def __init__(self, config):
 		super().__init__()
-		self.dense = nn.Linear(config.hidden_size, config.hidden_size)
+		self.dense = nncustom.Linear(config.hidden_size, config.hidden_size)
 		self.activation = nn.Tanh()
 
 	def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
@@ -686,7 +687,7 @@ class RobertaPreTrainedModel(PreTrainedModel):
 	# Copied from transformers.models.bert.modeling_bert.BertPreTrainedModel._init_weights
 	def _init_weights(self, module):
 		"""Initialize the weights"""
-		if isinstance(module, nn.Linear):
+		if isinstance(module, nncustom.Linear):
 			# Slightly different from the TF version which uses truncated_normal for initialization
 			# cf https://github.com/pytorch/pytorch/pull/5617
 			module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
@@ -1142,8 +1143,10 @@ class RobertaForMaskedLM(RobertaPreTrainedModel):
 		# The LM head weights require special treatment only when they are tied with the word embeddings
 		self.update_keys_to_ignore(config, ["lm_head.decoder.weight"])
 
-		# Initialize weights and apply final processing
-		self.post_init()
+		if(not simulatedDendriticBranches):	#post_init corrupts weight initialisation sizes (if they are nonstandard)
+			# Initialize weights and apply final processing
+			if(not debugIndependentTestDisablePostInit):
+				self.post_init()
 
 	def get_output_embeddings(self):
 		return self.lm_head.decoder
@@ -1224,12 +1227,13 @@ class RobertaLMHead(nn.Module):
 
 	def __init__(self, config):
 		super().__init__()
-		self.dense = nn.Linear(config.hidden_size, config.hidden_size)
+		self.dense = nncustom.Linear(config.hidden_size, config.hidden_size)
 		self.layer_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
-		self.decoder = nn.Linear(config.hidden_size, config.vocab_size)
-		self.bias = nn.Parameter(torch.zeros(config.vocab_size))
-		self.decoder.bias = self.bias
+		self.decoder = nncustom.Linear(config.hidden_size, config.vocab_size)
+		if(not simulatedDendriticBranches):	#entire section is redundant (can be removed)?
+			self.bias = nn.Parameter(torch.zeros(config.vocab_size))
+			self.decoder.bias = self.bias
 
 	def forward(self, features, **kwargs):
 		x = self.dense(features)
@@ -1243,7 +1247,8 @@ class RobertaLMHead(nn.Module):
 
 	def _tie_weights(self):
 		# To tie those two weights if they get disconnected (on TPU or when the bias is resized)
-		self.bias = self.decoder.bias
+		if(not simulatedDendriticBranches):
+			self.bias = self.decoder.bias
 
 
 @add_start_docstrings(
@@ -1361,7 +1366,7 @@ class RobertaForMultipleChoice(RobertaPreTrainedModel):
 
 		self.roberta = RobertaModel(config)
 		self.dropout = nn.Dropout(config.hidden_dropout_prob)
-		self.classifier = nn.Linear(config.hidden_size, 1)
+		self.classifier = nncustom.Linear(config.hidden_size, 1)
 
 		# Initialize weights and apply final processing
 		self.post_init()
@@ -1459,7 +1464,7 @@ class RobertaForTokenClassification(RobertaPreTrainedModel):
 			config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
 		)
 		self.dropout = nn.Dropout(classifier_dropout)
-		self.classifier = nn.Linear(config.hidden_size, config.num_labels)
+		self.classifier = nncustom.Linear(config.hidden_size, config.num_labels)
 
 		# Initialize weights and apply final processing
 		self.post_init()
@@ -1531,12 +1536,12 @@ class RobertaClassificationHead(nn.Module):
 
 	def __init__(self, config):
 		super().__init__()
-		self.dense = nn.Linear(config.hidden_size, config.hidden_size)
+		self.dense = nncustom.Linear(config.hidden_size, config.hidden_size)
 		classifier_dropout = (
 			config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
 		)
 		self.dropout = nn.Dropout(classifier_dropout)
-		self.out_proj = nn.Linear(config.hidden_size, config.num_labels)
+		self.out_proj = nncustom.Linear(config.hidden_size, config.num_labels)
 
 	def forward(self, features, **kwargs):
 		x = features[:, 0, :]  # take <s> token (equiv. to [CLS])
@@ -1564,7 +1569,7 @@ class RobertaForQuestionAnswering(RobertaPreTrainedModel):
 		self.num_labels = config.num_labels
 
 		self.roberta = RobertaModel(config, add_pooling_layer=False)
-		self.qa_outputs = nn.Linear(config.hidden_size, config.num_labels)
+		self.qa_outputs = nncustom.Linear(config.hidden_size, config.num_labels)
 
 		# Initialize weights and apply final processing
 		self.post_init()

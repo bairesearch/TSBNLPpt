@@ -21,12 +21,14 @@ import torch as pt
 from torch import nn
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 from transformers.activations import gelu
+import nncustom
 
-recursiveLayers = True
+from SBNLPpt_globalDefs import *
+
 calculateVocabPredictionHeadLoss = True	#apply loss to vocubulary predictions (rather than embedding predictions)
 applyIOconversionLayers = True	#ensure input embeddings are positive
 
-class RNNrecursiveLayersConfig():
+class RNNconfig():
 	def __init__(self, vocabularySize, numberOfHiddenLayers, batchSize, sequenceLength, bidirectional, hiddenLayerSize, embeddingLayerSize):
 		#https://pytorch.org/docs/stable/generated/torch.nn.RNN.html
 		self.vocab_size = vocabularySize
@@ -35,7 +37,7 @@ class RNNrecursiveLayersConfig():
 			self.numberOfRecursiveLayers = numberOfHiddenLayers
 		else:
 			self.num_layers = numberOfHiddenLayers	#Default: 1	#Number of recurrent layers. E.g., setting num_layers=2 would mean stacking two RNNs together to form a stacked RNN, with the second RNN taking in outputs of the first RNN and computing the final results
-			if(num_layers == 1):
+			if(self.num_layers == 1):
 				print("RNNrecursiveLayersConfig warning: !recursiveLayers && (num_layers == 1)")
 		self.batchSize = batchSize
 		self.sequenceLength = sequenceLength
@@ -50,11 +52,9 @@ class RNNrecursiveLayersConfig():
 class ModelVocabPredictionHead(nn.Module):
 	def __init__(self, config):
 		super().__init__()
-		self.dense = nn.Linear(config.hiddenLayerSize, config.hiddenLayerSize)
+		self.dense = nncustom.Linear(config.hiddenLayerSize, config.hiddenLayerSize)
 		self.layer_norm = nn.LayerNorm(config.hiddenLayerSize, eps=config.layer_norm_eps)
-		self.decoder = nn.Linear(config.hiddenLayerSize, config.vocab_size)
-		self.bias = nn.Parameter(pt.zeros(config.vocab_size))
-		self.decoder.bias = self.bias
+		self.decoder = nncustom.Linear(config.hiddenLayerSize, config.vocab_size)
 
 	def forward(self, features, **kwargs):
 		x = self.dense(features)
@@ -66,16 +66,16 @@ class ModelVocabPredictionHead(nn.Module):
 	def _tie_weights(self):
 		self.bias = self.decoder.bias
 						
-class RNNrecursiveLayersModel(nn.Module):
+class RNNmodel(nn.Module):
 	def __init__(self, config):
 		super().__init__()
 		self.config = config
 		self.word_embeddings = nn.Embedding(config.vocab_size, config.embeddingLayerSize, padding_idx=config.pad_token_id)
 		self.rnnLayer = nn.RNN(input_size=config.hiddenLayerSize, hidden_size=config.hiddenLayerSize, num_layers=config.num_layers, batch_first=True)
 		if(applyIOconversionLayers):
-			self.inputLayer = nn.Linear(config.embeddingLayerSize, config.hiddenLayerSize)
-			self.outputLayer = nn.Linear(config.hiddenLayerSize, config.embeddingLayerSize)
-		self.activationFunction = pt.nn.ReLU()
+			self.inputLayer = nncustom.Linear(config.embeddingLayerSize, config.hiddenLayerSize)
+			self.outputLayer = nncustom.Linear(config.hiddenLayerSize, config.embeddingLayerSize)
+		self.activationFunction = nn.ReLU()
 		if(calculateVocabPredictionHeadLoss):
 			self.lossFunction = CrossEntropyLoss()
 		else:
@@ -103,7 +103,7 @@ class RNNrecursiveLayersModel(nn.Module):
 				hiddenState, hn = self.rnnLayer(hiddenState, hn)
 				#print("hiddenState = ", hiddenState)
 		else:
-			hiddenState, hn = rnnLayer(hiddenState, hn)
+			hiddenState, hn = self.rnnLayer(hiddenState, hn)
 		outputState = hiddenState
 		
 		if(calculateVocabPredictionHeadLoss):

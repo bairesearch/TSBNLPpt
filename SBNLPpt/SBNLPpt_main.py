@@ -45,9 +45,14 @@ def main():
 	if(statePreprocessDataset):
 		dataset = SBNLPpt_data.downloadDataset()
 		SBNLPpt_data.preprocessDataset(dataset)
-	paths = [str(x) for x in Path(dataFolder).glob('**/*.txt')]
 	
-	if(usePretainedModelDebug):
+	if(Path(dataFolder).exists()):
+		paths = [str(x) for x in Path(dataFolder).glob('**/*.txt')]
+	else:
+		print("main error: Path does not exist, dataFolder = ", dataFolder)
+		exit()
+	
+	if(usePretrainedModelDebug):
 		tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
 		testDataset(tokenizer, paths)
 	else:
@@ -111,11 +116,11 @@ def trainDataset(tokenizer, paths):
 
 def testDataset(tokenizer, paths):
 
-	if(usePretainedModelDebug):
+	if(usePretrainedModelDebug):
 		if(useAlgorithmTransformer):
 			model = RobertaForMaskedLM.from_pretrained("roberta-base")
 		else:
-			print("testDataset error: usePretainedModelDebug requires useAlgorithmTransformer")
+			print("testDataset error: usePretrainedModelDebug requires useAlgorithmTransformer")
 			exit()
 	else:
 		model = loadModel()
@@ -129,7 +134,12 @@ def testDataset(tokenizer, paths):
 
 	pathIndexMin = int(numberOfDataFiles*trainSplitFraction)
 	pathIndexMax = pathIndexMin+testNumberOfDataFiles
-	loader = SBNLPpt_data.createDataLoader(tokenizer, paths, pathIndexMin, pathIndexMax)
+	if(useAlgorithmTransformer):
+		useMLM = True
+	else:
+		useMLM = False
+		
+	loader = SBNLPpt_data.createDataLoader(useMLM, tokenizer, paths, pathIndexMin, pathIndexMax)
 		
 	for epoch in range(trainStartEpoch, trainStartEpoch+trainNumberOfEpochs):
 		loop = tqdm(loader, leave=True)
@@ -144,7 +154,7 @@ def testDataset(tokenizer, paths):
 
 			loss = loss.detach().cpu().numpy()
 			
-			if(not math.isnan(accuracy)):	#required for usePretainedModelDebug only
+			if(not math.isnan(accuracy)):	#required for usePretrainedModelDebug only
 				averageAccuracy = averageAccuracy + accuracy
 				averageLoss = averageLoss + loss
 				batchCount = batchCount + 1

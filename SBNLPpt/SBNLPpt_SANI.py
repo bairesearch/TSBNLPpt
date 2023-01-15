@@ -23,11 +23,10 @@ import torch as pt
 
 from SBNLPpt_globalDefs import *
 import SBNLPpt_data
-
-from SBNLPpt_SANImodel import recursiveLayers, SANIrecursiveLayersModel, SANIrecursiveLayersConfig, calculateVocabPredictionHeadLoss, applyIOconversionLayers
+import SBNLPpt_SANImodel
 
 hiddenLayerSize = 1024	#1024	#8192	#1024	#depends on GPU memory	#2^16 = 65536 - large hidden size is required for recursive SANI as parameters are shared across a) sequence length and b) number of layers
-if(applyIOconversionLayers):
+if(SBNLPpt_SANImodel.applyIOconversionLayers):
 	embeddingLayerSize = 768
 else:
 	embeddingLayerSize = hiddenLayerSize
@@ -42,7 +41,7 @@ modelPathName = modelFolderName + '/modelSANI.pt'
 
 def createModel():
 	print("creating new model")
-	config = SANIrecursiveLayersConfig(
+	config = SBNLPpt_SANImodel.SANIconfig(
 		vocabularySize=vocabularySize,
 		#numberOfHiddenLayers=numberOfHiddenLayers,
 		batchSize=batchSize,
@@ -51,7 +50,7 @@ def createModel():
 		hiddenLayerSize=hiddenLayerSize,
 		embeddingLayerSize=embeddingLayerSize
 	)
-	model = SANIrecursiveLayersModel(config)
+	model = SBNLPpt_SANImodel.SANImodel(config)
 	return model
 
 def loadModel():
@@ -69,7 +68,7 @@ def propagate(device, model, tokenizer, batch):
 	
 	loss, outputs, predictionMask = model(labels, attentionMask, device)
 	
-	if(calculateVocabPredictionHeadLoss):
+	if(SBNLPpt_SANImodel.calculateVocabPredictionHeadLoss):
 		accuracy = SBNLPpt_data.getAccuracy(tokenizer, inputIDs, predictionMask, labels, outputs)
 	else:
 		accuracy = 0.0

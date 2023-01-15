@@ -22,11 +22,13 @@ from torch import nn
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 from transformers.activations import gelu
 import numpy as np
+import nncustom
+
+from SBNLPpt_globalDefs import *
 
 parallelProcessLayers = True
 generatePredictionsForEverySubsequence = False	#uses high amount of GPU ram
 
-recursiveLayers = True
 skipLayers = True
 if(skipLayers):
 	skipLayersDominance = 0.0	#0.9	#sequentialInputState preservation bias (direct recursive/loop connection) as signal is propagated to higher layers
@@ -50,7 +52,7 @@ else:
 	applyIOconversionLayersInput = False
 	applyIOconversionLayersOutput = False
 		
-class SANIrecursiveLayersConfig():
+class SANIconfig():
 	def __init__(self, vocabularySize, batchSize, sequenceLength, hiddenLayerSize, embeddingLayerSize):
 		self.vocab_size = vocabularySize
 		self.num_layers = sequenceLength
@@ -67,11 +69,9 @@ class SANIrecursiveLayersConfig():
 class ModelVocabPredictionHead(nn.Module):
 	def __init__(self, config):
 		super().__init__()
-		self.dense = nn.Linear(config.hiddenLayerSize, config.hiddenLayerSize)
+		self.dense = nncustom.Linear(config.hiddenLayerSize, config.hiddenLayerSize)
 		self.layer_norm = nn.LayerNorm(config.hiddenLayerSize, eps=config.layer_norm_eps)
-		self.decoder = nn.Linear(config.hiddenLayerSize, config.vocab_size)
-		self.bias = nn.Parameter(pt.zeros(config.vocab_size))
-		self.decoder.bias = self.bias
+		self.decoder = nncustom.Linear(config.hiddenLayerSize, config.vocab_size)
 
 	def forward(self, features, **kwargs):
 		x = self.dense(features)
@@ -83,7 +83,7 @@ class ModelVocabPredictionHead(nn.Module):
 	def _tie_weights(self):
 		self.bias = self.decoder.bias
 						
-class SANIrecursiveLayersModel(nn.Module):
+class SANImodel(nn.Module):
 	def __init__(self, config):
 		super().__init__()
 		self.config = config
@@ -94,19 +94,19 @@ class SANIrecursiveLayersModel(nn.Module):
 		else:
 			self.SANIlayers = []
 			for layerIndex in range(config.num_layers):
-				saniLayer = generateSANIlayer(self, config.hiddenLayerSize)
+				saniLayer = self.generateSANIlayer(config.hiddenLayerSize)
 				self.SANIlayers.append(saniLayer)
 		if(applyIOconversionLayers):
-			self.inputLayer = nn.Linear(config.embeddingLayerSize, config.hiddenLayerSize)
-			self.outputLayer = nn.Linear(config.hiddenLayerSize, config.embeddingLayerSize)
-		self.activationFunction = pt.nn.ReLU()
+			self.inputLayer = nncustom.Linear(config.embeddingLayerSize, config.hiddenLayerSize)
+			self.outputLayer = nncustom.Linear(config.hiddenLayerSize, config.embeddingLayerSize)
+		self.activationFunction = nn.ReLU()
 		if(calculateVocabPredictionHeadLoss):
 			self.lossFunction = CrossEntropyLoss()
 		else:
 			self.lossFunction = MSELoss()
 		if(skipLayers):
 			if(skipLayersNorm):
-				self.layerNorm = pt.nn.LayerNorm(config.hiddenLayerSize)
+				self.layerNorm = nn.LayerNorm(config.hiddenLayerSize)
 		self.vocabPredictionHead = ModelVocabPredictionHead(config)
 		self.predictiveTokenOffset = 1	#no prediction is generated for first and last token in sentence (requires at least 2 tokens to generate a prediction)
 		
@@ -120,9 +120,9 @@ class SANIrecursiveLayersModel(nn.Module):
 			self.numberOfHeads = hiddenLayerSize
 			#input shape = B x (numberOfInputChannels * numberOfHeads) x 1
 			#output shape = B x (1 x numberOfHeads) x 1
-			saniLayer = pt.nn.Conv1d(numberOfSequentialInputStates*self.numberOfHeads, 1*self.numberOfHeads, kernel_size=1, groups=self.numberOfHeads)
+			saniLayer = nn.Conv1d(numberOfSequentialInputStates*self.numberOfHeads, 1*self.numberOfHeads, kernel_size=1, groups=self.numberOfHeads)
 		else:
-			saniLayer =	pt.nn.Linear(hiddenLayerSize*self.numberOfInputChannels, hiddenLayerSize)	#CHECKTHIS
+			saniLayer =	nncustom.Linear(hiddenLayerSize*self.numberOfInputChannels, hiddenLayerSize)	#CHECKTHIS
 		return saniLayer
 				
 	def forward(self, labels, attentionMask, device):
@@ -133,7 +133,9 @@ class SANIrecursiveLayersModel(nn.Module):
 		inputEmbeddings = self.word_embeddings(labels)
 		if(applyIOconversionLayersInput):
 			inputState = pt.reshape(inputEmbeddings, (config.batchSize*config.sequenceLength, config.embeddingLayerSize))
+			#print("inputState = ", inputState)
 			inputState = self.inputLayer(inputState)
+			#print("inputState = ", inputState)
 			inputState = self.activationFunction(inputState)
 			inputState = pt.reshape(inputState, (config.batchSize, config.sequenceLength, config.hiddenLayerSize))
 		else:
@@ -211,7 +213,7 @@ class SANIrecursiveLayersModel(nn.Module):
 				currentInput = pt.cat((blankSequentialHiddenStates, hiddenState[:, sequenceIndex:]), dim=1)
 				previousInput = pt.reshape(previousInput, (config.batchSize*config.sequenceLength, config.hiddenLayerSize))
 				currentInput = pt.reshape(currentInput, (config.batchSize*config.sequenceLength, config.hiddenLayerSize))
-				currentOutput = self.processLayer(sequentialInputState, layerIndex, currentInput, previousInput)
+				currentOutput = self.processLayer(sequentialInputState, layerIndex, currentInput, previousInput, device)
 				currentOutput = pt.reshape(hiddenState, (config.batchSize, config.sequenceLength, config.hiddenLayerSize))
 				hiddenState = currentOutput
 				if(generatePredictionsForEverySubsequence):
@@ -249,7 +251,7 @@ class SANIrecursiveLayersModel(nn.Module):
 			self.predictionMaskArray = np.empty([config.num_layers], dtype=object)
 		self.hiddenStateLastList = [None]*config.num_layers	#last activated hidden state of each layer
 		for layerIndex in range(config.num_layers):
-			self.hiddenStateLastList[layerIndex] = pt.zeros([config.batchSize, config.hiddenLayerSize])
+			self.hiddenStateLastList[layerIndex] = pt.zeros([config.batchSize, config.hiddenLayerSize]).to(device)
 				
 		#first two tokens in window generate a hidden representation for the second token (pad output states of 1st token with zeros), and are used to predict third token
 		for sequenceIndex in range(config.sequenceLength):
@@ -302,7 +304,7 @@ class SANIrecursiveLayersModel(nn.Module):
 					else:
 						previousInput = self.hiddenStateLastList[layerIndex]
 						currentInput = hiddenState
-						currentOutput = self.processLayer(sequentialInputState, layerIndex, currentInput, previousInput)
+						currentOutput = self.processLayer(sequentialInputState, layerIndex, currentInput, previousInput, device)
 						hiddenState = currentOutput
 						self.hiddenStateLastList[layerIndex] = currentInput
 				else:
@@ -316,21 +318,21 @@ class SANIrecursiveLayersModel(nn.Module):
 			self.predictionLabelsArray = np.reshape(self.predictionLabelsArray, (self.predictionLabelsArray.shape[0]*self.predictionLabelsArray.shape[1]))
 			self.predictionMaskArray = np.reshape(self.predictionMaskArray, (self.predictionMaskArray.shape[0]*self.predictionMaskArray.shape[1]))
 	
-	def processLayer(self, sequentialInputState, layerIndex, currentInput, previousInput):
+	def processLayer(self, sequentialInputState, layerIndex, currentInput, previousInput, device):
 		config = self.config
 		batchSize = currentInput.shape[0]
 		if(recursiveLayers):
 			saniLayer = self.saniLayer
 		else:
-			saniLayer = self.SANIlayers[layerIndex]
+			saniLayer = self.SANIlayers[layerIndex].to(device)
 		if(processLayerSubtractEmbeddings):
 			combinedInput = pt.abs(pt.subtract(previousInput, currentInput))
-			currentOutput = self.saniLayer(combinedInput)
+			currentOutput = saniLayer(combinedInput)
 		else:
 			if(processLayerRetainHiddenEmbeddingStructure):
 				combinedInput = pt.stack([previousInput, currentInput], dim=1)	#shape = [batchSize, numberOfHeads, numberOfInputChannels, ..]
 				combinedInput = pt.reshape(combinedInput, (batchSize, self.numberOfHeads*self.numberOfInputChannels, 1))
-				currentOutput = self.saniLayer(combinedInput)
+				currentOutput = saniLayer(combinedInput)
 				currentOutput = pt.reshape(currentOutput, (batchSize, self.numberOfHeads))
 			else:
 				combinedInput = pt.concat((previousInput, currentInput), dim=1)	#CHECKTHIS

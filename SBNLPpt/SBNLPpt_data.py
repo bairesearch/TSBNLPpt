@@ -95,7 +95,6 @@ def dataFileIndexListContainsLastFile(dataFileIndexList, paths):
 	containsDataFileLastSample = False
 	for dataFileIndex in dataFileIndexList:
 		path = paths[dataFileIndex]
-		#print("path = ", path)
 		if(str(dataFileLastSampleIndex) in path):
 			containsDataFileLastSample = True
 	return containsDataFileLastSample
