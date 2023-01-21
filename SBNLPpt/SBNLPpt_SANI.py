@@ -39,10 +39,10 @@ modelPathName = modelFolderName + '/modelSANI.pt'
 #else:
 #	bidirectional = 1
 
-def createModel():
+def createModel(vocabSize):
 	print("creating new model")
 	config = SBNLPpt_SANImodel.SANIconfig(
-		vocabularySize=vocabularySize,
+		vocabSize=vocabSize,
 		#numberOfHiddenLayers=numberOfHiddenLayers,
 		batchSize=batchSize,
 		sequenceLength=sequenceMaxNumTokens,

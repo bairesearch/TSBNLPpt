@@ -15,7 +15,7 @@ see SBNLPpt_main.py
 see SBNLPpt_main.py
 
 # Description:
-SBNLPpt modeling roberta recursiveLayers
+SBNLPpt transformer model
 
 derived from modeling_roberta.py
 (https://github.com/huggingface/transformers/blob/v4.23-release/src/transformers/models/roberta/modeling_roberta.py)

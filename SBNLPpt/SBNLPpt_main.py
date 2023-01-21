@@ -14,6 +14,7 @@ pip install datasets
 pip install transfomers==4.23.1
 pip install torch
 pip install lovely-tensors
+pip install nltk
 
 # Usage:
 source activate transformersenv
@@ -31,6 +32,7 @@ from pathlib import Path
 
 from transformers import AdamW
 import math 
+import os
 
 from SBNLPpt_globalDefs import *
 import SBNLPpt_data
@@ -40,6 +42,10 @@ elif(useAlgorithmRNN):
 	from SBNLPpt_RNN import createModel, loadModel, saveModel, propagate
 elif(useAlgorithmSANI):
 	from SBNLPpt_SANI import createModel, loadModel, saveModel, propagate
+elif(useAlgorithmGIA):
+	from SBNLPpt_GIA import createModel, loadModel, saveModel, propagate, vectorSpaceList, calculateXYlabels, preparePOSdictionary
+
+device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
 def main():
 	if(statePreprocessDataset):
@@ -47,7 +53,10 @@ def main():
 		SBNLPpt_data.preprocessDataset(dataset)
 	
 	if(Path(dataFolder).exists()):
-		paths = [str(x) for x in Path(dataFolder).glob('**/*.txt')]
+		pathsGlob = Path(dataFolder).glob('**/*.txt')
+		if(sortDataFilesByName):
+			pathsGlob = sorted(pathsGlob, key=os.path.getmtime)	#key required because path names indices are not padded with 0s
+		paths = [str(x) for x in pathsGlob]
 	else:
 		print("main error: Path does not exist, dataFolder = ", dataFolder)
 		exit()
@@ -57,7 +66,7 @@ def main():
 		testDataset(tokenizer, paths)
 	else:
 		if(stateTrainTokenizer):
-			SBNLPpt_data.trainTokenizer(paths)
+			SBNLPpt_data.trainTokenizer(paths, vocabularySize)
 		if(stateTrainDataset or stateTestDataset):
 			tokenizer = SBNLPpt_data.loadTokenizer()
 		if(stateTrainDataset):
@@ -73,17 +82,9 @@ def continueTrainingModel():
 	
 def trainDataset(tokenizer, paths):
 
-	if(continueTrainingModel()):
-		model = loadModel()
-	else:
-		model = createModel()
-	
-	device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-	model.to(device)
+	#vocabSize = countNumberOfTokens(tokenizer)
+	model, optim = prepareModelTrainWrapper()
 
-	model.train()
-	optim = AdamW(model.parameters(), lr=learningRate)
-	
 	numberOfDataFiles = len(paths)
 
 	pathIndexMin = trainStartDataFile
@@ -100,35 +101,17 @@ def trainDataset(tokenizer, paths):
 	for epoch in range(trainStartEpoch, trainStartEpoch+trainNumberOfEpochs):
 		loop = tqdm(loader, leave=True)
 		for batchIndex, batch in enumerate(loop):
-			optim.zero_grad()
+
+			loss, accuracy = trainBatchWrapper(batchIndex, batch, tokenizer, model, optim)
 			
-			loss, accuracy = propagate(device, model, tokenizer, batch)
-
-			loss.backward()
-			optim.step()
-
 			loop.set_description(f'Epoch {epoch}')
-			loop.set_postfix(batchIndex=batchIndex, loss=loss.item(), accuracy=accuracy)
+			loop.set_postfix(batchIndex=batchIndex, loss=loss, accuracy=accuracy)
 		
-			if(batchIndex % modelSaveNumberOfBatches == 0):
-				saveModel(model)
 		saveModel(model)
 
 def testDataset(tokenizer, paths):
 
-	if(usePretrainedModelDebug):
-		if(useAlgorithmTransformer):
-			model = RobertaForMaskedLM.from_pretrained("roberta-base")
-		else:
-			print("testDataset error: usePretrainedModelDebug requires useAlgorithmTransformer")
-			exit()
-	else:
-		model = loadModel()
-
-	device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-	model.to(device)
-
-	model.eval()
+	model = prepareModelTestWrapper()
 	
 	numberOfDataFiles = len(paths)
 
@@ -150,9 +133,7 @@ def testDataset(tokenizer, paths):
 		
 		for batchIndex, batch in enumerate(loop):
 			
-			loss, accuracy = propagate(device, model, tokenizer, batch)
-
-			loss = loss.detach().cpu().numpy()
+			loss, accuracy = testBatchWrapper(batchIndex, batch, tokenizer, model)
 			
 			if(not math.isnan(accuracy)):	#required for usePretrainedModelDebug only
 				averageAccuracy = averageAccuracy + accuracy
@@ -166,6 +147,137 @@ def testDataset(tokenizer, paths):
 		averageLoss = averageLoss/batchCount
 		print("averageAccuracy = ", averageAccuracy)
 		print("averageLoss = ", averageLoss)
+
+
+def prepareModelTrainWrapper():
+	if(useAlgorithmGIA):
+		preparePOSdictionary()	#required for SBNLPpt_getAllPossiblePosTags.getAllPossiblePosTags(word)
+	if(useMultipleModels):
+		for vectorSpaceIndex, vectorSpace in enumerate(vectorSpaceList):
+			model, optim = prepareModelTrain()
+			vectorSpace.model = model
+			vectorSpace.optim = optim
+	else:
+		model, optim = prepareModelTrain()
+	return model, optim
+	
+def prepareModelTestWrapper():
+	if(useAlgorithmGIA):
+		preparePOSdictionary()	#required for SBNLPpt_getAllPossiblePosTags.getAllPossiblePosTags(word)
+	if(useMultipleModels):
+		for vectorSpaceIndex, vectorSpace in enumerate(vectorSpaceList):
+			model = prepareModelTest()
+			vectorSpace.model = model
+	else:
+		model = prepareModelTest()
+	return model
+
+		
+def trainBatchWrapper(batchIndex, batch, tokenizer, model, optim):
+	if(useMultipleModels):
+		averageAccuracy = 0.0
+		averageLoss = 0.0 
+		spaceCount = 0
+				
+		for vectorSpaceIndex, vectorSpace in enumerate(vectorSpaceList):
+			model = vectorSpace.model
+			optim = vectorSpace.optim
+				
+			labels = calculateXYlabels(tokenizer, vectorSpace, vectorSpaceIndex, batch, vocabularySize)
+			loss, accuracy = trainBatch(batchIndex, labels, tokenizer, model, optim)
+			
+			averageAccuracy = averageAccuracy + accuracy
+			averageLoss = averageLoss + loss
+			spaceCount = spaceCount + 1
+			
+		accuracy = averageAccuracy/spaceCount
+		loss = averageLoss/spaceCount
+	else:
+		loss, accuracy = trainBatch(batchIndex, batch, tokenizer, model, optim)
+	return loss, accuracy
+		
+def testBatchWrapper(batchIndex, batch, tokenizer, model):
+	if(useMultipleModels):
+		averageAccuracy = 0.0
+		averageLoss = 0.0 
+		spaceCount = 0
+		
+		for vectorSpace, vectorSpaceIndex in enumerate(vectorSpaceList):
+			model = vectorSpace.model
+			labels = calculateXYlabels(tokenizer, vectorSpace, vectorSpaceIndex, batch, vocabularySize)
+			loss, accuracy = testBatch(batchIndex, labels, tokenizer, model)
+			
+			averageAccuracy = averageAccuracy + accuracy
+			averageLoss = averageLoss + loss
+			spaceCount = spaceCount + 1
+
+		accuracy = averageAccuracy/spaceCount
+		loss = averageLoss/spaceCount
+	else:
+		loss, accuracy = testBatch(batchIndex, batch, tokenizer, model)
+	return loss, accuracy
+	
+def prepareModelTrain():
+
+	if(debugDoNotTrainModel):
+		model = None
+		optim = None
+	else:
+		if(continueTrainingModel()):
+			model = loadModel()
+		else:
+			model = createModel(vocabularySize)
+
+		model.to(device)
+
+		model.train()
+		optim = AdamW(model.parameters(), lr=learningRate)
+	
+	return model, optim
+	
+def prepareModelTest():
+
+	if(usePretrainedModelDebug):
+		if(useAlgorithmTransformer):
+			model = RobertaForMaskedLM.from_pretrained("roberta-base")
+		else:
+			print("testDataset error: usePretrainedModelDebug requires useAlgorithmTransformer")
+			exit()
+	else:
+		model = loadModel()
+
+	model.to(device)
+
+	model.eval()
+	
+	return model
+	
+def trainBatch(batchIndex, batch, tokenizer, model, optim):
+	if(debugDoNotTrainModel):
+		loss = 0.0
+		accuracy = 0.0
+	else:
+		optim.zero_grad()
+
+		loss, accuracy = propagate(device, model, tokenizer, batch)
+
+		loss.backward()
+		optim.step()
+
+		if(batchIndex % modelSaveNumberOfBatches == 0):
+			saveModel(model)
+
+		loss = loss.item()
+	return loss, accuracy
+			
+def testBatch(batchIndex, batch, tokenizer, model):
+
+	loss, accuracy = propagate(device, model, tokenizer, batch)
+
+	loss = loss.detach().cpu().numpy()
+	
+	return loss, accuracy
+
 
 if(__name__ == '__main__'):
 	main()

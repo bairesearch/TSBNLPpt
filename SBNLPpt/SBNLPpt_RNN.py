@@ -39,10 +39,10 @@ if(useBidirectionalRNN):
 else:
 	bidirectional = 1
 
-def createModel():
+def createModel(vocabSize):
 	print("creating new model")
 	config = SBNLPpt_RNNmodel.RNNconfig(
-		vocabularySize=vocabularySize,
+		vocabSize=vocabSize,
 		numberOfHiddenLayers=numberOfHiddenLayers,
 		batchSize=batchSize,
 		sequenceLength=sequenceMaxNumTokens,

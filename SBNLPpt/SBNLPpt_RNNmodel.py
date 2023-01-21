@@ -13,7 +13,7 @@ see SBNLPpt_main.py
 see SBNLPpt_main.py
 
 # Description:
-SBNLPpt RNN model recursiveLayers
+SBNLPpt RNN model
 
 """
 
@@ -29,9 +29,9 @@ calculateVocabPredictionHeadLoss = True	#apply loss to vocubulary predictions (r
 applyIOconversionLayers = True	#ensure input embeddings are positive
 
 class RNNconfig():
-	def __init__(self, vocabularySize, numberOfHiddenLayers, batchSize, sequenceLength, bidirectional, hiddenLayerSize, embeddingLayerSize):
+	def __init__(self, vocabSize, numberOfHiddenLayers, batchSize, sequenceLength, bidirectional, hiddenLayerSize, embeddingLayerSize):
 		#https://pytorch.org/docs/stable/generated/torch.nn.RNN.html
-		self.vocab_size = vocabularySize
+		self.vocab_size = vocabSize
 		if(recursiveLayers):
 			self.num_layers = 1
 			self.numberOfRecursiveLayers = numberOfHiddenLayers

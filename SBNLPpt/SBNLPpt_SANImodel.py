@@ -13,7 +13,7 @@ see SBNLPpt_main.py
 see SBNLPpt_main.py
 
 # Description:
-SBNLPpt SANI model recursiveLayers
+SBNLPpt SANI model
 
 """
 
@@ -53,8 +53,8 @@ else:
 	applyIOconversionLayersOutput = False
 		
 class SANIconfig():
-	def __init__(self, vocabularySize, batchSize, sequenceLength, hiddenLayerSize, embeddingLayerSize):
-		self.vocab_size = vocabularySize
+	def __init__(self, vocabSize, batchSize, sequenceLength, hiddenLayerSize, embeddingLayerSize):
+		self.vocab_size = vocabSize
 		self.num_layers = sequenceLength
 		self.batchSize = batchSize
 		self.sequenceLength = sequenceLength

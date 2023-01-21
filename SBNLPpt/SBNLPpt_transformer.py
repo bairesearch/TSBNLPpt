@@ -98,7 +98,7 @@ if(not usePretrainedModelDebug):
 		
 
 
-def createModel():
+def createModel(vocabularySize):
 	print("creating new model")	
 	config = RobertaConfig(
 		vocab_size=vocabularySize,  #sync with tokenizer vocab_size
