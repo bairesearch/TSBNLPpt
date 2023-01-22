@@ -42,11 +42,16 @@ class GIAmodel(nn.Module):
 		self.lossFunction = nn.CrossEntropyLoss()
 			
 	def forward(self, x, y):
-		x = self.input(x)
-		#print("x = ", x)
-		outputs = self.output(x)
-		#print("outputs = ", outputs)
+		embeddings = self.input(x)
+		outputs = self.output(embeddings)
 		loss = self.lossFunction(outputs, y)
+		if(debugPrintModelPropagation):
+			print("self.input.weight = ", self.input.weight)
+			print("self.output.weight = ", self.output.weight)
+			print("x = ", x)
+			print("embeddings = ", embeddings)
+			print("outputs = ", outputs)
+		
 		return loss, outputs
 
 	if(useIndependentReverseRelationsModels):

@@ -38,12 +38,16 @@ from SBNLPpt_globalDefs import *
 import SBNLPpt_data
 if(useAlgorithmTransformer):
 	from SBNLPpt_transformer import createModel, loadModel, saveModel, propagate
+	import useAlgorithmTransformer
 elif(useAlgorithmRNN):
 	from SBNLPpt_RNN import createModel, loadModel, saveModel, propagate
+	import useAlgorithmRNN
 elif(useAlgorithmSANI):
 	from SBNLPpt_SANI import createModel, loadModel, saveModel, propagate
+	import useAlgorithmSANI
 elif(useAlgorithmGIA):
-	from SBNLPpt_GIA import createModel, loadModel, saveModel, propagate, vectorSpaceList, calculateXYlabels, preparePOSdictionary
+	from SBNLPpt_GIA import createModel, loadModel, saveModel, propagate
+	import SBNLPpt_GIA
 
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
@@ -151,21 +155,25 @@ def testDataset(tokenizer, paths):
 
 def prepareModelTrainWrapper():
 	if(useAlgorithmGIA):
-		preparePOSdictionary()	#required for SBNLPpt_getAllPossiblePosTags.getAllPossiblePosTags(word)
+		SBNLPpt_GIA.preparePOSdictionary()	#required for SBNLPpt_getAllPossiblePosTags.getAllPossiblePosTags(word)
 	if(useMultipleModels):
-		for vectorSpaceIndex, vectorSpace in enumerate(vectorSpaceList):
-			model, optim = prepareModelTrain()
+		for vectorSpaceIndex, vectorSpace in enumerate(SBNLPpt_GIA.vectorSpaceList):
+			vocabSize = vocabularySize
+			if(encode3tuples):
+				if(vectorSpace.intermediateType == SBNLPpt_GIA.intermediateTypePOS):
+					vocabSize = vocabularySize + vocabularySize	#size = referenceSetSuj/Obj (entity) + referenceSetDelimiter (semanticRelation)
+			model, optim = prepareModelTrain(vocabSize)
 			vectorSpace.model = model
 			vectorSpace.optim = optim
 	else:
-		model, optim = prepareModelTrain()
+		model, optim = prepareModelTrain(vocabularySize)
 	return model, optim
 	
 def prepareModelTestWrapper():
 	if(useAlgorithmGIA):
-		preparePOSdictionary()	#required for SBNLPpt_getAllPossiblePosTags.getAllPossiblePosTags(word)
+		SBNLPpt_GIA.preparePOSdictionary()	#required for SBNLPpt_getAllPossiblePosTags.getAllPossiblePosTags(word)
 	if(useMultipleModels):
-		for vectorSpaceIndex, vectorSpace in enumerate(vectorSpaceList):
+		for vectorSpaceIndex, vectorSpace in enumerate(SBNLPpt_GIA.vectorSpaceList):
 			model = prepareModelTest()
 			vectorSpace.model = model
 	else:
@@ -179,11 +187,11 @@ def trainBatchWrapper(batchIndex, batch, tokenizer, model, optim):
 		averageLoss = 0.0 
 		spaceCount = 0
 				
-		for vectorSpaceIndex, vectorSpace in enumerate(vectorSpaceList):
+		for vectorSpaceIndex, vectorSpace in enumerate(SBNLPpt_GIA.vectorSpaceList):
 			model = vectorSpace.model
 			optim = vectorSpace.optim
 				
-			labels = calculateXYlabels(tokenizer, vectorSpace, vectorSpaceIndex, batch, vocabularySize)
+			labels = SBNLPpt_GIA.calculateXYlabels(tokenizer, vectorSpace, vectorSpaceIndex, batch, vocabularySize)
 			loss, accuracy = trainBatch(batchIndex, labels, tokenizer, model, optim)
 			
 			averageAccuracy = averageAccuracy + accuracy
@@ -202,9 +210,9 @@ def testBatchWrapper(batchIndex, batch, tokenizer, model):
 		averageLoss = 0.0 
 		spaceCount = 0
 		
-		for vectorSpace, vectorSpaceIndex in enumerate(vectorSpaceList):
+		for vectorSpace, vectorSpaceIndex in enumerate(SBNLPpt_GIA.vectorSpaceList):
 			model = vectorSpace.model
-			labels = calculateXYlabels(tokenizer, vectorSpace, vectorSpaceIndex, batch, vocabularySize)
+			labels = SBNLPpt_GIA.calculateXYlabels(tokenizer, vectorSpace, vectorSpaceIndex, batch, vocabularySize)
 			loss, accuracy = testBatch(batchIndex, labels, tokenizer, model)
 			
 			averageAccuracy = averageAccuracy + accuracy
@@ -217,7 +225,7 @@ def testBatchWrapper(batchIndex, batch, tokenizer, model):
 		loss, accuracy = testBatch(batchIndex, batch, tokenizer, model)
 	return loss, accuracy
 	
-def prepareModelTrain():
+def prepareModelTrain(vocabSize):
 
 	if(debugDoNotTrainModel):
 		model = None
@@ -226,7 +234,7 @@ def prepareModelTrain():
 		if(continueTrainingModel()):
 			model = loadModel()
 		else:
-			model = createModel(vocabularySize)
+			model = createModel(vocabSize)
 
 		model.to(device)
 

@@ -28,7 +28,10 @@ import torch.nn.functional as F
 
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
-embeddingLayerSize = 768	#word vector embedding size (cany vary based on GIA word vector space)
+if(debugReduceEmbeddingLayerSize):
+	embeddingLayerSize = 10
+else:
+	embeddingLayerSize = 768	#word vector embedding size (cany vary based on GIA word vector space)
 
 #nltk pos tags
 nltkPOStagsConjunction = ["CC"]
@@ -102,23 +105,25 @@ if(debugUseSmallNumberOfModels):
 else:
 	vectorSpaceList = [
 	vectorSpaceProperties("definition", directionForward, detectionTypeNearest, intermediateTypeWord, keypointPosNoun, keypointPosNoun, keypointWordAuxiliaryBeingDefinition),
-	vectorSpaceProperties("action", directionForward, detectionTypeNearest, intermediateTypeNone, keypointPosNoun, keypointPosVerb, keypointNone),
+	vectorSpaceProperties("action", directionForward, detectionTypeNearest, intermediateTypePOS, keypointPosNoun, keypointPosNoun, keypointPosVerb),
+	vectorSpaceProperties("actionSubject", directionForward, detectionTypeNearest, intermediateTypeNone, keypointPosNoun, keypointPosVerb, keypointNone),
+	vectorSpaceProperties("actionObject", directionForward, detectionTypeNearest, intermediateTypeNone, keypointPosVerb, keypointPosNoun, keypointNone),
 	vectorSpaceProperties("property", directionForward, detectionTypeNearest, intermediateTypeWord, keypointPosNoun, keypointPosNoun, keypointWordAuxiliaryPossessive),
-	vectorSpaceProperties("quality1", directionForward, detectionTypeAdjacent, intermediateTypeWord, keypointPosNoun, keypointPosAdjective, keypointWordAuxiliaryBeingQuality),
-	vectorSpaceProperties("quality2", directionForward, detectionTypeAdjacent, intermediateTypeNone, keypointPosAdjective, keypointPosNoun, keypointNone),
-	vectorSpaceProperties("quality3", directionForward, detectionTypeAdjacent, intermediateTypeNone, keypointPosVerb, keypointPosAdverb, keypointNone),
-	vectorSpaceProperties("actionSubjectObject", directionForward, detectionTypeNearest, intermediateTypeNone, keypointPosVerb, keypointPosNoun, keypointNone),
+	vectorSpaceProperties("qualitySubstance1", directionForward, detectionTypeAdjacent, intermediateTypeWord, keypointPosNoun, keypointPosAdjective, keypointWordAuxiliaryBeingQuality),
+	vectorSpaceProperties("qualitySubstance2", directionForward, detectionTypeAdjacent, intermediateTypeNone, keypointPosAdjective, keypointPosNoun, keypointNone),
+	vectorSpaceProperties("qualityAction1", directionForward, detectionTypeAdjacent, intermediateTypeNone, keypointPosVerb, keypointPosAdverb, keypointNone),
 	vectorSpaceProperties("preposition", directionForward, detectionTypeNearest, intermediateTypePOS, keypointPosNoun, keypointPosNoun, keypointPosPreposition)
 	]
 	if(useIndependentReverseRelationsModels):
 		vectorSpaceListR = [
 			vectorSpaceProperties("definitionR", directionReverse, detectionTypeNearest, intermediateTypeWord, keypointPosNoun, keypointPosNoun, keypointWordAuxiliaryBeingDefinition),
-			vectorSpaceProperties("actionR", directionReverse, detectionTypeNearest, intermediateTypeNone, keypointPosNoun, keypointPosVerb, keypointNone),
+			vectorSpaceProperties("actionR", directionForward, detectionTypeNearest, intermediateTypePOS, keypointPosNoun, keypointPosNoun, keypointPosVerb),
+			vectorSpaceProperties("actionSubjectR", directionReverse, detectionTypeNearest, intermediateTypeNone, keypointPosNoun, keypointPosVerb, keypointNone),
+			vectorSpaceProperties("actionObjectR", directionReverse, detectionTypeNearest, intermediateTypeNone, keypointPosVerb, keypointPosNoun, keypointNone),
 			vectorSpaceProperties("propertyR", directionReverse, detectionTypeNearest, intermediateTypeWord, keypointPosNoun, keypointPosNoun, keypointWordAuxiliaryPossessive),
-			vectorSpaceProperties("quality1R", directionReverse, detectionTypeAdjacent, intermediateTypeWord, keypointPosNoun, keypointPosAdjective, keypointWordAuxiliaryBeingQuality),
-			vectorSpaceProperties("quality2R", directionReverse, detectionTypeAdjacent, intermediateTypeNone, keypointPosAdjective, keypointPosNoun, keypointNone),
-			vectorSpaceProperties("quality3R", directionReverse, detectionTypeAdjacent, intermediateTypeNone, keypointPosVerb, keypointPosAdverb, keypointNone),
-			vectorSpaceProperties("actionSubjectObjectR", directionReverse, detectionTypeNearest, intermediateTypeNone, keypointPosVerb, keypointPosNoun, keypointNone),
+			vectorSpaceProperties("qualitySubstance1R", directionReverse, detectionTypeAdjacent, intermediateTypeWord, keypointPosNoun, keypointPosAdjective, keypointWordAuxiliaryBeingQuality),
+			vectorSpaceProperties("qualitySubstance2R", directionReverse, detectionTypeAdjacent, intermediateTypeNone, keypointPosAdjective, keypointPosNoun, keypointNone),
+			vectorSpaceProperties("qualityAction1R", directionReverse, detectionTypeAdjacent, intermediateTypeNone, keypointPosVerb, keypointPosAdverb, keypointNone),
 			vectorSpaceProperties("prepositionR", directionReverse, detectionTypeNearest, intermediateTypePOS, keypointPosNoun, keypointPosNoun, keypointPosPreposition)
 		]
 		vectorSpaceList = vectorSpaceList + vectorSpaceListR
@@ -154,18 +159,25 @@ def propagate(device, model, tokenizer, labels):
 
 def calculateXYlabels(tokenizer, vectorSpace, vectorSpaceIndex, batch, vocabSize):
 	batchTokenIDs = batch['labels']
-	modelSamplesX, modelSamplesY = getModelSamplesStart(tokenizer, batchTokenIDs, vectorSpace)
+	modelSamplesX, modelSamplesY, modelSamplesI = getModelSamplesStart(tokenizer, batchTokenIDs, vectorSpace)
 
 	if(debugDoNotTrainModel):
 		xLabels = None
 		yLabels = None
 	else:
 		xLabels = torch.Tensor(modelSamplesX).to(torch.long).to(device)
-		yLabels = torch.Tensor(modelSamplesY).to(torch.long).to(device)
 		xLabels = F.one_hot(xLabels, num_classes=vocabSize).to(torch.float)
+		yLabels = torch.Tensor(modelSamplesY).to(torch.long).to(device)
 		yLabels = F.one_hot(yLabels, num_classes=vocabSize).to(torch.float)
 		#print(xLabels)
 		#print(yLabels)
+
+		if(encode3tuples):
+			if(vectorSpace.intermediateType == intermediateTypePOS):
+				iLabels = torch.Tensor(modelSamplesI).to(torch.long).to(device)
+				iLabels = F.one_hot(iLabels, num_classes=vocabSize).to(torch.float)
+				xLabels = torch.concat((xLabels, iLabels), dim=1)
+				yLabels = torch.concat((yLabels, iLabels), dim=1)
 	
 	labels = (xLabels, yLabels)
 	return labels
@@ -198,6 +210,7 @@ def getModelSamplesStart(tokenizer, batchTokenIDs, vectorSpace):
 
 	modelSamplesX = []
 	modelSamplesY = []
+	modelSamplesI = []
 	
 	#batchSize = batchTokenIDs.shape[0]
 	for sampleIndex in range(batchSize):
@@ -206,9 +219,9 @@ def getModelSamplesStart(tokenizer, batchTokenIDs, vectorSpace):
 		#print("sampleTokenIDsList = ", sampleTokenIDsList)
 		textWordList = convertIDlistToTokensList(tokenizer, sampleTokenIDsList)
 
-		getModelSamples(modelSamplesX, modelSamplesY, textWordList, vectorSpace, keypointIndex=0, startSearchIndex=0, endSearchIndex=len(textWordList), wordIndexKeypoint0=None)
+		getModelSamples(modelSamplesX, modelSamplesY, modelSamplesI, textWordList, vectorSpace, keypointIndex=0, startSearchIndex=0, endSearchIndex=len(textWordList), wordIndexKeypoint0=None, wordIndexKeypoint1=None)
 	
-	return modelSamplesX, modelSamplesY
+	return modelSamplesX, modelSamplesY, modelSamplesI
 
 def convertIDlistToTokensList(tokenizer, sampleTokenIDsList):
 	if(useFullwordTokenizerClass):
@@ -217,12 +230,14 @@ def convertIDlistToTokensList(tokenizer, sampleTokenIDsList):
 		textWordList = [tokenizer.list[x] for x in sampleTokenIDsList]
 	return textWordList
 	
-def getModelSamples(modelSamplesX, modelSamplesY, textWordList, vectorSpace, keypointIndex, startSearchIndex, endSearchIndex, wordIndexKeypoint0):
+def getModelSamples(modelSamplesX, modelSamplesY, modelSamplesI, textWordList, vectorSpace, keypointIndex, startSearchIndex, endSearchIndex, wordIndexKeypoint0, wordIndexKeypoint1):
 	keypoint = getKeypoint(vectorSpace, keypointIndex)
 	keypointType = getKeypointType(keypoint)
 	for wordIndex, word in enumerate(textWordList[startSearchIndex:endSearchIndex]):
 		if(keypointIndex == 0):
 			wordIndexKeypoint0 = wordIndex
+		if(keypointIndex == 1):
+			wordIndexKeypoint1 = wordIndex
 		#print("word = ", word)
 		keypointFound, keypointIndexLast = isKeypointFound(textWordList, keypointIndex, keypoint, keypointType, word, wordIndex)
 		if(keypointFound):
@@ -247,21 +262,27 @@ def getModelSamples(modelSamplesX, modelSamplesY, textWordList, vectorSpace, key
 				elif(vectorSpace.detectionType==detectionTypeAdjacent):
 					endSearchIndexN = startSearchIndexN+1
 					
-				getModelSamples(modelSamplesX, modelSamplesY, textWordList, vectorSpace, keypointIndexN, startSearchIndexN, endSearchIndexN, wordIndexKeypoint0)
+				getModelSamples(modelSamplesX, modelSamplesY, modelSamplesI, textWordList, vectorSpace, keypointIndexN, startSearchIndexN, endSearchIndexN, wordIndexKeypoint0, wordIndexKeypoint1)
 			else:
 				wordIndexKeypoint2 = wordIndex
 				if(useIndependentReverseRelationsModels):
 					if(vectorSpace.direction == directionForward):
 						xTokenIndex = wordIndexKeypoint0
 						yTokenIndex = wordIndexKeypoint2
+						iTokenIndex = wordIndexKeypoint1
 					elif(vectorSpace.direction == directionReverse):
 						xTokenIndex = wordIndexKeypoint2
 						yTokenIndex = wordIndexKeypoint0
+						iTokenIndex = wordIndexKeypoint1
 				else:		
 					xTokenIndex = wordIndexKeypoint0
 					yTokenIndex = wordIndexKeypoint2	
-				modelSamplesX.append(xTokenIndex)
-				modelSamplesY.append(yTokenIndex)
+					iTokenIndex = wordIndexKeypoint1
+					
+				if(not debugTruncateBatch or len(modelSamplesX)==0):
+					modelSamplesX.append(xTokenIndex)
+					modelSamplesY.append(yTokenIndex)
+					modelSamplesI.append(iTokenIndex)
 
 def keypointInPosList(keypoint, posValues):
 	keypointPOSfound = False

@@ -17,6 +17,11 @@ SBNLPpt globalDefs
 
 """
 
+useLovelyTensors = False
+if(useLovelyTensors):
+	import lovely_tensors as lt
+	lt.monkey_patch()
+
 #recursive algorithm selection:
 useAlgorithmTransformer = False
 useAlgorithmRNN = False
@@ -58,10 +63,14 @@ useFullwordTokenizer = False
 useFullwordTokenizerClass = True
 debugDoNotTrainModel = False
 if(useAlgorithmGIA):
+	debugPrintModelPropagation = False
 	debugPrintRelationExtractionProgress = False
-	debugUseSmallNumberOfModels = True
-	debugDoNotTrainModel = False
+	debugTruncateBatch = True	#reduce GPU memory during
+	debugReduceEmbeddingLayerSize = True	#reduce GPU memory during
+	debugUseSmallNumberOfModels = False	#reduce GPU memory
+	debugDoNotTrainModel = False	#reduce GPU memory
 	
+	encode3tuples = True
 	useMultipleModels = True
 	useFullwordTokenizer = False	#optional	#tokenizer only identifies whole words
 	if(useFullwordTokenizer):
@@ -129,9 +138,9 @@ useSmallBatchSizeDebug = False
 useSmallTokenizerTrainNumberOfFiles = True	#used during rapid testing only (FUTURE: assign est 80 hours to perform full tokenisation train)
 if(useSmallTokenizerTrainNumberOfFiles):
 	if(useFullwordTokenizer):
-		trainTokenizerNumberOfFilesToUseSmall = 100	#default: 100	#100: 2 hours
+		trainTokenizerNumberOfFilesToUseSmall = 100	#100	#default: 100	#100: 2 hours
 	else:
-		trainTokenizerNumberOfFilesToUseSmall = 100	#default 1000	#100: 15 min, 1000: 3.75 hours
+		trainTokenizerNumberOfFilesToUseSmall = 100	#100	#default 1000	#100: 15 min, 1000: 3.75 hours
 
 reserveValidationSet = True	#reserves a fraction of the data for validation
 trainSplitFraction = 0.9	#90% train data, 10% test data
@@ -146,7 +155,10 @@ elif(useAlgorithmSANI):
 	batchSize = 8	#4	#8	#2	#depends on GPU memory
 	learningRate = 1e-4
 elif(useAlgorithmGIA):
-	batchSize = 1	#useAlgorithmGIAsemanticRelationVectorSpace batchSize is dynamic (>batchSize)
+	if(debugTruncateBatch):
+		batchSize = 1	#useAlgorithmGIAsemanticRelationVectorSpace batchSize is dynamic (>batchSize)	
+	else:
+		batchSize = 8
 	learningRate = 1e-4
 	
 if(simulatedDendriticBranches):
@@ -181,9 +193,7 @@ else:
 
 accuracyTopN = 1	#default: 1	#>= 1	#calculates batch accuracy based on top n dictionary predictions
 
-useLovelyTensors = True
-if(useLovelyTensors):
-	import lovely_tensors as lt
-	lt.monkey_patch()
-
+specialTokens = ['<s>', '<pad>', '</s>', '<unk>', '<mask>']
+specialTokenPadding = '<pad>'
+specialTokenMask = '<mask>'
 
