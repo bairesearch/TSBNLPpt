@@ -191,9 +191,11 @@ def trainBatchWrapper(batchIndex, batch, tokenizer, model, optim):
 			model = vectorSpace.model
 			optim = vectorSpace.optim
 				
-			labels = SBNLPpt_GIA.calculateXYlabels(tokenizer, vectorSpace, vectorSpaceIndex, batch, vocabularySize)
-			loss, accuracy = trainBatch(batchIndex, labels, tokenizer, model, optim)
-			
+			labels, labelsFound = SBNLPpt_GIA.calculateXYlabels(tokenizer, vectorSpace, vectorSpaceIndex, batch, vocabularySize)
+			if(labelsFound):
+				loss, accuracy = trainBatch(batchIndex, labels, tokenizer, model, optim)
+			else:
+				(loss, accuracy) = (0.0, 0.0)
 			averageAccuracy = averageAccuracy + accuracy
 			averageLoss = averageLoss + loss
 			spaceCount = spaceCount + 1
@@ -212,9 +214,11 @@ def testBatchWrapper(batchIndex, batch, tokenizer, model):
 		
 		for vectorSpace, vectorSpaceIndex in enumerate(SBNLPpt_GIA.vectorSpaceList):
 			model = vectorSpace.model
-			labels = SBNLPpt_GIA.calculateXYlabels(tokenizer, vectorSpace, vectorSpaceIndex, batch, vocabularySize)
-			loss, accuracy = testBatch(batchIndex, labels, tokenizer, model)
-			
+			labels, labelsFound = SBNLPpt_GIA.calculateXYlabels(tokenizer, vectorSpace, vectorSpaceIndex, batch, vocabularySize)
+			if(labelsFound):
+				loss, accuracy = testBatch(batchIndex, labels, tokenizer, model)
+			else:
+				(loss, accuracy) = (0.0, 0.0)
 			averageAccuracy = averageAccuracy + accuracy
 			averageLoss = averageLoss + loss
 			spaceCount = spaceCount + 1

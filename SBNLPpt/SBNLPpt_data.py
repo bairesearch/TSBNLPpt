@@ -26,7 +26,8 @@ import os
 from SBNLPpt_globalDefs import *
 if(useFullwordTokenizer):
 	import SBNLPpt_tokeniserFullword
-	
+if(tokeniserOnlyTrainOnDictionary):
+	from nltk.corpus import words
 		
 if(not useLovelyTensors):
 	torch.set_printoptions(profile="full")
@@ -72,17 +73,32 @@ def trainTokenizer(paths, vocabSize):
 		SBNLPpt_tokeniserFullword.trainTokenizerFullwords(paths, vocabularySize)	#default method (vocabSize used by GIA word2vec model will be greater than numberOfTokens in tokenizer)
 	else:
 		trainTokenizerSubwords(paths, vocabularySize)
-				
+
+def createDictionaryFile():
+	dictionaryList = words.words() 
+	print("len(dictionaryList) = ", len(dictionaryList))
+	fileName = modelFolderName + "/dictionary.txt"
+	with open(fileName, 'w', encoding='utf-8') as fp:
+		fp.write(' '.join(dictionaryList))
+	return fileName
+						
 def trainTokenizerSubwords(paths, vocabSize):	
-	#subword tokenizer
-	if(useSmallTokenizerTrainNumberOfFiles):
-		trainTokenizerNumberOfFilesToUse = trainTokenizerNumberOfFilesToUseSmall
+	if(tokeniserOnlyTrainOnDictionary):
+		min_frequency = 1
+		trainTokenizerNumberOfFilesToUse = 1
+		path = createDictionaryFile()
+		paths = []
+		paths.append(path)
 	else:
-		trainTokenizerNumberOfFilesToUse = len(paths)
+		min_frequency = 2
+		if(useSmallTokenizerTrainNumberOfFiles):
+			trainTokenizerNumberOfFilesToUse = trainTokenizerNumberOfFilesToUseSmall
+		else:
+			trainTokenizerNumberOfFilesToUse = len(paths)
 
 	tokenizer = ByteLevelBPETokenizer()
 
-	tokenizer.train(files=paths[:trainTokenizerNumberOfFilesToUse], vocab_size=vocabSize, min_frequency=2, special_tokens=specialTokens)
+	tokenizer.train(files=paths[:trainTokenizerNumberOfFilesToUse], vocab_size=vocabSize, min_frequency=1, special_tokens=specialTokens)
 
 	#os.mkdir(modelFolderName)
 

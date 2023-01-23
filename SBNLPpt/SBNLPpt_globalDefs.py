@@ -17,7 +17,7 @@ SBNLPpt globalDefs
 
 """
 
-useLovelyTensors = False
+useLovelyTensors = True
 if(useLovelyTensors):
 	import lovely_tensors as lt
 	lt.monkey_patch()
@@ -61,8 +61,11 @@ useMultipleModels = False
 useTrainedTokenizer = True
 useFullwordTokenizer = False
 useFullwordTokenizerClass = True
+tokeniserOnlyTrainOnDictionary = False
 debugDoNotTrainModel = False
 if(useAlgorithmGIA):
+	useEffectiveFullwordTokenizer = True	#required for useAlgorithmGIA
+
 	debugPrintModelPropagation = False
 	debugPrintRelationExtractionProgress = False
 	debugTruncateBatch = True	#reduce GPU memory during
@@ -74,6 +77,7 @@ if(useAlgorithmGIA):
 	useMultipleModels = True
 	useFullwordTokenizer = False	#optional	#tokenizer only identifies whole words
 	if(useFullwordTokenizer):
+		tokeniserOnlyTrainOnDictionary = True	#optional
 		useFullwordTokenizerNLTK = False	#optional	#else use DistilBertTokenizer.basic_tokenizer.tokenize
 		useFullwordTokenizerPretrained = False	#optional	#required for latest version of transformers library
 		if(useFullwordTokenizerPretrained):
@@ -85,6 +89,8 @@ if(useAlgorithmGIA):
 			useTrainedTokenizer = False
 			tokensVocabPathName = modelFolderName + "/" + "vocab-fullword.json"
 			tokensSpecialPathName = modelFolderName + "/" + "special_tokens-fullword.json" 
+	else:
+		tokeniserOnlyTrainOnDictionary = True	#optional	#ensures effective fullword tokenisation of dictionary words
 	useIndependentReverseRelationsModels = False	#else take input linear layer as forward embeddings and output linear layer [inversed] as reverse embeddings
 
 if(recursiveLayers or memoryTraceBias or simulatedDendriticBranches):
@@ -183,11 +189,11 @@ sequenceMaxNumTokens = 512	#window length (transformer/RNN/SANI)
 customMaskTokenID = 4	#3
 fractionOfMaskedTokens = 0.15
 
-if(useAlgorithmGIA):
+if(useEffectiveFullwordTokenizer):
 	if(useFullwordTokenizer):
 		vocabularySize = 2000000	#approx number of unique words in dataset
 	else:
-		vocabularySize = 200000	#approx number of unique words in english
+		vocabularySize = 240000	#approx number of unique words in english	#236736	#200000
 else:
 	vocabularySize = 30522	#default: 30522	#number of independent tokens identified by SBNLPpt_data.trainTokenizerSubwords
 

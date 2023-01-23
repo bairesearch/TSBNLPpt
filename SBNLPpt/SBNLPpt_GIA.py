@@ -129,7 +129,6 @@ else:
 		vectorSpaceList = vectorSpaceList + vectorSpaceListR
 
 
-		
 modelPathName = modelFolderName + '/modelGIA.pt'
 
 def preparePOSdictionary():
@@ -161,26 +160,26 @@ def calculateXYlabels(tokenizer, vectorSpace, vectorSpaceIndex, batch, vocabSize
 	batchTokenIDs = batch['labels']
 	modelSamplesX, modelSamplesY, modelSamplesI = getModelSamplesStart(tokenizer, batchTokenIDs, vectorSpace)
 
+	labelsFound = False
 	if(debugDoNotTrainModel):
-		xLabels = None
-		yLabels = None
+		labels = None
 	else:
-		xLabels = torch.Tensor(modelSamplesX).to(torch.long).to(device)
-		xLabels = F.one_hot(xLabels, num_classes=vocabSize).to(torch.float)
-		yLabels = torch.Tensor(modelSamplesY).to(torch.long).to(device)
-		yLabels = F.one_hot(yLabels, num_classes=vocabSize).to(torch.float)
-		#print(xLabels)
-		#print(yLabels)
-
-		if(encode3tuples):
-			if(vectorSpace.intermediateType == intermediateTypePOS):
-				iLabels = torch.Tensor(modelSamplesI).to(torch.long).to(device)
-				iLabels = F.one_hot(iLabels, num_classes=vocabSize).to(torch.float)
-				xLabels = torch.concat((xLabels, iLabels), dim=1)
-				yLabels = torch.concat((yLabels, iLabels), dim=1)
-	
-	labels = (xLabels, yLabels)
-	return labels
+		if(len(modelSamplesX) > 0):
+			labelsFound = True
+			xLabels = torch.Tensor(modelSamplesX).to(torch.long).to(device)
+			xLabels = F.one_hot(xLabels, num_classes=vocabSize).to(torch.float)
+			yLabels = torch.Tensor(modelSamplesY).to(torch.long).to(device)
+			yLabels = F.one_hot(yLabels, num_classes=vocabSize).to(torch.float)
+			if(encode3tuples):
+				if(vectorSpace.intermediateType == intermediateTypePOS):
+					iLabels = torch.Tensor(modelSamplesI).to(torch.long).to(device)
+					iLabels = F.one_hot(iLabels, num_classes=vocabSize).to(torch.float)
+					xLabels = torch.concat((xLabels, iLabels), dim=1)
+					yLabels = torch.concat((yLabels, iLabels), dim=1)
+			labels = (xLabels, yLabels)
+		else:
+			labels = None
+	return labels, labelsFound
 	
 def getKeypoint(vectorSpace, keypointIndex):
 	if(keypointIndex == 0):
@@ -206,7 +205,7 @@ def getKeypointType(keypoint):
 		exit()
 	return keypointType
 
-def getModelSamplesStart(tokenizer, batchTokenIDs, vectorSpace):	
+def getModelSamplesStart(tokenizer, batchTokenIDs, vectorSpace):
 
 	modelSamplesX = []
 	modelSamplesY = []
@@ -216,7 +215,6 @@ def getModelSamplesStart(tokenizer, batchTokenIDs, vectorSpace):
 	for sampleIndex in range(batchSize):
 		sampleTokenIDsTensor = batchTokenIDs[sampleIndex]
 		sampleTokenIDsList = sampleTokenIDsTensor.tolist()
-		#print("sampleTokenIDsList = ", sampleTokenIDsList)
 		textWordList = convertIDlistToTokensList(tokenizer, sampleTokenIDsList)
 
 		getModelSamples(modelSamplesX, modelSamplesY, modelSamplesI, textWordList, vectorSpace, keypointIndex=0, startSearchIndex=0, endSearchIndex=len(textWordList), wordIndexKeypoint0=None, wordIndexKeypoint1=None)
@@ -226,6 +224,7 @@ def getModelSamplesStart(tokenizer, batchTokenIDs, vectorSpace):
 def convertIDlistToTokensList(tokenizer, sampleTokenIDsList):
 	if(useFullwordTokenizerClass):
 		textWordList = tokenizer.convert_ids_to_tokens(sampleTokenIDsList)
+		#print("sampleTokenIDsList = ", sampleTokenIDsList)
 	else:
 		textWordList = [tokenizer.list[x] for x in sampleTokenIDsList]
 	return textWordList

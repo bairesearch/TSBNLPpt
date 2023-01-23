@@ -22,12 +22,13 @@ import torch
 
 from SBNLPpt_globalDefs import *
 
+if(tokeniserOnlyTrainOnDictionary):
+	from nltk.corpus import words
 if(useFullwordTokenizerNLTK):
 	import nltk
 else:
 	from transformers import DistilBertTokenizer
 	tokenizerFullword = DistilBertTokenizer.from_pretrained('distilbert-base-cased')		
-
 if(useFullwordTokenizerPretrained):
 	if(useFullwordTokenizerPretrainedAuto):
 		from transformers import AutoTokenizer	#alternate method using a pretrained tokenizer
@@ -45,6 +46,12 @@ class TokenizerBasic():
 	def __init__(self):
 		self.dict = {}
 		self.list = []
+	def tokenize(self, word):
+		if(word in self.dict.keys()):
+			tokenID = self.dict[word]
+		else:
+			tokenID = vocabularySize-1	#assumes vocabularySize (model one-hot input size) > number of tokens in tokeniser
+		return tokenID
 
 def tokenizeBasic(lines, tokenizer):
 	if(useFullwordTokenizerClass):
@@ -61,7 +68,6 @@ def tokenizeBasic(lines, tokenizer):
 			inputTokens = tokens[0:tokensLengthTruncated] 
 			paddingLength = sequenceMaxNumTokens-tokensLengthTruncated
 			maskTokens = [specialTokenMask]*tokensLengthTruncated
-			#print("total length = ", tokensLengthTruncated+paddingLength)
 			if(paddingLength > 0):
 				maskPadding = [specialTokenPadding]*paddingLength
 				inputs = inputTokens + maskPadding
@@ -69,10 +75,8 @@ def tokenizeBasic(lines, tokenizer):
 			else:
 				inputs = inputTokens
 				mask = maskTokens
-			inputID = [tokenizer.dict[x] for x in inputs]
-			maskID = [tokenizer.dict[x] for x in mask]
-			#print("inputID = ", inputID)
-			#print("maskID = ", maskID)
+			inputID = [tokenizer.tokenize(x) for x in inputs]
+			maskID = [tokenizer.tokenize(x) for x in mask]
 			tokenIDtensor = torch.Tensor(inputID).to(torch.long)	#dtype=torch.int32
 			maskIDtensor = torch.Tensor(maskID).to(torch.long)	#dtype=torch.int32
 			inputIDlist.append(tokenIDtensor)
@@ -99,20 +103,11 @@ def trainTokenizerFullwords(paths, vocabSize):
 	
 	#tokensList = []
 	tokensSet = set()
-	numberOfTokensNonUnique = 0
-	for dataFileIndex in range(trainTokenizerNumberOfFilesToUse):
-		path = paths[dataFileIndex]
-		print("dataFileIndex = ", dataFileIndex)
-		with open(path, 'r', encoding='utf-8') as fp:
-			lines = fp.read().split('\n')
-			for lineIndex, line in enumerate(lines):
-				#print("lineIndex = ", lineIndex)
-				tokens = fullwordTokenizeLine(line)
-				#print("tokens = ", tokens)
-				numberOfTokensNonUnique = numberOfTokensNonUnique + len(tokens)
-				#tokensList.extend(tokens)
-				tokensSet.update(tokens)
-	
+	if(tokeniserOnlyTrainOnDictionary):
+		trainTokenizerFullwordsDictionary(tokensSet)
+	else:
+		 trainTokenizerFullwordsDatafiles(tokensSet, paths)
+		 
 	tokensList = list(tokensSet)
 	if(useFullwordTokenizerPretrained):
 		#tokensList.extend(specialTokens)
@@ -142,10 +137,24 @@ def trainTokenizerFullwords(paths, vocabSize):
 		print("trainTokenizerFullwords error: numberOfTokens > vocabSize")
 		print("vocabSize = ", vocabSize)
 		print("numberOfTokens = ", numberOfTokens)
-		print("numberOfTokensNonUnique = ", numberOfTokensNonUnique)
 			
 	return tokenizer
-	
+
+def trainTokenizerFullwordsDictionary(tokensSet):
+	for word in words.words():
+		tokensSet.add(word)
+	#print("trainTokenizerFullwordsDictionary: len(tokensSet) = ", len(tokensSet))
+			
+def trainTokenizerFullwordsDatafiles(tokensSet, paths):
+	for dataFileIndex in range(trainTokenizerNumberOfFilesToUse):
+		path = paths[dataFileIndex]
+		print("dataFileIndex = ", dataFileIndex)
+		with open(path, 'r', encoding='utf-8') as fp:
+			lines = fp.read().split('\n')
+			for lineIndex, line in enumerate(lines):
+				tokens = fullwordTokenizeLine(line)
+				tokensSet.update(tokens)
+		
 def fullwordTokenizeLine(line):
 	if(useFullwordTokenizerNLTK):
 		tokens = nltk.word_tokenize(line)
@@ -180,7 +189,11 @@ def loadTokenizerFullwords():
 			tokensSpecialDictionaryItems = createDictionaryItemsFromList(tokensSpecial, len(tokenizer.dict))
 			for i, j in tokensSpecialDictionaryItems:
 				tokenizer.dict[i] = j
-			tokenizer.list = list(tokenizer.dict.keys())
+			keysList = list(tokenizer.dict.keys())
+			if(len(keysList) < vocabularySize):
+				blankList = list(range(0, vocabularySize-len(keysList)))
+				keysList = keysList + blankList
+			tokenizer.list = keysList
 	return tokenizer
 	
 def createDictionaryItemsFromList(lst, startIndex):
