@@ -26,7 +26,7 @@ if(useLovelyTensors):
 useAlgorithmTransformer = False
 useAlgorithmRNN = False
 useAlgorithmSANI = False
-useAlgorithmGIA = True	#useAlgorithmGIAsemanticRelationVectorSpace
+useAlgorithmGIA = True
 
 sortDataFilesByName = True	#orig; False
 
@@ -57,6 +57,7 @@ else:
 	dataFolder = '/media/' + userName + '/datasets/data'
 	modelFolderName = '/media/' + userName + '/large/source/ANNpython/SBNLPpt/model'	#modelTemp, model
 	
+semanticRelationVectorSpaces = False
 useMultipleModels = False
 useTrainedTokenizer = True
 useFullwordTokenizer = False
@@ -64,6 +65,7 @@ useFullwordTokenizerClass = True
 tokeniserOnlyTrainOnDictionary = False
 debugDoNotTrainModel = False
 if(useAlgorithmGIA):
+	semanticRelationVectorSpaces = True
 	useEffectiveFullwordTokenizer = True	#required for useAlgorithmGIA
 
 	debugPrintModelPropagation = False
@@ -93,7 +95,7 @@ if(useAlgorithmGIA):
 		tokeniserOnlyTrainOnDictionary = True	#optional	#ensures effective fullword tokenisation of dictionary words
 	useIndependentReverseRelationsModels = False	#else take input linear layer as forward embeddings and output linear layer [inversed] as reverse embeddings
 
-if(recursiveLayers or memoryTraceBias or simulatedDendriticBranches):
+if(recursiveLayers or memoryTraceBias or simulatedDendriticBranches or semanticRelationVectorSpaces):
 	useSyntacticBiases = True
 else:
 	useSyntacticBiases = False

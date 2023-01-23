@@ -21,7 +21,7 @@ source activate transformersenv
 python SBNLPpt_main.py
 
 # Description:
-SBNLPpt main - Syntactic Bias natural language processing (SBNLP): various neural architectures with syntactic inductive biases (recursiveLayers, positionalEmbeddingTransformation)
+SBNLPpt main - Syntactic Bias natural language processing (SBNLP): neural architectures with various syntactic inductive biases (recursiveLayers, simulatedDendriticBranches, memoryTraceBias, semanticRelationVectorSpaces)
 
 """
 
