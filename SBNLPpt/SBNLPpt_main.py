@@ -38,16 +38,17 @@ from SBNLPpt_globalDefs import *
 import SBNLPpt_data
 if(useAlgorithmTransformer):
 	from SBNLPpt_transformer import createModel, loadModel, saveModel, propagate
-	import useAlgorithmTransformer
+	import SBNLPpt_transformer
 elif(useAlgorithmRNN):
 	from SBNLPpt_RNN import createModel, loadModel, saveModel, propagate
-	import useAlgorithmRNN
+	import SBNLPpt_RNN
 elif(useAlgorithmSANI):
 	from SBNLPpt_SANI import createModel, loadModel, saveModel, propagate
-	import useAlgorithmSANI
+	import SBNLPpt_SANI
 elif(useAlgorithmGIA):
 	from SBNLPpt_GIA import createModel, loadModel, saveModel, propagate
 	import SBNLPpt_GIA
+	import SBNLPpt_GIAdefinePOSwordLists
 
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
@@ -157,10 +158,10 @@ def prepareModelTrainWrapper():
 	if(useAlgorithmGIA):
 		SBNLPpt_GIA.preparePOSdictionary()	#required for SBNLPpt_getAllPossiblePosTags.getAllPossiblePosTags(word)
 	if(useMultipleModels):
-		for vectorSpaceIndex, vectorSpace in enumerate(SBNLPpt_GIA.vectorSpaceList):
+		for vectorSpaceIndex, vectorSpace in enumerate(SBNLPpt_GIAdefinePOSwordLists.vectorSpaceList):
 			vocabSize = vocabularySize
 			if(encode3tuples):
-				if(vectorSpace.intermediateType == SBNLPpt_GIA.intermediateTypePOS):
+				if(vectorSpace.intermediateType == SBNLPpt_GIAdefinePOSwordLists.intermediateTypePOS):
 					vocabSize = vocabularySize + vocabularySize	#size = referenceSetSuj/Obj (entity) + referenceSetDelimiter (semanticRelation)
 			model, optim = prepareModelTrain(vocabSize)
 			vectorSpace.model = model
@@ -173,7 +174,7 @@ def prepareModelTestWrapper():
 	if(useAlgorithmGIA):
 		SBNLPpt_GIA.preparePOSdictionary()	#required for SBNLPpt_getAllPossiblePosTags.getAllPossiblePosTags(word)
 	if(useMultipleModels):
-		for vectorSpaceIndex, vectorSpace in enumerate(SBNLPpt_GIA.vectorSpaceList):
+		for vectorSpaceIndex, vectorSpace in enumerate(SBNLPpt_GIAdefinePOSwordLists.vectorSpaceList):
 			model = prepareModelTest()
 			vectorSpace.model = model
 	else:
@@ -186,12 +187,16 @@ def trainBatchWrapper(batchIndex, batch, tokenizer, model, optim):
 		averageAccuracy = 0.0
 		averageLoss = 0.0 
 		spaceCount = 0
-				
-		for vectorSpaceIndex, vectorSpace in enumerate(SBNLPpt_GIA.vectorSpaceList):
+		if(useVectorisedSemanticRelationIdentification):
+			labelsList, labelsFoundList = SBNLPpt_GIA.calculateXYlabels(tokenizer, batch, vocabularySize)
+		for vectorSpaceIndex, vectorSpace in enumerate(SBNLPpt_GIAdefinePOSwordLists.vectorSpaceList):
 			model = vectorSpace.model
-			optim = vectorSpace.optim
-				
-			labels, labelsFound = SBNLPpt_GIA.calculateXYlabels(tokenizer, vectorSpace, vectorSpaceIndex, batch, vocabularySize)
+			optim = vectorSpace.optim	
+			if(useVectorisedSemanticRelationIdentification):
+				(labels, labelsFound) = (labelsList[vectorSpaceIndex], labelsFoundList[vectorSpaceIndex])
+			else:
+				labels, labelsFound = SBNLPpt_GIA.calculateXYlabels(tokenizer, vectorSpace, vectorSpaceIndex, batch, vocabularySize)
+			
 			if(labelsFound):
 				loss, accuracy = trainBatch(batchIndex, labels, tokenizer, model, optim)
 			else:
@@ -211,10 +216,14 @@ def testBatchWrapper(batchIndex, batch, tokenizer, model):
 		averageAccuracy = 0.0
 		averageLoss = 0.0 
 		spaceCount = 0
-		
-		for vectorSpace, vectorSpaceIndex in enumerate(SBNLPpt_GIA.vectorSpaceList):
+		if(useVectorisedSemanticRelationIdentification):
+			labelsList, labelsFoundList = SBNLPpt_GIA.calculateXYlabels(tokenizer, batch, vocabularySize)	
+		for vectorSpace, vectorSpaceIndex in enumerate(SBNLPpt_GIAdefinePOSwordLists.vectorSpaceList):
 			model = vectorSpace.model
-			labels, labelsFound = SBNLPpt_GIA.calculateXYlabels(tokenizer, vectorSpace, vectorSpaceIndex, batch, vocabularySize)
+			if(useVectorisedSemanticRelationIdentification):
+				(labels, labelsFound) = (labelsList[vectorSpaceIndex], labelsFoundList[vectorSpaceIndex])
+			else:
+				labels, labelsFound = SBNLPpt_GIA.calculateXYlabels(tokenizer, vectorSpace, vectorSpaceIndex, batch, vocabularySize)
 			if(labelsFound):
 				loss, accuracy = testBatch(batchIndex, labels, tokenizer, model)
 			else:

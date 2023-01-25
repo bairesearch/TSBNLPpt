@@ -23,7 +23,7 @@ import torch
 from SBNLPpt_globalDefs import *
 
 if(tokeniserOnlyTrainOnDictionary):
-	from nltk.corpus import words
+	from nltk.corpus import words as NLTKwords
 if(useFullwordTokenizerNLTK):
 	import nltk
 else:
@@ -102,11 +102,10 @@ def trainTokenizerFullwords(paths, vocabSize):
 		trainTokenizerNumberOfFilesToUse = len(paths)
 	
 	#tokensList = []
-	tokensSet = set()
 	if(tokeniserOnlyTrainOnDictionary):
-		trainTokenizerFullwordsDictionary(tokensSet)
+		tokensSet = trainTokenizerFullwordsDictionary()
 	else:
-		 trainTokenizerFullwordsDatafiles(tokensSet, paths)
+		 tokensSet = trainTokenizerFullwordsDatafiles(paths)
 		 
 	tokensList = list(tokensSet)
 	if(useFullwordTokenizerPretrained):
@@ -141,11 +140,12 @@ def trainTokenizerFullwords(paths, vocabSize):
 	return tokenizer
 
 def trainTokenizerFullwordsDictionary(tokensSet):
-	for word in words.words():
-		tokensSet.add(word)
-	#print("trainTokenizerFullwordsDictionary: len(tokensSet) = ", len(tokensSet))
-			
-def trainTokenizerFullwordsDatafiles(tokensSet, paths):
+	posWordListAll = getAllNLTKwords()
+	tokensSet = set(posWordListAll)
+	return tokensSet
+	
+def trainTokenizerFullwordsDatafiles(paths):
+	tokensSet = set()
 	for dataFileIndex in range(trainTokenizerNumberOfFilesToUse):
 		path = paths[dataFileIndex]
 		print("dataFileIndex = ", dataFileIndex)
@@ -154,6 +154,7 @@ def trainTokenizerFullwordsDatafiles(tokensSet, paths):
 			for lineIndex, line in enumerate(lines):
 				tokens = fullwordTokenizeLine(line)
 				tokensSet.update(tokens)
+	return tokensSet
 		
 def fullwordTokenizeLine(line):
 	if(useFullwordTokenizerNLTK):
@@ -184,9 +185,9 @@ def loadTokenizerFullwords():
 			tokenizer = TokenizerFast(vocab=tokensVocab, special_tokens_mask=special_tokens_mask)
 		else:
 			tokenizer = TokenizerBasic()
-			tokensVocabDictionaryItems = createDictionaryItemsFromList(tokensVocab, 0)
+			tokensVocabDictionaryItems = SBNLPpt_GIAdefinePOSwordLists.createDictionaryItemsFromList(tokensVocab, 0)
 			tokenizer.dict = dict(tokensVocabDictionaryItems)
-			tokensSpecialDictionaryItems = createDictionaryItemsFromList(tokensSpecial, len(tokenizer.dict))
+			tokensSpecialDictionaryItems = SBNLPpt_GIAdefinePOSwordLists.createDictionaryItemsFromList(tokensSpecial, len(tokenizer.dict))
 			for i, j in tokensSpecialDictionaryItems:
 				tokenizer.dict[i] = j
 			keysList = list(tokenizer.dict.keys())
@@ -195,9 +196,3 @@ def loadTokenizerFullwords():
 				keysList = keysList + blankList
 			tokenizer.list = keysList
 	return tokenizer
-	
-def createDictionaryItemsFromList(lst, startIndex):
-	list1 = lst
-	list2 = range(startIndex, len(lst)+startIndex)
-	dictionaryItems = zip(list1, list2)
-	return dictionaryItems

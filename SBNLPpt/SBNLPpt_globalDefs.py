@@ -17,10 +17,16 @@ SBNLPpt globalDefs
 
 """
 
+
 useLovelyTensors = True
+"""
 if(useLovelyTensors):
 	import lovely_tensors as lt
 	lt.monkey_patch()
+"""
+import torch as pt
+pt.set_printoptions(profile="full")
+
 
 #recursive algorithm selection:
 useAlgorithmTransformer = False
@@ -45,6 +51,9 @@ trainStartDataFile = 0	#default: 0	#start data file to train (if continuing a tr
 trainNumberOfDataFiles = 100	#2	#100	#default: -1 (all)	#number of data files to train (for production typically train x dataFiles at a time)	#< numberOfDataFiles (30424) * trainSplitFraction
 testNumberOfDataFiles = 10	#2	#10	#default: -1 (all)
 
+LRPdatabaseName = 'NLTK'	#wordnet
+fixNLTKwordListAll = True	#add additional auxiliary having possessive words not found in NLTK word lists; ["has", "having", "'s"]
+
 relativeFolderLocations = False
 userName = 'user'	#default: user
 #storage location vars (requires 4TB harddrive);
@@ -52,10 +61,12 @@ if(relativeFolderLocations):
 	downloadCacheFolder = 'cache'
 	dataFolder = 'data'
 	modelFolderName = 'model'
+	LRPfolderName = 'LRPdata/' + LRPdatabaseName
 else:
 	downloadCacheFolder = '/media/' + userName + '/datasets/cache'
 	dataFolder = '/media/' + userName + '/datasets/data'
 	modelFolderName = '/media/' + userName + '/large/source/ANNpython/SBNLPpt/model'	#modelTemp, model
+	LRPfolderName = '/media/' + userName + '/large/source/ANNpython/SBNLPpt/LRPdata/' + LRPdatabaseName
 	
 semanticRelationVectorSpaces = False
 useMultipleModels = False
@@ -64,8 +75,10 @@ useFullwordTokenizer = False
 useFullwordTokenizerClass = True
 tokeniserOnlyTrainOnDictionary = False
 debugDoNotTrainModel = False
+useEffectiveFullwordTokenizer = False
 if(useAlgorithmGIA):
 	semanticRelationVectorSpaces = True
+	useVectorisedSemanticRelationIdentification = True	#optional
 	useEffectiveFullwordTokenizer = True	#required for useAlgorithmGIA
 
 	debugPrintModelPropagation = False
