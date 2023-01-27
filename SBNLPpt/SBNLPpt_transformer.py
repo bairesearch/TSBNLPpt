@@ -32,7 +32,9 @@ if(usePretrainedModelDebug):
 	from transformers import RobertaForMaskedLM
 else:
 	from SBNLPpt_transformerModel import RobertaForMaskedLM
-	
+
+from SBNLPpt_transformerModel import getMaxPositionEmbedding
+
 if(recursiveLayers):
 	from SBNLPpt_transformerModel import sharedLayerWeights
 	from SBNLPpt_transformerModel import sharedLayerWeightsOutput
@@ -44,6 +46,13 @@ else:
 	
 if(not usePretrainedModelDebug):
 
+	if(relativeTimeEmbeddings):
+		positionEmbeddingType = "relative_time"	#calculates relative time between layer tokens
+		maxPositionEmbeddings = getMaxPositionEmbedding(sequenceRegisterLength)
+	else:
+		positionEmbeddingType = "relative_key"	#"absolute"	#default
+		maxPositionEmbeddings = getMaxPositionEmbedding(sequenceMaxNumTokens)
+		
 	if(officialRobertaBaseModel):
 		numberOfHiddenLayers = 12	#default values
 	else:
@@ -99,15 +108,17 @@ if(not usePretrainedModelDebug):
 
 
 def createModel(vocabularySize):
+		
 	print("creating new model")	
 	config = RobertaConfig(
 		vocab_size=vocabularySize,  #sync with tokenizer vocab_size
-		max_position_embeddings=(sequenceMaxNumTokens+2),
+		max_position_embeddings=maxPositionEmbeddings,
 		hidden_size=hiddenLayerSize,
 		num_attention_heads=numberOfAttentionHeads,
 		num_hidden_layers=numberOfHiddenLayers,
 		intermediate_size=intermediateSize,
-		type_vocab_size=1
+		type_vocab_size=1,
+		position_embedding_type=positionEmbeddingType,
 	)
 	print("config.pad_token_id = ", config.pad_token_id)
 	model = RobertaForMaskedLM(config)
@@ -126,6 +137,10 @@ def propagate(device, model, tokenizer, batch):
 	attentionMask = batch['attentionMask'].to(device)
 	labels = batch['labels'].to(device)
 	
+	if(tokenMemoryBank):
+		attentionMaskMemoryBank = pt.ones((batchSize, sequenceRegisterMemoryBankLength)).to(device)
+		attentionMask = pt.cat((attentionMask, attentionMaskMemoryBank), dim=1)
+		
 	outputs = model(inputIDs, attention_mask=attentionMask, labels=labels)
 
 	predictionMask = pt.where(inputIDs==customMaskTokenID, 1.0, 0.0)	#maskTokenIndexFloat = maskTokenIndex.float()	

@@ -19,20 +19,19 @@ SBNLPpt globalDefs
 
 
 useLovelyTensors = True
-"""
 if(useLovelyTensors):
 	import lovely_tensors as lt
 	lt.monkey_patch()
-"""
-import torch as pt
-pt.set_printoptions(profile="full")
+else:
+	import torch as pt
+	pt.set_printoptions(profile="full")
 
 
 #recursive algorithm selection:
-useAlgorithmTransformer = False
+useAlgorithmTransformer = True
 useAlgorithmRNN = False
 useAlgorithmSANI = False
-useAlgorithmGIA = True
+useAlgorithmGIA = False
 
 sortDataFilesByName = True	#orig; False
 
@@ -67,12 +66,34 @@ else:
 	dataFolder = '/media/' + userName + '/datasets/data'
 	modelFolderName = '/media/' + userName + '/large/source/ANNpython/SBNLPpt/model'	#modelTemp, model
 	LRPfolderName = '/media/' + userName + '/large/source/ANNpython/SBNLPpt/LRPdata/' + LRPdatabaseName
+
+sequenceMaxNumTokens = 512	#window length (transformer/RNN/SANI)
+
+tokenMemoryBank = False	#initialise (dependent var)
+relativeTimeEmbeddings = False	#initialise (dependent var)
+if(useAlgorithmTransformer):
+	tokenMemoryBank = True	#apply attention to all tokens in sequenceRegister (standard contextualWindow + memoryBank), where memoryBank is updated based on recently attended tokens
+	tokenMemoryBankMaxAttentionHeads = 1	#maximum number of attention heads to identify important tokens to remember	#max value allowed = numberOfAttentionHeads (12)
+	if(tokenMemoryBank):
+		#tokenMemoryBank algorithm requires continuous/contiguous textual input	#batchSize > 0, will need to feed contiguous input for each sample in batch
+		relativeTimeEmbeddings = True	#attention scores are weighted based on a (learnable) function of the relative age between queried/keyed tokens
+		memoryBankSizeMultiplier = 1*tokenMemoryBankMaxAttentionHeads	#relative size of transformer window with memory bank relative to standard transformer contextual window	#determines max number of tokens to be stored in memory bank
+		sequenceRegisterContextualWindowLength = sequenceMaxNumTokens
+		sequenceRegisterMemoryBankLength = sequenceRegisterContextualWindowLength*memoryBankSizeMultiplier
+		sequenceRegisterLength = sequenceRegisterContextualWindowLength + sequenceRegisterMemoryBankLength
+		sequenceRegisterMaxActivationTime = memoryBankSizeMultiplier+1	#how long to remember unaccessed tokens	#will depend on memoryBankSizeMultiplier (not directly proportional, but this is a rough heuristic)
+		sequenceRegisterRenewTime = 0	#if tokens are accessed, what time to renew them to
+		sequenceRegisterTokenAccessTimeContextualWindow = sequenceMaxNumTokens	#how to adjust the access time of a given token last accessed in a previous contextual window 	#will depend on sequenceMaxNumTokens (not directly equal, but this is a rough heuristic)
+		sequenceRegisterVerifyMemoryBankSize = True	#if false, need to set memory bank size sufficiently high such that will never run out of space for retained tokens
+		sequenceRegisterMemoryBankPaddingAccessTime = sequenceRegisterMaxActivationTime	#set access time of padding high to ensure that it will learn to be ignored (does not interfere with positional calculations); may not be required given that all hidden states are zeroed
+	#else:
+	#	memoryBankSizeMultiplier = 0
 	
 semanticRelationVectorSpaces = False
 useMultipleModels = False
 useTrainedTokenizer = True
 useFullwordTokenizer = False
-useFullwordTokenizerClass = True
+useFullwordTokenizerClass = True	
 tokeniserOnlyTrainOnDictionary = False
 debugDoNotTrainModel = False
 useEffectiveFullwordTokenizer = False
@@ -108,7 +129,7 @@ if(useAlgorithmGIA):
 		tokeniserOnlyTrainOnDictionary = True	#optional	#ensures effective fullword tokenisation of dictionary words
 	useIndependentReverseRelationsModels = False	#else take input linear layer as forward embeddings and output linear layer [inversed] as reverse embeddings
 
-if(recursiveLayers or memoryTraceBias or simulatedDendriticBranches or semanticRelationVectorSpaces):
+if(recursiveLayers or memoryTraceBias or simulatedDendriticBranches or semanticRelationVectorSpaces or tokenMemoryBank):
 	useSyntacticBiases = True
 else:
 	useSyntacticBiases = False
@@ -185,8 +206,10 @@ elif(useAlgorithmGIA):
 if(simulatedDendriticBranches):
 	batchSize = batchSize//4	#requires more GPU RAM (reduced batchSize)
 if(memoryTraceBias):
-	batchSize = 1	#CHECKTHIS - memoryTraceBias algorithm requires continuous/contiguous textual input (for inference)
-	
+	batchSize = 1	#CHECKTHIS - memoryTraceBias algorithm requires continuous/contiguous textual input
+if(tokenMemoryBank):
+	batchSize = 1	#CHECKTHIS - tokenMemoryBank algorithm requires continuous/contiguous textual input	#batchSize > 0, will need to feed contiguous input for each sample in batch
+		
 if(useSmallBatchSizeDebug):
 	batchSize = 1	#use small batch size to enable simultaneous execution (GPU ram limited) 
 	
@@ -197,8 +220,6 @@ dataFileLastSampleIndex = 30423
 
 modelSaveNumberOfBatches = 1000	#resave model after x training batches
 
-
-sequenceMaxNumTokens = 512	#window length (transformer/RNN/SANI)
 
 #transformer only;
 customMaskTokenID = 4	#3
