@@ -40,7 +40,7 @@ else:
 
 
 
-modelPathName = modelFolderName + '/modelGIA.pt'
+modelPathName = modelPathName + '/modelGIA.pt'
 
 def preparePOSdictionary():
 	if(useVectorisedSemanticRelationIdentification):

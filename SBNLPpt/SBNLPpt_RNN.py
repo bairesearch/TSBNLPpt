@@ -31,7 +31,7 @@ else:
 
 numberOfHiddenLayers = 6
 
-modelPathName = modelFolderName + '/modelRNN.pt'
+modelPathName = modelPathName + '/modelRNN.pt'
 
 useBidirectionalRNN = False
 if(useBidirectionalRNN):

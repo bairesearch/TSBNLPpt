@@ -86,7 +86,7 @@ def tokenizeBasic(lines, tokenizer):
 		sample = TokenizerBasicOutputEmulate(inputID, maskID)
 	return sample
 
-def trainTokenizerFullwords(paths, vocabSize):
+def trainTokenizerFullwords(dataElements, vocabSize):
 	if(useFullwordTokenizerPretrained):
 		if(useFullwordTokenizerPretrainedAuto):
 			tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
@@ -95,18 +95,17 @@ def trainTokenizerFullwords(paths, vocabSize):
 	else:
 		if(useFullwordTokenizerFast):
 			tokenizer = TokenizerFast()
-		
-	if(useSmallTokenizerTrainNumberOfFiles):
-		trainTokenizerNumberOfFilesToUse = trainTokenizerNumberOfFilesToUseSmall
-	else:
-		trainTokenizerNumberOfFilesToUse = len(paths)
 	
 	#tokensList = []
 	if(tokeniserOnlyTrainOnDictionary):
 		tokensSet = trainTokenizerFullwordsDictionary()
 	else:
-		 tokensSet = trainTokenizerFullwordsDatafiles(paths)
-		 
+		if(usePreprocessedDataset):
+			tokensSet = trainTokenizerFullwordsDatafiles(dataElements, trainTokenizerNumberOfFilesToUse)
+		else:
+			print("trainTokenizerFullwords error: !tokeniserOnlyTrainOnDictionary && !usePreprocessedDataset")
+			exit()
+			
 	tokensList = list(tokensSet)
 	if(useFullwordTokenizerPretrained):
 		#tokensList.extend(specialTokens)
@@ -114,9 +113,9 @@ def trainTokenizerFullwords(paths, vocabSize):
 		tokenizer.add_tokens(tokensList)
 		tokenizer.add_tokens(specialTokens)
 		if(useFullwordTokenizerPretrainedAuto):
-			tokenizer.save_pretrained(modelFolderName)
+			tokenizer.save_pretrained(modelPathName)
 		else:
-			tokenizer.save_model(modelFolderName)			
+			tokenizer.save_model(modelPathName)			
 	else:
 		if(useFullwordTokenizerFast):
 			tokenizer.train(tokensList)
@@ -145,6 +144,11 @@ def trainTokenizerFullwordsDictionary(tokensSet):
 	return tokensSet
 	
 def trainTokenizerFullwordsDatafiles(paths):
+	if(useSmallTokenizerTrainNumberOfFiles):
+		trainTokenizerNumberOfFilesToUse = trainTokenizerNumberOfFilesToUseSmall
+	else:
+		trainTokenizerNumberOfFilesToUse = len(paths)
+		
 	tokensSet = set()
 	for dataFileIndex in range(trainTokenizerNumberOfFilesToUse):
 		path = paths[dataFileIndex]
@@ -173,9 +177,9 @@ def countNumberOfTokens(tokenizer):
 def loadTokenizerFullwords():	
 	if(useFullwordTokenizerPretrained):
 		if(useFullwordTokenizerPretrainedAuto):
-			tokenizer = AutoTokenizer.from_pretrained(modelFolderName, max_len=sequenceMaxNumTokens)
+			tokenizer = AutoTokenizer.from_pretrained(modelPathName, max_len=sequenceMaxNumTokens)
 		else:
-			tokenizer = RobertaTokenizer.from_pretrained(modelFolderName, max_len=sequenceMaxNumTokens)
+			tokenizer = RobertaTokenizer.from_pretrained(modelPathName, max_len=sequenceMaxNumTokens)
 	else:		
 		with open(tokensVocabPathName, "r") as handle:
 			tokensVocab = json.load(handle)

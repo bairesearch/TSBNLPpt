@@ -25,7 +25,7 @@ if(useLovelyTensors):
 else:
 	import torch as pt
 	pt.set_printoptions(profile="full")
-
+import math
 
 #recursive algorithm selection:
 useAlgorithmTransformer = True
@@ -40,41 +40,67 @@ memoryTraceBias = False	 #optional	#nncustom.Linear adjusts training/inference b
 simulatedDendriticBranches = False	#optional #nncustom.Linear simulates multiple independent fully connected weights per neuron
 
 statePreprocessDataset = False	#only required once
-stateTrainTokenizer = False	#only required once
+stateTrainTokeniser = False	#only required once
 stateTrainDataset = True
 stateTestDataset = False	#requires reserveValidationSet
 
 trainStartEpoch = 0	#start epoch of training (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
 trainNumberOfEpochs = 1	#default: 10	#number of epochs to train (for production typically train x epochs at a time)
 trainStartDataFile = 0	#default: 0	#start data file to train (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
-trainNumberOfDataFiles = 100	#2	#100	#default: -1 (all)	#number of data files to train (for production typically train x dataFiles at a time)	#< numberOfDataFiles (30424) * trainSplitFraction
-testNumberOfDataFiles = 10	#2	#10	#default: -1 (all)
+trainNumberOfDataFiles = 10	#100	#default: -1 (all)	#number of data files to train (for production typically train x dataFiles at a time)	#< numberOfDataFiles (30424) * trainSplitFraction
+testNumberOfDataFiles = 10	#10		#default: -1 (all)
 
 LRPdatabaseName = 'NLTK'	#wordnet
 fixNLTKwordListAll = True	#add additional auxiliary having possessive words not found in NLTK word lists; ["has", "having", "'s"]
 
 relativeFolderLocations = False
 userName = 'user'	#default: user
+tokenString = "INSERT_HUGGINGFACE_TOKEN_HERE"
 #storage location vars (requires 4TB harddrive);
-if(relativeFolderLocations):
-	downloadCacheFolder = 'cache'
-	dataFolder = 'data'
-	modelFolderName = 'model'
-	LRPfolderName = 'LRPdata/' + LRPdatabaseName
+
+datasetName = 'OSCAR1900'
+#datasetName = 'OSCAR2201'
+
+if(datasetName == 'OSCAR1900'):
+	usePreprocessedDataset = True	#!usePreprocessedDataset not supported
+elif(datasetName == 'OSCAR2201'):
+	usePreprocessedDataset = False	#usePreprocessedDataset untested
+
+if(usePreprocessedDataset):
+	if(datasetName == 'OSCAR1900'):
+		preprocessRemoveNewLineCharacters = True
+		preprocessLimitNumberDataFiles = False
+	elif(datasetName == 'OSCAR2201'):
+		preprocessRemoveNewLineCharacters = False
+		preprocessLimitNumberDataFiles = True	#preprocess a limited number of datafiles for tokeniser only
+	if(preprocessLimitNumberDataFiles):
+		preprocessNumberOfDataFiles = 1	#10	#100
 else:
-	downloadCacheFolder = '/media/' + userName + '/datasets/cache'
-	dataFolder = '/media/' + userName + '/datasets/data'
-	modelFolderName = '/media/' + userName + '/large/source/ANNpython/SBNLPpt/model'	#modelTemp, model
-	LRPfolderName = '/media/' + userName + '/large/source/ANNpython/SBNLPpt/LRPdata/' + LRPdatabaseName
+	preprocessRemoveNewLineCharacters = False
+	
+dataDrive = '/datasets/'
+workingDrive = '/large/source/ANNpython/SBNLPpt/'
+
+downloadCacheFolderName = 'cache'
+dataFolderName = 'data'
+modelFolderName = 'model'
+LRPfolderName = 'LRPdata/' + LRPdatabaseName
+if(not relativeFolderLocations):
+	downloadCachePathName = '/media/' + userName + dataDrive + downloadCacheFolderName
+	dataPathName = '/media/' + userName + dataDrive + dataFolderName
+	modelPathName = '/media/' + userName + workingDrive + modelFolderName
+	LRPpathName = '/media/' + userName + workingDrive + LRPfolderName
 
 sequenceMaxNumTokens = 512	#window length (transformer/RNN/SANI)
 
+createOrderedDataset = False	#initialise (dependent var)	#CHECKTHIS
 tokenMemoryBank = False	#initialise (dependent var)
 relativeTimeEmbeddings = False	#initialise (dependent var)
 if(useAlgorithmTransformer):
 	tokenMemoryBank = True	#apply attention to all tokens in sequenceRegister (standard contextualWindow + memoryBank), where memoryBank is updated based on recently attended tokens
 	tokenMemoryBankMaxAttentionHeads = 1	#maximum number of attention heads to identify important tokens to remember	#max value allowed = numberOfAttentionHeads (12)
 	if(tokenMemoryBank):
+		createOrderedDataset = True
 		#tokenMemoryBank algorithm requires continuous/contiguous textual input	#batchSize > 0, will need to feed contiguous input for each sample in batch
 		relativeTimeEmbeddings = True	#attention scores are weighted based on a (learnable) function of the relative age between queried/keyed tokens
 		memoryBankSizeMultiplier = 1*tokenMemoryBankMaxAttentionHeads	#relative size of transformer window with memory bank relative to standard transformer contextual window	#determines max number of tokens to be stored in memory bank
@@ -86,8 +112,7 @@ if(useAlgorithmTransformer):
 		sequenceRegisterTokenAccessTimeContextualWindow = sequenceMaxNumTokens	#how to adjust the access time of a given token last accessed in a previous contextual window 	#will depend on sequenceMaxNumTokens (not directly equal, but this is a rough heuristic)
 		sequenceRegisterVerifyMemoryBankSize = True	#if false, need to set memory bank size sufficiently high such that will never run out of space for retained tokens
 		sequenceRegisterMemoryBankPaddingAccessTime = sequenceRegisterMaxActivationTime	#set access time of padding high to ensure that it will learn to be ignored (does not interfere with positional calculations); may not be required given that all hidden states are zeroed
-	#else:
-	#	memoryBankSizeMultiplier = 0
+
 	
 semanticRelationVectorSpaces = False
 useMultipleModels = False
@@ -123,8 +148,8 @@ if(useAlgorithmGIA):
 			if(not useFullwordTokenizerFast):
 				useFullwordTokenizerClass = False
 			useTrainedTokenizer = False
-			tokensVocabPathName = modelFolderName + "/" + "vocab-fullword.json"
-			tokensSpecialPathName = modelFolderName + "/" + "special_tokens-fullword.json" 
+			tokensVocabPathName = modelPathName + "/" + "vocab-fullword.json"
+			tokensSpecialPathName = modelPathName + "/" + "special_tokens-fullword.json" 
 	else:
 		tokeniserOnlyTrainOnDictionary = True	#optional	#ensures effective fullword tokenisation of dictionary words
 	useIndependentReverseRelationsModels = False	#else take input linear layer as forward embeddings and output linear layer [inversed] as reverse embeddings
@@ -148,6 +173,7 @@ if(useLinearCustom):
 	useAutoResizeInput = False	#legacy implementation	#required for original python LinearFunction implementation (compared to C++ implementation and modified python LinearFunction)	#see https://discuss.pytorch.org/t/exact-python-implementation-of-linear-function-class/170177
 	
 if(memoryTraceBias):
+	createOrderedDataset = True
 	#FUTURE: require update of SBNLPpt_data to ensure that continuous/contiguous textual input (for inference) is provided
 	memoryTraceBiasHalflife = 2.0	#number of batches of batchSize=1 (ie sequences) to pass before memoryTrace is halved
 	memoryTraceWeightDirectionDependent = True
@@ -213,10 +239,16 @@ if(tokenMemoryBank):
 if(useSmallBatchSizeDebug):
 	batchSize = 1	#use small batch size to enable simultaneous execution (GPU ram limited) 
 	
-numberOfSamplesPerDataFile = 10000
-numberOfSamplesPerDataFileLast = 423
-dataFileLastSampleIndex = 30423
-
+numberOfDocumentsPerDataFile = 10000	#if !usePreprocessedDataset; numberOfDocumentsPerDataFile = number of documents per artificial datafile index (e.g. trainNumberOfDataFiles)
+if(datasetName == 'OSCAR1900'):
+	numberOfDocuments = 304230423	#orig: dataFileLastIndex*numberOfDocumentsPerDataFile + numberOfSamplesPerDataFileLast = 30423*10000 + 423
+	numberOfDataFiles =	math.ceil(numberOfDocuments/numberOfDocumentsPerDataFile) #30424
+	numberOfSamplesPerDataFileLast = numberOfDocuments%numberOfDocumentsPerDataFile	#423
+elif(datasetName == 'OSCAR2201'):
+	numberOfDocuments = 431992659	#number of documents	#https://huggingface.co/datasets/oscar-corpus/OSCAR-2201
+	numberOfDataFiles =	math.ceil(numberOfDocuments/numberOfDocumentsPerDataFile)
+	numberOfSamplesPerDataFileLast = numberOfDocuments%numberOfDocumentsPerDataFile
+dataFileLastIndex = numberOfDataFiles-1
 
 modelSaveNumberOfBatches = 1000	#resave model after x training batches
 
@@ -231,7 +263,7 @@ if(useEffectiveFullwordTokenizer):
 	else:
 		vocabularySize = 240000	#approx number of unique words in english	#236736	#200000
 else:
-	vocabularySize = 30522	#default: 30522	#number of independent tokens identified by SBNLPpt_data.trainTokenizerSubwords
+	vocabularySize = 30522	#default: 30522	#number of independent tokens identified by SBNLPpt_data.trainTokeniserSubwords
 
 accuracyTopN = 1	#default: 1	#>= 1	#calculates batch accuracy based on top n dictionary predictions
 
@@ -239,3 +271,8 @@ specialTokens = ['<s>', '<pad>', '</s>', '<unk>', '<mask>']
 specialTokenPadding = '<pad>'
 specialTokenMask = '<mask>'
 
+if(createOrderedDataset):
+	orderedDatasetDocNumberSamples = 10
+	orderedDatasetDocNumberTokens = orderedDatasetDocNumberSamples*sequenceMaxNumTokens
+	orderedDatasetDocMinSizeCharacters = 10000	#prevents having to tokenise small document samples to count number of tokens
+	orderedDatasetSplitDocumentsBySentences = False

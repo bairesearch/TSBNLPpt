@@ -249,7 +249,7 @@ def readWordList(POSname):
 
 def generateWordlistFileName(fileName):
 	print("fileName = ", fileName)
-	wordlistFileName = LRPfolderName + "/" + fileName + ".txt"
+	wordlistFileName = LRPpathName + "/" + fileName + ".txt"
 	return wordlistFileName
 	
 def createDictionaryItemsFromList(lst, startIndex):

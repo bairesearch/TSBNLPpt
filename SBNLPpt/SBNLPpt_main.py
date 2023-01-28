@@ -22,14 +22,13 @@ python SBNLPpt_main.py
 
 # Description:
 SBNLPpt main - Syntactic Bias natural language processing (SBNLP): neural architectures with various syntactic inductive biases 
-(recursiveLayers, simulatedDendriticBranches, memoryTraceBias, semanticRelationVectorSpaces, relativeTimeEmbeddings, tokenMemoryBank)
+(recursiveLayers, simulatedDendriticBranches, memoryTraceBias, semanticRelationVectorSpaces, tokenMemoryBank)
 
 """
 
 
 import torch
 from tqdm.auto import tqdm
-from pathlib import Path
 
 from transformers import AdamW
 import math 
@@ -54,31 +53,26 @@ elif(useAlgorithmGIA):
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
 def main():
+
+	dataset = None
+	if(statePreprocessDataset or (not usePreprocessedDataset)):
+		dataset = SBNLPpt_data.loadDataset()
 	if(statePreprocessDataset):
-		dataset = SBNLPpt_data.downloadDataset()
 		SBNLPpt_data.preprocessDataset(dataset)
-	
-	if(Path(dataFolder).exists()):
-		pathsGlob = Path(dataFolder).glob('**/*.txt')
-		if(sortDataFilesByName):
-			pathsGlob = sorted(pathsGlob, key=os.path.getmtime)	#key required because path names indices are not padded with 0s
-		paths = [str(x) for x in pathsGlob]
-	else:
-		print("main error: Path does not exist, dataFolder = ", dataFolder)
-		exit()
+	dataElements = SBNLPpt_data.prepareDataElements(dataset)
 	
 	if(usePretrainedModelDebug):
 		tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
-		testDataset(tokenizer, paths)
+		testDataset(tokenizer, dataElements)
 	else:
-		if(stateTrainTokenizer):
-			SBNLPpt_data.trainTokenizer(paths, vocabularySize)
+		if(stateTrainTokeniser):
+			SBNLPpt_data.trainTokeniser(dataElements, vocabularySize)
 		if(stateTrainDataset or stateTestDataset):
-			tokenizer = SBNLPpt_data.loadTokenizer()
+			tokenizer = SBNLPpt_data.loadTokeniser()
 		if(stateTrainDataset):
-			trainDataset(tokenizer, paths)
+			trainDataset(tokenizer, dataElements)
 		if(stateTestDataset):
-			testDataset(tokenizer, paths)
+			testDataset(tokenizer, dataElements)
 			
 def continueTrainingModel():
 	continueTrain = False
@@ -86,28 +80,36 @@ def continueTrainingModel():
 		continueTrain = True	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
 	return continueTrain	
 	
-def trainDataset(tokenizer, paths):
+def trainDataset(tokenizer, dataElements):
 
 	#vocabSize = countNumberOfTokens(tokenizer)
 	model, optim = prepareModelTrainWrapper()
 
-	numberOfDataFiles = len(paths)
-
-	pathIndexMin = trainStartDataFile
-	if(reserveValidationSet and trainNumberOfDataFiles==-1):
-		pathIndexMax = int(numberOfDataFiles*trainSplitFraction)
+	if(usePreprocessedDataset):
+		numberOfDataFiles = SBNLPpt_data.getNumberOfDataFiles(dataElements)
+		pathIndexMin = trainStartDataFile
+		if(reserveValidationSet and trainNumberOfDataFiles==-1):
+			pathIndexMax = int(numberOfDataFiles*trainSplitFraction)
+		else:
+			pathIndexMax = pathIndexMin+trainNumberOfDataFiles
 	else:
-		pathIndexMax = pathIndexMin+trainNumberOfDataFiles
+		if(trainStartDataFile > 0):
+			print("trainDataset error: !usePreprocessedDataset does not support continued training; (trainStartDataFile > 0)")
+			exit()
+		pathIndexMin = 0
+		pathIndexMax = trainNumberOfDataFiles
+	
 	if(useAlgorithmTransformer):
 		useMLM = True
 	else:
 		useMLM = False
-	loader = SBNLPpt_data.createDataLoader(useMLM, tokenizer, paths, pathIndexMin, pathIndexMax)
+	loader = SBNLPpt_data.createDataLoader(useMLM, tokenizer, dataElements, pathIndexMin, pathIndexMax)
 	
 	for epoch in range(trainStartEpoch, trainStartEpoch+trainNumberOfEpochs):
 		loop = tqdm(loader, leave=True)
 		for batchIndex, batch in enumerate(loop):
-
+			#print("batch = ", batch)
+			
 			loss, accuracy = trainBatchWrapper(batchIndex, batch, tokenizer, model, optim)
 			
 			loop.set_description(f'Epoch {epoch}')
@@ -115,20 +117,25 @@ def trainDataset(tokenizer, paths):
 		
 		saveModel(model)
 
-def testDataset(tokenizer, paths):
+def testDataset(tokenizer, dataElements):
 
 	model = prepareModelTestWrapper()
 	
-	numberOfDataFiles = len(paths)
-
-	pathIndexMin = int(numberOfDataFiles*trainSplitFraction)
-	pathIndexMax = pathIndexMin+testNumberOfDataFiles
+	if(usePreprocessedDataset):
+		numberOfDataFiles = SBNLPpt_data.getNumberOfDataFiles(dataElements)
+		pathIndexMin = int(numberOfDataFiles*trainSplitFraction)
+		pathIndexMax = pathIndexMin+testNumberOfDataFiles
+	else:
+		print("testDataset warning: !usePreprocessedDataset does not support unique test set")
+		pathIndexMin = 0
+		pathIndexMax = testNumberOfDataFiles
+	
 	if(useAlgorithmTransformer):
 		useMLM = True
 	else:
 		useMLM = False
 		
-	loader = SBNLPpt_data.createDataLoader(useMLM, tokenizer, paths, pathIndexMin, pathIndexMax)
+	loader = SBNLPpt_data.createDataLoader(useMLM, tokenizer, dataElements, pathIndexMin, pathIndexMax)
 		
 	for epoch in range(trainStartEpoch, trainStartEpoch+trainNumberOfEpochs):
 		loop = tqdm(loader, leave=True)

@@ -126,11 +126,11 @@ def createModel(vocabularySize):
 
 def loadModel():
 	print("loading existing model")
-	model = RobertaForMaskedLM.from_pretrained(modelFolderName, local_files_only=True)
+	model = RobertaForMaskedLM.from_pretrained(modelPathName, local_files_only=True)
 	return model
 	
 def saveModel(model):
-	model.save_pretrained(modelFolderName)
+	model.save_pretrained(modelPathName)
 
 def propagate(device, model, tokenizer, batch):	
 	inputIDs = batch['inputIDs'].to(device)

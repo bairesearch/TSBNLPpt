@@ -31,7 +31,7 @@ if(SBNLPpt_SANImodel.applyIOconversionLayers):
 else:
 	embeddingLayerSize = hiddenLayerSize
 
-modelPathName = modelFolderName + '/modelSANI.pt'
+modelPathName = modelPathName + '/modelSANI.pt'
 
 #useBidirectionalSANI = False	#not currently supported
 #if(useBidirectionalSANI):
