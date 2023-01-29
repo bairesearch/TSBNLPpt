@@ -237,8 +237,7 @@ class RobertaEmbeddings(nn.Module):
 				self.padding_idx + 1, sequence_length + self.padding_idx + 1, dtype=torch.long, device=inputs_embeds.device
 			)
 			return position_ids.unsqueeze(0).expand(input_shape)
-
-
+			
 # Copied from transformers.models.bert.modeling_bert.BertSelfAttention with Bert->Roberta
 class RobertaSelfAttention(nn.Module):
 	def __init__(self, config, robertaSharedLayerModules=None, position_embedding_type=None):
@@ -278,9 +277,11 @@ class RobertaSelfAttention(nn.Module):
 		self.is_decoder = config.is_decoder
 
 		if(tokenMemoryBank):
-			self.sequenceRegisterMemoryBankHiddenStates = torch.zeros(batchSize, sequenceRegisterMemoryBankLength, config.hidden_size).to(device)	#CHECKTHIS; same shape as hidden_states
-			self.sequenceRegisterMemoryBankAccessTimes = torch.ones(batchSize, sequenceRegisterMemoryBankLength).to(device)
-			self.sequenceRegisterMemoryBankAccessTimes = torch.multiply(self.sequenceRegisterMemoryBankAccessTimes, sequenceRegisterMemoryBankPaddingAccessTime)
+			self.hidden_size = config.hidden_size
+			self.batchIndex = 0
+			self.sequenceRegisterMemoryBankHiddenStates = None
+			self.sequenceRegisterMemoryBankAccessTimes = None
+			self.clearSequenceRegisterMemoryBank()
 			
 	def transpose_for_scores(self, x: torch.Tensor) -> torch.Tensor:
 		new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
@@ -402,6 +403,11 @@ class RobertaSelfAttention(nn.Module):
 		return outputs, attentionProbsMaxIndex
 
 	if(tokenMemoryBank):
+		def clearSequenceRegisterMemoryBank(self):
+			self.sequenceRegisterMemoryBankHiddenStates = torch.zeros(batchSize, sequenceRegisterMemoryBankLength, self.hidden_size).to(device)	#CHECKTHIS; same shape as hidden_states
+			self.sequenceRegisterMemoryBankAccessTimes = torch.ones(batchSize, sequenceRegisterMemoryBankLength).to(device)
+			self.sequenceRegisterMemoryBankAccessTimes = torch.multiply(self.sequenceRegisterMemoryBankAccessTimes, sequenceRegisterMemoryBankPaddingAccessTime)
+
 		def getSequenceRegisterTokenTimes(self, sequenceLength, hiddenStates, sequenceRegisterMemoryBankAccessTimes):
 			sequenceRegisterContextualWindowTokenTimes = torch.arange(start=sequenceLength, end=0, step=-1, device=hiddenStates.device).expand((batchSize, -1))
 			sequenceRegisterMemoryBankTokenTimes = torch.multiply(sequenceRegisterMemoryBankAccessTimes, sequenceRegisterTokenAccessTimeContextualWindow)
@@ -475,6 +481,10 @@ class RobertaAttention(nn.Module):
 	) -> Tuple[torch.Tensor]:
 			
 		if(tokenMemoryBank):
+			if(self.self.batchIndex % orderedDatasetDocNumberSamples == 0):
+				self.self.clearSequenceRegisterMemoryBank()
+				self.self.batchIndex += 0
+			self.self.batchIndex += 1
 			hidden_states = self.loadSequenceRegisterHiddenStates(hidden_states, self.self.sequenceRegisterMemoryBankHiddenStates)	#load additional hidden states from memory bank
 		
 		self_outputs, attentionProbsMaxIndex = self.self(
@@ -535,7 +545,9 @@ class RobertaAttention(nn.Module):
 				sequenceRegisterRetainSizeSample = sequenceRegisterRetainSize[sampleIndex]
 				sequenceRegisterMemoryBankHiddenStatesSample = hiddenStatesSample[sequenceRegisterRetainSample]
 				sequenceRegisterMemoryBankAccessTimesSample = sequenceRegisterAccessTimeSample[sequenceRegisterRetainSample]
-				#print("sequenceRegisterRetainSizeSample = ", sequenceRegisterRetainSizeSample.cpu().numpy())
+				#if(sequenceRegisterRetainSizeSample > sequenceRegisterLength):
+				if(debugPrintSequenceRegisterRetainSize):
+					print("sequenceRegisterRetainSizeSample = ", sequenceRegisterRetainSizeSample.cpu().numpy())
 				if(sequenceRegisterRetainSizeSample < sequenceRegisterLength):
 					#pad sequence register with dummy tokens
 					paddingSize = sequenceRegisterLength-sequenceRegisterRetainSizeSample

@@ -148,4 +148,3 @@ def propagate(device, model, tokenizer, batch):
 	loss = outputs.loss
 	
 	return loss, accuracy
-
