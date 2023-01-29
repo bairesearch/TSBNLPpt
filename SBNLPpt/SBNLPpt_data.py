@@ -353,15 +353,25 @@ def getBatchOrderedSamples(datasetIterator, documentIndex, tokenizer):
 			stillGettingbatchDocumentSamples = False
 		if(len(documentText) > orderedDatasetDocMinSizeCharacters):
 			documentTokens = tokenise(documentText, tokenizer, None)
-			documentTokens = documentTokens.input_ids[0]
-			batchDocumentSampleIndex = splitDocumentTokens(documentTokens, batchDocumentSamples, batchDocumentSampleIndex)
+			documentTokensIDs = documentTokens.input_ids[0]
+			batchDocumentSampleIndex = splitDocumentTokens(documentTokensIDs, batchDocumentSamples, batchDocumentSampleIndex)
 		if(batchDocumentSampleIndex == batchSize):
 			stillGettingbatchDocumentSamples = False
 	
 	documentSamplesBatchList = list(map(list, zip(*batchDocumentSamples)))	#transpose list of lists: batchSize*numberOfDocumentSamples -> numberOfDocumentSamples*batchSize
-
+	#printDocumentSamplesBatchList(tokenizer, documentSamplesBatchList)
+	
 	return documentSamplesBatchList, documentIndex, reachedEndOfDataset
 
+def printDocumentSamplesBatchList(tokenizer, documentSamplesBatchList):
+	for sampleIndex1 in range(orderedDatasetDocNumberSamples):
+		print("sampleIndex1 = ", sampleIndex1)
+		for sampleIndex2 in range(batchSize):
+			print("sampleIndex2 = ", sampleIndex2)
+			sample_ids = documentSamplesBatchList[sampleIndex1][sampleIndex2]
+			sampleString = tokenizer.convert_tokens_to_string(tokenizer.convert_ids_to_tokens(sample_ids))
+			print("sample = ", sampleString)
+			
 def splitDocumentTokens(documentTokens, batchDocumentSamples, batchDocumentSampleIndex):
 	if(orderedDatasetSplitDocumentsBySentences):
 		print("splitDocumentTokens error: orderedDatasetSplitDocumentsBySentences not yet coded")

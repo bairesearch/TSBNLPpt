@@ -340,13 +340,18 @@ class RobertaSelfAttention(nn.Module):
 		if(relativeTimeEmbeddings):
 			if self.position_embedding_type == "relative_time":
 				sequenceRegisterTokenTimes = self.getSequenceRegisterTokenTimes(sequenceMaxNumTokens, hidden_states, self.sequenceRegisterMemoryBankAccessTimes)
-				position_ids_l = sequenceRegisterTokenTimes.view(-1, 1)
-				position_ids_r = sequenceRegisterTokenTimes.view(1, -1)
-				distance = position_ids_l - position_ids_r
-				distance = distance.long()
-				positional_embedding = self.time_embedding(distance + self.max_position_embeddings - 1)
-				positional_embedding = positional_embedding.to(dtype=query_layer.dtype)  # fp16 compatibility
-				relative_position_scores = torch.einsum("bhld,lrd->bhlr", query_layer, positional_embedding)
+				relativePositionScoresList = []
+				for sampleIndex in range(batchSize):	#do not parallel process samples as their token times are different
+					position_ids_l = sequenceRegisterTokenTimes[sampleIndex].view(-1, 1)
+					position_ids_r = sequenceRegisterTokenTimes[sampleIndex].view(1, -1)
+					distance = position_ids_l - position_ids_r
+					distance = distance.long()
+					positional_embedding = self.time_embedding(distance + self.max_position_embeddings - 1)
+					positional_embedding = positional_embedding.to(dtype=query_layer.dtype)  # fp16 compatibility
+					queryLayerSample = torch.unsqueeze(query_layer[sampleIndex], dim=0)
+					relative_position_scores = torch.einsum("bhld,lrd->bhlr", queryLayerSample, positional_embedding)
+					relativePositionScoresList.append(relative_position_scores[0])
+				relative_position_scores = torch.stack(relativePositionScoresList, dim=0)
 				attention_scores = attention_scores + relative_position_scores	
 		else:
 			if self.position_embedding_type == "relative_key" or self.position_embedding_type == "relative_key_query":
@@ -398,7 +403,7 @@ class RobertaSelfAttention(nn.Module):
 
 	if(tokenMemoryBank):
 		def getSequenceRegisterTokenTimes(self, sequenceLength, hiddenStates, sequenceRegisterMemoryBankAccessTimes):
-			sequenceRegisterContextualWindowTokenTimes = torch.arange(start=sequenceLength, end=0, step=-1, device=hiddenStates.device).expand((1, -1))
+			sequenceRegisterContextualWindowTokenTimes = torch.arange(start=sequenceLength, end=0, step=-1, device=hiddenStates.device).expand((batchSize, -1))
 			sequenceRegisterMemoryBankTokenTimes = torch.multiply(sequenceRegisterMemoryBankAccessTimes, sequenceRegisterTokenAccessTimeContextualWindow)
 			sequenceRegisterTokenTimes = torch.cat((sequenceRegisterContextualWindowTokenTimes, sequenceRegisterMemoryBankTokenTimes), dim=1)
 			return sequenceRegisterTokenTimes

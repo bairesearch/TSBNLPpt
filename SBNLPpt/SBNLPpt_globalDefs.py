@@ -47,7 +47,7 @@ stateTestDataset = False	#requires reserveValidationSet
 trainStartEpoch = 0	#start epoch of training (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
 trainNumberOfEpochs = 1	#default: 10	#number of epochs to train (for production typically train x epochs at a time)
 trainStartDataFile = 0	#default: 0	#start data file to train (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
-trainNumberOfDataFiles = 10	#100	#default: -1 (all)	#number of data files to train (for production typically train x dataFiles at a time)	#< numberOfDataFiles (30424) * trainSplitFraction
+trainNumberOfDataFiles = 100	#100	#default: -1 (all)	#number of data files to train (for production typically train x dataFiles at a time)	#< numberOfDataFiles (30424) * trainSplitFraction
 testNumberOfDataFiles = 10	#10		#default: -1 (all)
 
 LRPdatabaseName = 'NLTK'	#wordnet
@@ -55,7 +55,7 @@ fixNLTKwordListAll = True	#add additional auxiliary having possessive words not 
 
 relativeFolderLocations = False
 userName = 'user'	#default: user
-tokenString = "INSERT_HUGGINGFACE_TOKEN_HERE"
+tokenString = "INSERT_HUGGINGFACE_TOKEN_HERE"	#default: INSERT_HUGGINGFACE_TOKEN_HERE
 #storage location vars (requires 4TB harddrive);
 
 datasetName = 'OSCAR1900'
@@ -234,7 +234,7 @@ if(simulatedDendriticBranches):
 if(memoryTraceBias):
 	batchSize = 1	#CHECKTHIS - memoryTraceBias algorithm requires continuous/contiguous textual input
 if(tokenMemoryBank):
-	batchSize = 1	#CHECKTHIS - tokenMemoryBank algorithm requires continuous/contiguous textual input	#batchSize > 0, will need to feed contiguous input for each sample in batch
+	batchSize = 2	#CHECKTHIS - tokenMemoryBank algorithm requires continuous/contiguous textual input	#batchSize > 0, will need to feed contiguous input for each sample in batch
 		
 if(useSmallBatchSizeDebug):
 	batchSize = 1	#use small batch size to enable simultaneous execution (GPU ram limited) 
