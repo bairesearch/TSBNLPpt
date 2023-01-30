@@ -115,6 +115,7 @@ def trainDataset(tokenizer, dataElements):
 			loop.set_description(f'Epoch {epoch}')
 			loop.set_postfix(batchIndex=batchIndex, loss=loss, accuracy=accuracy)
 		
+		print("finished training model")
 		saveModel(model)
 
 def testDataset(tokenizer, dataElements):

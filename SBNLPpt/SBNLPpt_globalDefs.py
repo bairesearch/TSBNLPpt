@@ -47,8 +47,8 @@ stateTestDataset = False	#requires reserveValidationSet
 trainStartEpoch = 0	#start epoch of training (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
 trainNumberOfEpochs = 1	#default: 10	#number of epochs to train (for production typically train x epochs at a time)
 trainStartDataFile = 0	#default: 0	#start data file to train (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
-trainNumberOfDataFiles = 100	#100	#default: -1 (all)	#number of data files to train (for production typically train x dataFiles at a time)	#< numberOfDataFiles (30424) * trainSplitFraction
-testNumberOfDataFiles = 10	#10		#default: -1 (all)
+trainNumberOfDataFiles = 20000	#20000	#100	#default: -1 (all)	#number of data files to train (for production typically train x dataFiles at a time)	#< numberOfDataFiles (30424) * trainSplitFraction	#trainNumberOfDataFiles should be >> default if createOrderedDataset (as most have insufficient text data)
+testNumberOfDataFiles = 10	#10		#default: -1 (all)	#testNumberOfDataFiles should be >> default if createOrderedDataset (as most have insufficient text data)
 
 LRPdatabaseName = 'NLTK'	#wordnet
 fixNLTKwordListAll = True	#add additional auxiliary having possessive words not found in NLTK word lists; ["has", "having", "'s"]
