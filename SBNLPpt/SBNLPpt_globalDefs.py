@@ -47,8 +47,8 @@ stateTestDataset = False	#requires reserveValidationSet
 trainStartEpoch = 0	#start epoch of training (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
 trainNumberOfEpochs = 1	#default: 10	#number of epochs to train (for production typically train x epochs at a time)
 trainStartDataFile = 0	#default: 0	#start data file to train (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
-trainNumberOfDataFiles = 20000	#20000	#100	#default: -1 (all)	#number of data files to train (for production typically train x dataFiles at a time)	#< numberOfDataFiles (30424) * trainSplitFraction	#trainNumberOfDataFiles should be >> default if createOrderedDataset (as most have insufficient text data)
-testNumberOfDataFiles = 10	#10		#default: -1 (all)	#testNumberOfDataFiles should be >> default if createOrderedDataset (as most have insufficient text data)
+trainNumberOfDataFiles = 10	#100	#number of data files to train (for production typically train x dataFiles at a time)	#< datasetNumberOfDataFiles (30424) * trainSplitFraction
+testNumberOfDataFiles = 10	#10		
 
 LRPdatabaseName = 'NLTK'	#wordnet
 fixNLTKwordListAll = True	#add additional auxiliary having possessive words not found in NLTK word lists; ["has", "having", "'s"]
@@ -241,14 +241,14 @@ if(useSmallBatchSizeDebug):
 	
 numberOfDocumentsPerDataFile = 10000	#if !usePreprocessedDataset; numberOfDocumentsPerDataFile = number of documents per artificial datafile index (e.g. trainNumberOfDataFiles)
 if(datasetName == 'OSCAR1900'):
-	numberOfDocuments = 304230423	#orig: dataFileLastIndex*numberOfDocumentsPerDataFile + numberOfSamplesPerDataFileLast = 30423*10000 + 423
-	numberOfDataFiles =	math.ceil(numberOfDocuments/numberOfDocumentsPerDataFile) #30424
-	numberOfSamplesPerDataFileLast = numberOfDocuments%numberOfDocumentsPerDataFile	#423
+	datasetNumberOfDocuments = 304230423	#orig: dataFileLastIndex*numberOfDocumentsPerDataFile + datasetNumberOfSamplesPerDataFileLast = 30423*10000 + 423
+	datasetNumberOfDataFiles =	math.ceil(datasetNumberOfDocuments/numberOfDocumentsPerDataFile) #30424
+	datasetNumberOfSamplesPerDataFileLast = datasetNumberOfDocuments%numberOfDocumentsPerDataFile	#423
 elif(datasetName == 'OSCAR2201'):
-	numberOfDocuments = 431992659	#number of documents	#https://huggingface.co/datasets/oscar-corpus/OSCAR-2201
-	numberOfDataFiles =	math.ceil(numberOfDocuments/numberOfDocumentsPerDataFile)
-	numberOfSamplesPerDataFileLast = numberOfDocuments%numberOfDocumentsPerDataFile
-dataFileLastIndex = numberOfDataFiles-1
+	datasetNumberOfDocuments = 431992659	#number of documents	#https://huggingface.co/datasets/oscar-corpus/OSCAR-2201
+	datasetNumberOfDataFiles =	math.ceil(datasetNumberOfDocuments/numberOfDocumentsPerDataFile)
+	datasetNumberOfSamplesPerDataFileLast = datasetNumberOfDocuments%numberOfDocumentsPerDataFile
+dataFileLastIndex = datasetNumberOfDataFiles-1
 
 modelSaveNumberOfBatches = 1000	#resave model after x training batches
 
@@ -276,3 +276,7 @@ if(createOrderedDataset):
 	orderedDatasetDocNumberTokens = orderedDatasetDocNumberSamples*sequenceMaxNumTokens
 	orderedDatasetDocMinSizeCharacters = 10000	#prevents having to tokenise small document samples to count number of tokens
 	orderedDatasetSplitDocumentsBySentences = False
+	orderedDatasetDocumentProbabilityOfSufficientLength = 0.01	#min probability that a document is of sufficient length that it can be split into orderedDatasetDocNumberSamples
+	dataFilesFeedMultiplier = int(1/orderedDatasetDocumentProbabilityOfSufficientLength)
+else:
+	dataFilesFeedMultiplier = 1

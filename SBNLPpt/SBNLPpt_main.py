@@ -86,24 +86,17 @@ def trainDataset(tokenizer, dataElements):
 	model, optim = prepareModelTrainWrapper()
 
 	if(usePreprocessedDataset):
-		numberOfDataFiles = SBNLPpt_data.getNumberOfDataFiles(dataElements)
 		pathIndexMin = trainStartDataFile
-		if(reserveValidationSet and trainNumberOfDataFiles==-1):
-			pathIndexMax = int(numberOfDataFiles*trainSplitFraction)
-		else:
-			pathIndexMax = pathIndexMin+trainNumberOfDataFiles
+		pathIndexMax = pathIndexMin+trainNumberOfDataFiles*dataFilesFeedMultiplier
 	else:
-		if(trainStartDataFile > 0):
-			print("trainDataset error: !usePreprocessedDataset does not support continued training; (trainStartDataFile > 0)")
-			exit()
-		pathIndexMin = 0
-		pathIndexMax = trainNumberOfDataFiles
+		pathIndexMin = None
+		pathIndexMax = None
 	
 	if(useAlgorithmTransformer):
 		useMLM = True
 	else:
 		useMLM = False
-	loader = SBNLPpt_data.createDataLoader(useMLM, tokenizer, dataElements, pathIndexMin, pathIndexMax)
+	loader = SBNLPpt_data.createDataLoader(useMLM, tokenizer, dataElements, trainNumberOfDataFiles, pathIndexMin, pathIndexMax)
 	
 	for epoch in range(trainStartEpoch, trainStartEpoch+trainNumberOfEpochs):
 		loop = tqdm(loader, leave=True)
@@ -123,20 +116,21 @@ def testDataset(tokenizer, dataElements):
 	model = prepareModelTestWrapper()
 	
 	if(usePreprocessedDataset):
-		numberOfDataFiles = SBNLPpt_data.getNumberOfDataFiles(dataElements)
-		pathIndexMin = int(numberOfDataFiles*trainSplitFraction)
-		pathIndexMax = pathIndexMin+testNumberOfDataFiles
+		if(reserveValidationSet):
+			pathIndexMin = int(datasetNumberOfDataFiles*trainSplitFraction)
+		else:
+			pathIndexMin = 0
+		pathIndexMax = pathIndexMin+testNumberOfDataFiles*dataFilesFeedMultiplier
 	else:
-		print("testDataset warning: !usePreprocessedDataset does not support unique test set")
-		pathIndexMin = 0
-		pathIndexMax = testNumberOfDataFiles
+		pathIndexMin = None
+		pathIndexMax = None
 	
 	if(useAlgorithmTransformer):
 		useMLM = True
 	else:
 		useMLM = False
 		
-	loader = SBNLPpt_data.createDataLoader(useMLM, tokenizer, dataElements, pathIndexMin, pathIndexMax)
+	loader = SBNLPpt_data.createDataLoader(useMLM, tokenizer, dataElements, testNumberOfDataFiles, pathIndexMin, pathIndexMax)
 		
 	for epoch in range(trainStartEpoch, trainStartEpoch+trainNumberOfEpochs):
 		loop = tqdm(loader, leave=True)

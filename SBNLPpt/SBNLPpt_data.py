@@ -35,12 +35,6 @@ if(not useLovelyTensors):
 
 #store models to large datasets partition cache folder (not required)
 #os.environ['TRANSFORMERS_CACHE'] = '/media/user/datasets/models/'	#select partition with 3TB+ disk space
-
-def getNumberOfDataFiles(dataElements):
-	#if(usePreprocessedDataset):
-	#	paths = dataElements
-	#	numberOfDataFiles = len(paths)
-	return numberOfDataFiles
 	
 def loadDataset():
 	if(datasetName == 'OSCAR1900'):
@@ -142,7 +136,7 @@ def trainTokeniserSubwords(dataElements, vocabSize):
 		if(useSmallTokenizerTrainNumberOfFiles):
 			trainTokenizerNumberOfFilesToUse = trainTokenizerNumberOfFilesToUseSmall
 		else:
-			trainTokenizerNumberOfFilesToUse = getNumberOfDataFiles(dataElements)
+			trainTokenizerNumberOfFilesToUse = datasetNumberOfDataFiles
 
 	tokenizer = ByteLevelBPETokenizer()
 
@@ -192,27 +186,25 @@ def dataFileIndexListContainsLastDocument(dataFileIndexList):
 			containsDataFileLastDocument = True
 	return containsDataFileLastDocument
 	
-class DatasetHDD(torch.utils.data.Dataset):
-	def __init__(self, useMLM, dataFileIndexList, dataElements, tokenizer):
+class DataloaderDatasetHDD(torch.utils.data.Dataset):
+	def __init__(self, useMLM, numberOfDocumentsEst, dataFileIndexList, dataElements, tokenizer):
 		self.useMLM = useMLM
 		self.dataFileIndexList = dataFileIndexList
 		self.paths = dataElements
 		self.tokenizer = tokenizer
-		self.containsDataFileLastDocument = dataFileIndexListContainsLastDocument(dataFileIndexList)
-		self.datasetNumberOfDocuments = len(self)
+		self.numberOfDocuments = getNumberOfDocuments(numberOfDocumentsEst, dataFileIndexList)
 		if(createOrderedDataset):
 			self.dataFileIndexRelative = 0
 			self.documentIndexInDataFile = 0
 			self.dataFileLinesIterator = None
-			self.documentSamplesBatched = None
-			self.sampleIndexInDocument = 0
-			self.batchIndexInSample = 0
+			self.documentSegmentsBatchList = None
+			self.segmentIndexInDocument = 0
+			self.sampleIndexInBatch = 0
 		else:
 			self.encodings = None
 
 	def __len__(self):
-		datasetNumberOfDocuments = getDatasetNumberOfDocuments(self.dataFileIndexList, self.containsDataFileLastDocument)
-		return datasetNumberOfDocuments
+		return self.numberOfDocuments
 
 	def __getitem__(self, i):
 		loadNextDataFile = False
@@ -231,46 +223,52 @@ class DatasetHDD(torch.utils.data.Dataset):
 			if(createOrderedDataset):
 				self.dataFileIndexRelative += 1
 				self.documentIndexInDataFile = 0
-				self.sampleIndexInDocument = 0
-				self.batchIndexInSample = 0
+				self.segmentIndexInDocument = 0
+				self.sampleIndexInBatch = 0
 				self.dataFileLinesIterator = iter(lines)
 			else:
 				sample = tokenise(lines, self.tokenizer, sequenceMaxNumTokens)
 				self.encodings = getSampleEncodings(self.useMLM, sample.input_ids, sample.attention_mask, True)
 
-		
 		if(createOrderedDataset):
-			batchSample, self.documentSamplesBatched, self.documentIndexInDataFile, self.batchIndexInSample, self.sampleIndexInDocument = getOrderedBatchSample(
-				self.documentSamplesBatched, self.documentIndexInDataFile, self.batchIndexInSample, self.sampleIndexInDocument, self.tokenizer, self.dataFileLinesIterator, self.useMLM, self.datasetNumberOfDocuments
+			batchSample, self.documentSegmentsBatchList, self.documentIndexInDataFile, self.sampleIndexInBatch, self.segmentIndexInDocument = getOrderedBatchSample(
+				self.documentSegmentsBatchList, self.documentIndexInDataFile, self.sampleIndexInBatch, self.segmentIndexInDocument, self.tokenizer, self.dataFileLinesIterator, self.useMLM
 			)
 		else:		
 			batchSample = {key: tensor[self.documentIndexInDataFile] for key, tensor in self.encodings.items()}	
 		
 		return batchSample
+
+def getNumberOfDocuments(numberOfDocumentsEst, dataFileIndexList):
+	if(createOrderedDataset):
+		numberOfDocuments = numberOfDocumentsEst
+	else:
+		containsDataFileLastDocument = dataFileIndexListContainsLastDocument(dataFileIndexList)
+		numberOfDocuments = len(dataFileIndexList)*numberOfDocumentsPerDataFile
+		if(containsDataFileLastDocument):
+			numberOfDocuments = numberOfDocuments-numberOfDocumentsPerDataFile + datasetNumberOfSamplesPerDataFileLast
+	return numberOfDocuments
 			
-class DatasetInternet(torch.utils.data.Dataset):
-	def __init__(self, useMLM, dataFileIndexList, dataElements, tokenizer):
+class DataloaderDatasetInternet(torch.utils.data.Dataset):
+	def __init__(self, useMLM, numberOfDocuments, dataElements, tokenizer):
 		self.useMLM = useMLM
-		self.dataFileIndexList = dataFileIndexList
 		self.datasetIterator = iter(dataElements)
 		self.tokenizer = tokenizer
-		self.containsDataFileLastDocument = dataFileIndexListContainsLastDocument(dataFileIndexList)
-		self.datasetNumberOfDocuments = len(self)
+		self.numberOfDocuments = numberOfDocuments
 
 		self.documentIndex = 0
 		if(createOrderedDataset):
-			self.documentSamplesBatched = None
-			self.sampleIndexInDocument = 0
-			self.batchIndexInSample = 0
+			self.documentSegmentsBatchList = None
+			self.segmentIndexInDocument = 0
+			self.sampleIndexInBatch = 0
 			
 	def __len__(self):
-		datasetNumberOfDocuments = getDatasetNumberOfDocuments(self.dataFileIndexList, self.containsDataFileLastDocument)
-		return datasetNumberOfDocuments
+		return self.numberOfDocuments
 
 	def __getitem__(self, i):	
 		if(createOrderedDataset):
-			batchSample, self.documentSamplesBatched, self.documentIndex, self.batchIndexInSample, self.sampleIndexInDocument = getOrderedBatchSample(
-				self.documentSamplesBatched, self.documentIndex, self.batchIndexInSample, self.sampleIndexInDocument, self.tokenizer, self.datasetIterator, self.useMLM, self.datasetNumberOfDocuments
+			batchSample, self.documentSegmentsBatchList, self.documentIndex, self.sampleIndexInBatch, self.segmentIndexInDocument = getOrderedBatchSample(
+				self.documentSegmentsBatchList, self.documentIndex, self.sampleIndexInBatch, self.segmentIndexInDocument, self.tokenizer, self.datasetIterator, self.useMLM
 			)
 		else:
 			documentText = getNextDocument(self.datasetIterator)
@@ -286,13 +284,6 @@ def preprocessDocumentText(documentText):
 	if(preprocessRemoveNewLineCharacters):
 		documentText = documentText.replace('\n', '')
 	return documentText
-
-
-def getDatasetNumberOfDocuments(dataFileIndexList, containsDataFileLastDocument):
-	datasetNumberOfDocuments = len(dataFileIndexList)*numberOfDocumentsPerDataFile
-	if(containsDataFileLastDocument):
-		datasetNumberOfDocuments = datasetNumberOfDocuments-numberOfDocumentsPerDataFile + numberOfSamplesPerDataFileLast
-	return datasetNumberOfDocuments
 		
 def getSampleEncodings(useMLM, input_ids, attention_mask, batched):
 	#print("input_ids = ", input_ids)
@@ -314,85 +305,84 @@ def getSampleEncodings(useMLM, input_ids, attention_mask, batched):
 	encodings = {'inputIDs': inputIDs, 'attentionMask': mask, 'labels': labels}
 	return encodings
 	
-def getOrderedBatchSample(documentSamplesBatched, documentIndex, batchIndexInSample, sampleIndexInDocument, tokenizer, dataFileLinesIterator, useMLM, datasetNumberOfDocuments):
-	if(sampleIndexInDocument == 0):
-		documentSamplesBatched, documentIndex, reachedEndOfDataFile = getBatchOrderedSamples(dataFileLinesIterator, documentIndex, tokenizer)
+def getOrderedBatchSample(documentSegmentsBatchList, documentIndex, sampleIndexInBatch, segmentIndexInDocument, tokenizer, dataFileLinesIterator, useMLM):
+	if(segmentIndexInDocument == 0):
+		documentSegmentsBatchList, documentIndex, reachedEndOfDataFile = getDocumentSegments(dataFileLinesIterator, documentIndex, tokenizer)
 		if(reachedEndOfDataFile):
 			if(usePreprocessedDataset):
 				if(documentIndex != numberOfDocumentsPerDataFile):
-					print("DatasetHDD error: reachedEndOfDataFile && documentIndex != numberOfDocumentsPerDataFile")
+					print("DataloaderDatasetHDD error: reachedEndOfDataFile && documentIndex != numberOfDocumentsPerDataFile")
 					exit()
 				documentIndex = 0
 			else:
-				if(documentIndex != datasetNumberOfDocuments):
-					print("DatasetInternet: error reachedEndOfDataset and self.documentIndex != datasetNumberOfDocuments")
-					exit()
-	#print("sampleIndexInDocument = ", sampleIndexInDocument, ", batchIndexInSample = ", batchIndexInSample)
-	documentSample = documentSamplesBatched[sampleIndexInDocument][batchIndexInSample]
+				print("getOrderedBatchSample error: !usePreprocessedDataset does not support reachedEndOfDataset flag; next(datasetIterator) will throw StopIteration and batch iteration process will automatically stop")
+				exit()
+	#print("segmentIndexInDocument = ", segmentIndexInDocument, ", sampleIndexInBatch = ", sampleIndexInBatch)
+	documentSample = documentSegmentsBatchList[segmentIndexInDocument][sampleIndexInBatch]
 	input_ids = documentSample
 	attention_mask = generateAttentionMask(tokenizer, input_ids)
 	encodings = getSampleEncodings(useMLM, input_ids, attention_mask, False)
-	batchIndexInSample+=1
-	if(batchIndexInSample == batchSize):
-		sampleIndexInDocument+=1
-		batchIndexInSample = 0
-	if(sampleIndexInDocument == orderedDatasetDocNumberSamples):
-		sampleIndexInDocument = 0
+	sampleIndexInBatch+=1
+	if(sampleIndexInBatch == batchSize):
+		segmentIndexInDocument+=1
+		sampleIndexInBatch = 0
+	if(segmentIndexInDocument == orderedDatasetDocNumberSamples):
+		segmentIndexInDocument = 0
 		
 	batchSample = encodings
-	return batchSample, documentSamplesBatched, documentIndex, batchIndexInSample, sampleIndexInDocument
+	return batchSample, documentSegmentsBatchList, documentIndex, sampleIndexInBatch, segmentIndexInDocument
 
-def getBatchOrderedSamples(datasetIterator, documentIndex, tokenizer):
+def getDocumentSegments(datasetIterator, documentIndex, tokenizer):
 	reachedEndOfDataset = False
-	stillFindingBatchDocumentSamples = True
-	batchDocumentSamples = []
-	batchDocumentSampleIndex = 0
-	while(stillFindingBatchDocumentSamples):
+	stillFindingDocumentSegmentSamples = True
+	documentSegmentsSampleList = []
+	sampleIndex = 0
+	while(stillFindingDocumentSegmentSamples):
 		documentText = getNextDocument(datasetIterator)
 		documentText = preprocessDocumentText(documentText)
 		documentIndex+=1
-		if(batchDocumentSampleIndex == batchSize):
-			stillFindingBatchDocumentSamples = False
+		if(sampleIndex == batchSize):
+			stillFindingDocumentSegmentSamples = False
 		if(len(documentText) > orderedDatasetDocMinSizeCharacters):
 			documentTokens = tokenise(documentText, tokenizer, None)
 			documentTokensIDs = documentTokens.input_ids[0]
-			batchDocumentSampleIndex = splitDocumentTokens(documentTokensIDs, batchDocumentSamples, batchDocumentSampleIndex)
+			sampleIndex = splitDocumentIntoSegments(documentTokensIDs, documentSegmentsSampleList, sampleIndex)
 		if(usePreprocessedDataset):
 			if(documentIndex == numberOfDocumentsPerDataFile):
 				print("reachedEndOfDataset")
 				reachedEndOfDataset = True
-				stillFindingBatchDocumentSamples = False
-				while batchDocumentSampleIndex < batchSize:
-					#fill remaining batchDocumentSamples rows with pad_token_id	#FUTURE implementation; load next data file
+				stillFindingDocumentSegmentSamples = False
+				while sampleIndex < batchSize:
+					#fill remaining documentSegmentsSampleList rows with pad_token_id	#FUTURE implementation; load next data file
 					documentTokensIDsIgnore = torch.full([sequenceMaxNumTokens*orderedDatasetDocNumberSamples], fill_value=tokenizer.pad_token_id, dtype=torch.long)
-					batchDocumentSampleIndex = splitDocumentTokens(documentTokensIDsIgnore, batchDocumentSamples, batchDocumentSampleIndex)
+					sampleIndex = splitDocumentIntoSegments(documentTokensIDsIgnore, documentSegmentsSampleList, sampleIndex)
 
-	documentSamplesBatchList = list(map(list, zip(*batchDocumentSamples)))	#transpose list of lists: batchSize*numberOfDocumentSamples -> numberOfDocumentSamples*batchSize
-	#printDocumentSamplesBatchList(tokenizer, documentSamplesBatchList)
+	documentSegmentsBatchList = list(map(list, zip(*documentSegmentsSampleList)))	#transpose list of lists: batchSize*numberOfDocumentSegments -> numberOfDocumentSegments*batchSize
+	#printDocumentSegments(tokenizer, documentSegmentsBatchList)
 		
-	return documentSamplesBatchList, documentIndex, reachedEndOfDataset
+	return documentSegmentsBatchList, documentIndex, reachedEndOfDataset
 
-def printDocumentSamplesBatchList(tokenizer, documentSamplesBatchList):
-	for sampleIndex1 in range(orderedDatasetDocNumberSamples):
-		print("sampleIndex1 = ", sampleIndex1)
-		for sampleIndex2 in range(batchSize):
-			print("sampleIndex2 = ", sampleIndex2)
-			sample_ids = documentSamplesBatchList[sampleIndex1][sampleIndex2]
+def printDocumentSegments(tokenizer, documentSegmentsBatchList):
+	for segmentIndex1 in range(orderedDatasetDocNumberSamples):
+		print("segmentIndex1 = ", segmentIndex1)
+		for sampleIndex in range(batchSize):
+			print("sampleIndex = ", sampleIndex)
+			sample_ids = documentSegmentsBatchList[segmentIndex1][sampleIndex]
 			sampleString = tokenizer.convert_tokens_to_string(tokenizer.convert_ids_to_tokens(sample_ids))
 			print("sample = ", sampleString)
 			
-def splitDocumentTokens(documentTokens, batchDocumentSamples, batchDocumentSampleIndex):
+def splitDocumentIntoSegments(documentTokens, documentSegmentsSampleList, sampleIndex):
 	if(orderedDatasetSplitDocumentsBySentences):
-		print("splitDocumentTokens error: orderedDatasetSplitDocumentsBySentences not yet coded")
+		print("splitDocumentIntoSegments error: orderedDatasetSplitDocumentsBySentences not yet coded")
 		exit()
 	else:
 		if(documentTokens.shape[0] >= orderedDatasetDocNumberTokens):
 			documentTokens = documentTokens[0:orderedDatasetDocNumberTokens]
-			#documentSamples = [documentTokens[x:x+sequenceMaxNumTokens] for x in xrange(0, len(documentTokens), sequenceMaxNumTokens)]
-			documentSamples = torch.split(documentTokens, split_size_or_sections=sequenceMaxNumTokens, dim=0)
-			batchDocumentSamples.append(documentSamples)
-			batchDocumentSampleIndex+=1
-	return batchDocumentSampleIndex
+			#documentSegments = [documentTokens[x:x+sequenceMaxNumTokens] for x in xrange(0, len(documentTokens), sequenceMaxNumTokens)]
+			documentSegments = torch.split(documentTokens, split_size_or_sections=sequenceMaxNumTokens, dim=0)
+			documentSegmentsSampleList.append(documentSegments)
+			sampleIndex+=1
+	return sampleIndex
 
 def generateAttentionMask(tokenizer, input_ids):
 	attention_mask = (input_ids > 2).float()	#or * (inputIDs != 0) * (inputIDs != 1) * (inputIDs != 2)	# not in [tokenizer.unk_token_id, tokenizer.sep_token_id, tokenizer.pad_token_id]
@@ -423,17 +413,20 @@ def getOscar2201DocumentLengthCharacters(document):
 	'''
 	return documentLengthCharacters
 
-def createDataLoader(useMLM, tokenizer, dataElements, pathIndexMin, pathIndexMax):
+def createDataLoader(useMLM, tokenizer, dataElements, numberOfDataFiles, pathIndexMin, pathIndexMax):
 
-	dataFileIndexList = list(range(pathIndexMin, pathIndexMax))
-	print("dataFileIndexList = ", dataFileIndexList)
+	if(usePreprocessedDataset):
+		dataFileIndexList = list(range(pathIndexMin, pathIndexMax))
+		print("dataFileIndexList = ", dataFileIndexList)	
+	numberOfDocuments = numberOfDataFiles*numberOfDocumentsPerDataFile	#equivalent number of documents (assuming it were loading data files)
+	print("numberOfDocuments = ", numberOfDocuments)
 	
 	if(usePreprocessedDataset):
-		dataLoaderDatasetObject = DatasetHDD(useMLM, dataFileIndexList, dataElements, tokenizer)
+		dataLoaderDataset = DataloaderDatasetHDD(useMLM, numberOfDocuments, dataFileIndexList, dataElements, tokenizer)
 	else:
-		dataLoaderDatasetObject = DatasetInternet(useMLM, dataFileIndexList, dataElements, tokenizer)	
+		dataLoaderDataset = DataloaderDatasetInternet(useMLM, numberOfDocuments, dataElements, tokenizer)	
 
-	loader = torch.utils.data.DataLoader(dataLoaderDatasetObject, batch_size=batchSize, shuffle=False)	#shuffle not supported by DatasetHDD
+	loader = torch.utils.data.DataLoader(dataLoaderDataset, batch_size=batchSize, shuffle=False)	#shuffle not supported by DataloaderDatasetHDD
 
 	return loader
 
