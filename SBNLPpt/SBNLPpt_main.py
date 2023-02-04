@@ -69,6 +69,8 @@ def main():
 			SBNLPpt_data.trainTokeniser(dataElements, vocabularySize)
 		if(stateTrainDataset or stateTestDataset):
 			tokenizer = SBNLPpt_data.loadTokeniser()
+		if(debugCreatedOrderedDatasetFiles):
+			SBNLPpt_data.createDatasetLargeDocuments(tokenizer, dataElements)
 		if(stateTrainDataset):
 			trainDataset(tokenizer, dataElements)
 		if(stateTestDataset):
@@ -87,7 +89,7 @@ def trainDataset(tokenizer, dataElements):
 
 	if(usePreprocessedDataset):
 		pathIndexMin = trainStartDataFile
-		pathIndexMax = pathIndexMin+trainNumberOfDataFiles*dataFilesFeedMultiplier
+		pathIndexMax = pathIndexMin+int(trainNumberOfDataFiles*dataFilesFeedMultiplier)
 	else:
 		pathIndexMin = None
 		pathIndexMax = None
@@ -100,17 +102,22 @@ def trainDataset(tokenizer, dataElements):
 	
 	for epoch in range(trainStartEpoch, trainStartEpoch+trainNumberOfEpochs):
 		loop = tqdm(loader, leave=True)
-		for batchIndex, batch in enumerate(loop):
-			#print("batch = ", batch)
-			
+		
+		if(printAccuracyRunningAverage):
+			(runningLoss, runningAccuracy) = (0.0, 0.0)
+		
+		for batchIndex, batch in enumerate(loop):			
 			loss, accuracy = trainBatchWrapper(batchIndex, batch, tokenizer, model, optim)
 			
+			if(printAccuracyRunningAverage):
+				(loss, accuracy) = (runningLoss, runningAccuracy) = (runningLoss/runningAverageBatches*(runningAverageBatches-1)+(loss/runningAverageBatches), runningAccuracy/runningAverageBatches*(runningAverageBatches-1)+(accuracy/runningAverageBatches))
+				
 			loop.set_description(f'Epoch {epoch}')
 			loop.set_postfix(batchIndex=batchIndex, loss=loss, accuracy=accuracy)
 		
 		print("finished training model")
 		saveModel(model)
-
+		
 def testDataset(tokenizer, dataElements):
 
 	model = prepareModelTestWrapper()
@@ -120,7 +127,7 @@ def testDataset(tokenizer, dataElements):
 			pathIndexMin = int(datasetNumberOfDataFiles*trainSplitFraction)
 		else:
 			pathIndexMin = 0
-		pathIndexMax = pathIndexMin+testNumberOfDataFiles*dataFilesFeedMultiplier
+		pathIndexMax = pathIndexMin+int(testNumberOfDataFiles*dataFilesFeedMultiplier)
 	else:
 		pathIndexMin = None
 		pathIndexMax = None
@@ -135,24 +142,23 @@ def testDataset(tokenizer, dataElements):
 	for epoch in range(trainStartEpoch, trainStartEpoch+trainNumberOfEpochs):
 		loop = tqdm(loader, leave=True)
 		
-		averageAccuracy = 0.0
-		averageLoss = 0.0
-		batchCount = 0
+		if(printAccuracyRunningAverage):
+			(runningLoss, runningAccuracy) = (0.0, 0.0)
+		(averageAccuracy, averageLoss, batchCount) = (0.0, 0.0, 0)
 		
 		for batchIndex, batch in enumerate(loop):
-			
 			loss, accuracy = testBatchWrapper(batchIndex, batch, tokenizer, model)
 			
-			if(not math.isnan(accuracy)):	#required for usePretrainedModelDebug only
-				averageAccuracy = averageAccuracy + accuracy
-				averageLoss = averageLoss + loss
-				batchCount = batchCount + 1
-
+			if(not usePretrainedModelDebug or not math.isnan(accuracy)):
+				(averageAccuracy, averageLoss, batchCount) = (averageAccuracy+accuracy, averageLoss+loss, batchCount+1)
+			
+			if(printAccuracyRunningAverage):
+				(loss, accuracy) = (runningLoss, runningAccuracy) = (runningLoss/runningAverageBatches*(runningAverageBatches-1)+(loss/runningAverageBatches), runningAccuracy/runningAverageBatches*(runningAverageBatches-1)+(accuracy/runningAverageBatches))
+				
 			loop.set_description(f'Epoch {epoch}')
 			loop.set_postfix(batchIndex=batchIndex, loss=loss, accuracy=accuracy)
 
-		averageAccuracy = averageAccuracy/batchCount
-		averageLoss = averageLoss/batchCount
+		(averageAccuracy, averageLoss) = (averageAccuracy/batchCount, averageLoss/batchCount)
 		print("averageAccuracy = ", averageAccuracy)
 		print("averageLoss = ", averageLoss)
 

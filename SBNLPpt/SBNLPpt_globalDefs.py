@@ -27,6 +27,11 @@ else:
 	pt.set_printoptions(profile="full")
 import math
 
+debugCompareTokenMemoryBankPerformance = False
+debugCreatedOrderedDatasetFiles = False	#create data files comprising documents of sufficient length for createOrderedDataset
+debugPrintPaths = False
+debugPrintDataFileIndex = False
+
 #recursive algorithm selection:
 useAlgorithmTransformer = True
 useAlgorithmRNN = False
@@ -47,8 +52,8 @@ stateTestDataset = False	#requires reserveValidationSet
 trainStartEpoch = 0	#start epoch of training (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
 trainNumberOfEpochs = 1	#default: 10	#number of epochs to train (for production typically train x epochs at a time)
 trainStartDataFile = 0	#default: 0	#start data file to train (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
-trainNumberOfDataFiles = 10	#100	#number of data files to train (for production typically train x dataFiles at a time)	#< datasetNumberOfDataFiles (30424) * trainSplitFraction
-testNumberOfDataFiles = 10	#10		
+trainNumberOfDataFiles = 15	#100	#number of data files to train (for production typically train x dataFiles at a time)	#< datasetNumberOfDataFiles (30424) * trainSplitFraction
+testNumberOfDataFiles = 1	#10
 
 LRPdatabaseName = 'NLTK'	#wordnet
 fixNLTKwordListAll = True	#add additional auxiliary having possessive words not found in NLTK word lists; ["has", "having", "'s"]
@@ -85,25 +90,33 @@ downloadCacheFolderName = 'cache'
 dataFolderName = 'data'
 modelFolderName = 'model'
 LRPfolderName = 'LRPdata/' + LRPdatabaseName
-if(not relativeFolderLocations):
+if(relativeFolderLocations):
+	downloadCachePathName = downloadCacheFolderName
+	dataPathName = dataFolderName
+	modelPathName = modelFolderName
+	LRPpathName = LRPfolderName
+else:	
 	downloadCachePathName = '/media/' + userName + dataDrive + downloadCacheFolderName
 	dataPathName = '/media/' + userName + dataDrive + dataFolderName
 	modelPathName = '/media/' + userName + workingDrive + modelFolderName
 	LRPpathName = '/media/' + userName + workingDrive + LRPfolderName
+if(debugCreatedOrderedDatasetFiles):
+	dataFolderNameLargeDocuments = 'dataLargeDocuments'
 
-sequenceMaxNumTokens = 512	#window length (transformer/RNN/SANI)
+sequenceMaxNumTokensDefault = 512
 
-createOrderedDataset = False	#initialise (dependent var)	#CHECKTHIS
+createOrderedDataset = False	#initialise (dependent var)
 tokenMemoryBank = False	#initialise (dependent var)
 relativeTimeEmbeddings = False	#initialise (dependent var)
 if(useAlgorithmTransformer):
 	tokenMemoryBank = True	#apply attention to all tokens in sequenceRegister (standard contextualWindow + memoryBank), where memoryBank is updated based on recently attended tokens
 	tokenMemoryBankMaxAttentionHeads = 1	#maximum number of attention heads to identify important tokens to remember	#max value allowed = numberOfAttentionHeads (12)
 	if(tokenMemoryBank):
+		sequenceMaxNumTokens = sequenceMaxNumTokensDefault	#64	#128	#default: sequenceMaxNumTokensDefault	#override
 		createOrderedDataset = True
 		#tokenMemoryBank algorithm requires continuous/contiguous textual input	#batchSize > 0, will need to feed contiguous input for each sample in batch
 		relativeTimeEmbeddings = True	#attention scores are weighted based on a (learnable) function of the relative age between queried/keyed tokens
-		memoryBankSizeMultiplier = 1*tokenMemoryBankMaxAttentionHeads	#relative size of transformer window with memory bank relative to standard transformer contextual window	#determines max number of tokens to be stored in memory bank
+		memoryBankSizeMultiplier = (sequenceMaxNumTokensDefault//sequenceMaxNumTokens)*tokenMemoryBankMaxAttentionHeads	#relative size of transformer window with memory bank relative to standard transformer contextual window	#determines max number of tokens to be stored in memory bank
 		sequenceRegisterContextualWindowLength = sequenceMaxNumTokens
 		sequenceRegisterMemoryBankLength = sequenceRegisterContextualWindowLength*memoryBankSizeMultiplier
 		sequenceRegisterLength = sequenceRegisterContextualWindowLength + sequenceRegisterMemoryBankLength
@@ -113,7 +126,19 @@ if(useAlgorithmTransformer):
 		sequenceRegisterVerifyMemoryBankSize = True	#if false, need to set memory bank size sufficiently high such that will never run out of space for retained tokens
 		sequenceRegisterMemoryBankPaddingAccessTime = sequenceRegisterMaxActivationTime	#set access time of padding high to ensure that it will learn to be ignored (does not interfere with positional calculations); may not be required given that all hidden states are zeroed
 		debugPrintSequenceRegisterRetainSize = False
-	
+	else:
+		if(debugCompareTokenMemoryBankPerformance):
+			sequenceMaxNumTokens = 512	#1024	#512
+		else:
+			sequenceMaxNumTokens = sequenceMaxNumTokensDefault	#window length (transformer)
+else:
+	sequenceMaxNumTokens = sequenceMaxNumTokensDefault	#window length (RNN/SANI)
+
+if(debugCompareTokenMemoryBankPerformance):
+	createOrderedDataset = True
+if(debugCreatedOrderedDatasetFiles):
+	createOrderedDataset = True
+
 semanticRelationVectorSpaces = False
 useMultipleModels = False
 useTrainedTokenizer = True
@@ -235,7 +260,9 @@ if(memoryTraceBias):
 	batchSize = 1	#CHECKTHIS - memoryTraceBias algorithm requires continuous/contiguous textual input
 if(tokenMemoryBank):
 	batchSize = 2	#CHECKTHIS - tokenMemoryBank algorithm requires continuous/contiguous textual input	#batchSize > 0, will need to feed contiguous input for each sample in batch
-		
+if(debugCompareTokenMemoryBankPerformance):
+	batchSize = 2
+
 if(useSmallBatchSizeDebug):
 	batchSize = 1	#use small batch size to enable simultaneous execution (GPU ram limited) 
 	
@@ -272,11 +299,20 @@ specialTokenPadding = '<pad>'
 specialTokenMask = '<mask>'
 
 if(createOrderedDataset):
-	orderedDatasetDocNumberSamples = 10
+	if(debugCompareTokenMemoryBankPerformance):
+		orderedDatasetDocNumberSamples = 10
+		sufficientLengthMultiplier = sequenceMaxNumTokens//sequenceMaxNumTokensDefault
+	else:
+		orderedDatasetDocNumberSamples = 10 * sequenceMaxNumTokensDefault//sequenceMaxNumTokens
+		sufficientLengthMultiplier = 1
 	orderedDatasetDocNumberTokens = orderedDatasetDocNumberSamples*sequenceMaxNumTokens
 	orderedDatasetDocMinSizeCharacters = 10000	#prevents having to tokenise small document samples to count number of tokens
 	orderedDatasetSplitDocumentsBySentences = False
-	orderedDatasetDocumentProbabilityOfSufficientLength = 0.01	#min probability that a document is of sufficient length that it can be split into orderedDatasetDocNumberSamples
-	dataFilesFeedMultiplier = int(1/orderedDatasetDocumentProbabilityOfSufficientLength)
+	orderedDatasetDocumentProbabilityOfSufficientLength = pow(0.10, sufficientLengthMultiplier) #sequenceMaxNumTokens=512:0.15	#sequenceMaxNumTokens=1024:0.04	#0.01	#min probability that a document is of sufficient length that it can be split into orderedDatasetDocNumberSamples
+	dataFilesFeedMultiplier = (1/orderedDatasetDocumentProbabilityOfSufficientLength)	#math.ceil
 else:
 	dataFilesFeedMultiplier = 1
+
+printAccuracyRunningAverage = True
+if(printAccuracyRunningAverage):
+	runningAverageBatches = 10

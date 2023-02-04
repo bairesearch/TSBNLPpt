@@ -192,7 +192,7 @@ class DataloaderDatasetHDD(torch.utils.data.Dataset):
 		self.dataFileIndexList = dataFileIndexList
 		self.paths = dataElements
 		self.tokenizer = tokenizer
-		self.numberOfDocuments = getNumberOfDocuments(numberOfDocumentsEst, dataFileIndexList)
+		self.numberOfDocuments = getNumberOfDocumentsHDD(numberOfDocumentsEst, dataFileIndexList)
 		if(createOrderedDataset):
 			self.dataFileIndexRelative = 0
 			self.documentIndexInDataFile = 0
@@ -216,7 +216,8 @@ class DataloaderDatasetHDD(torch.utils.data.Dataset):
 		dataFileIndex = self.dataFileIndexList[self.dataFileIndexRelative]
 		
 		if(loadNextDataFile):
-			#print("loadNextDataFile: dataFileIndex = ", dataFileIndex)
+			if(debugPrintDataFileIndex):
+				print("loadNextDataFile: dataFileIndex = ", dataFileIndex)
 			path = self.paths[dataFileIndex]
 			with open(path, 'r', encoding='utf-8') as fp:
 				lines = fp.read().split('\n')
@@ -239,7 +240,7 @@ class DataloaderDatasetHDD(torch.utils.data.Dataset):
 		
 		return batchSample
 
-def getNumberOfDocuments(numberOfDocumentsEst, dataFileIndexList):
+def getNumberOfDocumentsHDD(numberOfDocumentsEst, dataFileIndexList):
 	if(createOrderedDataset):
 		numberOfDocuments = numberOfDocumentsEst
 	else:
@@ -349,7 +350,6 @@ def getDocumentSegments(datasetIterator, documentIndex, tokenizer):
 			sampleIndex = splitDocumentIntoSegments(documentTokensIDs, documentSegmentsSampleList, sampleIndex)
 		if(usePreprocessedDataset):
 			if(documentIndex == numberOfDocumentsPerDataFile):
-				print("reachedEndOfDataset")
 				reachedEndOfDataset = True
 				stillFindingDocumentSegmentSamples = False
 				while sampleIndex < batchSize:
@@ -371,15 +371,15 @@ def printDocumentSegments(tokenizer, documentSegmentsBatchList):
 			sampleString = tokenizer.convert_tokens_to_string(tokenizer.convert_ids_to_tokens(sample_ids))
 			print("sample = ", sampleString)
 			
-def splitDocumentIntoSegments(documentTokens, documentSegmentsSampleList, sampleIndex):
+def splitDocumentIntoSegments(documentTokensIDs, documentSegmentsSampleList, sampleIndex):
 	if(orderedDatasetSplitDocumentsBySentences):
 		print("splitDocumentIntoSegments error: orderedDatasetSplitDocumentsBySentences not yet coded")
 		exit()
 	else:
-		if(documentTokens.shape[0] >= orderedDatasetDocNumberTokens):
-			documentTokens = documentTokens[0:orderedDatasetDocNumberTokens]
-			#documentSegments = [documentTokens[x:x+sequenceMaxNumTokens] for x in xrange(0, len(documentTokens), sequenceMaxNumTokens)]
-			documentSegments = torch.split(documentTokens, split_size_or_sections=sequenceMaxNumTokens, dim=0)
+		if(documentTokensIDs.shape[0] >= orderedDatasetDocNumberTokens):
+			documentTokensIDs = documentTokensIDs[0:orderedDatasetDocNumberTokens]
+			#documentSegments = [documentTokensIDs[x:x+sequenceMaxNumTokens] for x in xrange(0, len(documentTokensIDs), sequenceMaxNumTokens)]
+			documentSegments = torch.split(documentTokensIDs, split_size_or_sections=sequenceMaxNumTokens, dim=0)
 			documentSegmentsSampleList.append(documentSegments)
 			sampleIndex+=1
 	return sampleIndex
@@ -417,7 +417,9 @@ def createDataLoader(useMLM, tokenizer, dataElements, numberOfDataFiles, pathInd
 
 	if(usePreprocessedDataset):
 		dataFileIndexList = list(range(pathIndexMin, pathIndexMax))
-		print("dataFileIndexList = ", dataFileIndexList)	
+		print("dataFileIndexList = ", dataFileIndexList)
+		if(debugPrintPaths):
+			print("paths = ", dataElements[0:pathIndexMax-pathIndexMin])	
 	numberOfDocuments = numberOfDataFiles*numberOfDocumentsPerDataFile	#equivalent number of documents (assuming it were loading data files)
 	print("numberOfDocuments = ", numberOfDocuments)
 	
@@ -460,3 +462,34 @@ def getAccuracy(tokenizer, inputIDs, predictionMask, labels, outputs):
 	
 	return accuracy
 
+def createDatasetLargeDocuments(tokenizer, dataElements):
+
+	paths = dataElements
+	pathIndexMin = trainStartDataFile
+	pathIndexMax = pathIndexMin+int(trainNumberOfDataFiles*dataFilesFeedMultiplier)
+	
+	dataFileIndexList = list(range(pathIndexMin, pathIndexMax))
+	for dataFileIndex in dataFileIndexList:
+		if(dataFileIndex >= 284):
+			path = paths[dataFileIndex]
+			with open(path, 'r', encoding='utf-8') as fp:
+				lines = fp.read().split('\n')
+
+			linesLargeDocuments = []
+			for documentIndex, documentText in enumerate(lines):
+				if(len(documentText) > orderedDatasetDocMinSizeCharacters):
+					documentTokens = tokenise(documentText, tokenizer, None)
+					documentTokensIDs = documentTokens.input_ids[0]
+					if(documentTokensIDs.shape[0] >= orderedDatasetDocNumberTokens):
+						linesLargeDocuments.append(documentText)
+					else:
+						linesLargeDocuments.append("SMALL_DOCUMENT_PLACER")
+				else:
+					linesLargeDocuments.append("SMALL_DOCUMENT_PLACER")
+
+			pathLargeDocuments = path.replace('/'+dataFolderName+'/', '/'+dataFolderNameLargeDocuments+'/')
+			print("pathLargeDocuments = ", pathLargeDocuments)
+			with open(pathLargeDocuments, 'w', encoding='utf-8') as fp:
+				fp.write('\n'.join(linesLargeDocuments))
+
+	exit()
