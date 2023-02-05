@@ -18,7 +18,7 @@ SBNLPpt globalDefs
 """
 
 
-useLovelyTensors = True
+useLovelyTensors = False
 if(useLovelyTensors):
 	import lovely_tensors as lt
 	lt.monkey_patch()
@@ -28,7 +28,7 @@ else:
 import math
 
 debugCompareTokenMemoryBankPerformance = False
-debugCreatedOrderedDatasetFiles = False	#create data files comprising documents of sufficient length for createOrderedDataset
+debugCreateOrderedDatasetFiles = False	#create data files comprising documents of sufficient length for createOrderedDataset
 debugPrintPaths = False
 debugPrintDataFileIndex = False
 
@@ -100,7 +100,7 @@ else:
 	dataPathName = '/media/' + userName + dataDrive + dataFolderName
 	modelPathName = '/media/' + userName + workingDrive + modelFolderName
 	LRPpathName = '/media/' + userName + workingDrive + LRPfolderName
-if(debugCreatedOrderedDatasetFiles):
+if(debugCreateOrderedDatasetFiles):
 	dataFolderNameLargeDocuments = 'dataLargeDocuments'
 
 sequenceMaxNumTokensDefault = 512
@@ -112,7 +112,7 @@ if(useAlgorithmTransformer):
 	tokenMemoryBank = True	#apply attention to all tokens in sequenceRegister (standard contextualWindow + memoryBank), where memoryBank is updated based on recently attended tokens
 	tokenMemoryBankMaxAttentionHeads = 1	#maximum number of attention heads to identify important tokens to remember	#max value allowed = numberOfAttentionHeads (12)
 	if(tokenMemoryBank):
-		sequenceMaxNumTokens = sequenceMaxNumTokensDefault	#64	#128	#default: sequenceMaxNumTokensDefault	#override
+		sequenceMaxNumTokens = sequenceMaxNumTokensDefault	#64	#128	#256	#default: sequenceMaxNumTokensDefault	#override
 		createOrderedDataset = True
 		#tokenMemoryBank algorithm requires continuous/contiguous textual input	#batchSize > 0, will need to feed contiguous input for each sample in batch
 		relativeTimeEmbeddings = True	#attention scores are weighted based on a (learnable) function of the relative age between queried/keyed tokens
@@ -126,6 +126,7 @@ if(useAlgorithmTransformer):
 		sequenceRegisterVerifyMemoryBankSize = True	#if false, need to set memory bank size sufficiently high such that will never run out of space for retained tokens
 		sequenceRegisterMemoryBankPaddingAccessTime = sequenceRegisterMaxActivationTime	#set access time of padding high to ensure that it will learn to be ignored (does not interfere with positional calculations); may not be required given that all hidden states are zeroed
 		debugPrintSequenceRegisterRetainSize = False
+		onlyAddAttendedContextualWindowTokensToMemoryBank = True	#optional #saves memory bank space by only adding attended contextual window tokens to memory bank 
 	else:
 		if(debugCompareTokenMemoryBankPerformance):
 			sequenceMaxNumTokens = 512	#1024	#512
@@ -136,7 +137,7 @@ else:
 
 if(debugCompareTokenMemoryBankPerformance):
 	createOrderedDataset = True
-if(debugCreatedOrderedDatasetFiles):
+if(debugCreateOrderedDatasetFiles):
 	createOrderedDataset = True
 
 semanticRelationVectorSpaces = False

@@ -53,24 +53,14 @@ elif(useAlgorithmGIA):
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
 def main():
-
-	dataset = None
-	if(statePreprocessDataset or (not usePreprocessedDataset)):
-		dataset = SBNLPpt_data.loadDataset()
-	if(statePreprocessDataset):
-		SBNLPpt_data.preprocessDataset(dataset)
-	dataElements = SBNLPpt_data.prepareDataElements(dataset)
-	
+	tokenizer, dataElements = SBNLPpt_data.initialiseDataLoader()
 	if(usePretrainedModelDebug):
-		tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
-		testDataset(tokenizer, dataElements)
+		if(stateTrainDataset):
+			print("usePretrainedModelDebug error: stateTestDataset required")
+			exit()
+		if(stateTestDataset):
+			testDataset(tokenizer, dataElements)
 	else:
-		if(stateTrainTokeniser):
-			SBNLPpt_data.trainTokeniser(dataElements, vocabularySize)
-		if(stateTrainDataset or stateTestDataset):
-			tokenizer = SBNLPpt_data.loadTokeniser()
-		if(debugCreatedOrderedDatasetFiles):
-			SBNLPpt_data.createDatasetLargeDocuments(tokenizer, dataElements)
 		if(stateTrainDataset):
 			trainDataset(tokenizer, dataElements)
 		if(stateTestDataset):

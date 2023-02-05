@@ -120,7 +120,6 @@ def createModel(vocabularySize):
 		type_vocab_size=1,
 		position_embedding_type=positionEmbeddingType,
 	)
-	print("config.pad_token_id = ", config.pad_token_id)
 	model = RobertaForMaskedLM(config)
 	return model
 

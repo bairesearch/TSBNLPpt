@@ -1,4 +1,4 @@
-"""SBNLPpt_tokeniserFullword
+"""SBNLPpt_dataTokeniserFullword
 
 # Author:
 Richard Bruce Baxter - Copyright (c) 2022-2023 Baxter AI (baxterai.com)
@@ -13,7 +13,7 @@ see SBNLPpt_main.py
 see SBNLPpt_main.py
 
 # Description:
-SBNLPpt tokeniser fullword
+SBNLPpt data tokeniser fullword
 	
 """
 

@@ -483,7 +483,6 @@ class RobertaAttention(nn.Module):
 		if(tokenMemoryBank):
 			if(self.self.batchIndex % orderedDatasetDocNumberSamples == 0):
 				self.self.clearSequenceRegisterMemoryBank()
-				self.self.batchIndex += 0
 			self.self.batchIndex += 1
 			hidden_states = self.loadSequenceRegisterHiddenStates(hidden_states, self.self.sequenceRegisterMemoryBankHiddenStates)	#load additional hidden states from memory bank
 		
@@ -515,11 +514,15 @@ class RobertaAttention(nn.Module):
 	if(tokenMemoryBank):
 		def updateSequenceRegisterMemoryBank(self, hiddenStates, attentionProbsMaxIndex, sequenceRegisterMemoryBankAccessTimes):
 			#interpretation: access time 0 = recently activated
-
-			#increment sequenceRegisterAccessTime;
-			sequenceRegisterContextualWindowAccessTimes = torch.zeros(batchSize, sequenceRegisterContextualWindowLength).to(hiddenStates.device)
-			sequenceRegisterAccessTime = torch.cat((sequenceRegisterContextualWindowAccessTimes, sequenceRegisterMemoryBankAccessTimes), dim=1)
-			sequenceRegisterAccessTime = torch.add(sequenceRegisterAccessTime, 1)	#update access time for next model propagation
+			
+			if(onlyAddAttendedContextualWindowTokensToMemoryBank):
+				sequenceRegisterMemoryBankAccessTimes = torch.add(sequenceRegisterMemoryBankAccessTimes, 1)	#update access time for next model propagation	#increment sequenceRegisterMemoryBankAccessTimes
+				sequenceRegisterContextualWindowAccessTimes = torch.full([batchSize, sequenceRegisterContextualWindowLength], sequenceRegisterMaxActivationTime).to(hiddenStates.device)	#prepare default sequenceRegisterContextualWindowAccessTimes (unrenewed)
+				sequenceRegisterAccessTime = torch.cat((sequenceRegisterContextualWindowAccessTimes, sequenceRegisterMemoryBankAccessTimes), dim=1)
+			else:
+				sequenceRegisterContextualWindowAccessTimes = torch.zeros(batchSize, sequenceRegisterContextualWindowLength).to(hiddenStates.device)
+				sequenceRegisterAccessTime = torch.cat((sequenceRegisterContextualWindowAccessTimes, sequenceRegisterMemoryBankAccessTimes), dim=1)
+				sequenceRegisterAccessTime = torch.add(sequenceRegisterAccessTime, 1)	#update access time for next model propagation	#increment sequenceRegisterAccessTime;
 
 			#renew the access time of all recently accessed tokens;
 			sequenceRegisterAccessedNew = F.one_hot(attentionProbsMaxIndex, num_classes=sequenceRegisterLength)
@@ -530,25 +533,29 @@ class RobertaAttention(nn.Module):
 			sequenceRegisterAccessedNewTime = torch.multiply(sequenceRegisterAccessedNew, sequenceRegisterRenewTime)
 			sequenceRegisterAccessTime = torch.add(sequenceRegisterAccessTime, sequenceRegisterAccessedNewTime)
 
+			#print("sequenceRegisterAccessTime = ", sequenceRegisterAccessTime)
+			
 			#calculate if tokens are to be retained in the memory bank;
 			sequenceRegisterRetain = torch.lt(sequenceRegisterAccessTime, sequenceRegisterMaxActivationTime)
 			sequenceRegisterRetainSize = torch.sum(sequenceRegisterRetain.int(), dim=1)	
-
+			
 			#update memory bank;
 			sequenceRegisterMemoryBankHiddenStatesList = []
 			sequenceRegisterMemoryBankAccessTimesList = []
 			for sampleIndex in range(batchSize):
 				#must execute mask select for each sample in batch because they will produce different length tensors
-				hiddenStatesSample = hiddenStates[sampleIndex].detach()
-				sequenceRegisterAccessTimeSample = sequenceRegisterAccessTime[sampleIndex]
 				sequenceRegisterRetainSample = sequenceRegisterRetain[sampleIndex]
 				sequenceRegisterRetainSizeSample = sequenceRegisterRetainSize[sampleIndex]
+				
+				hiddenStatesSample = hiddenStates[sampleIndex].detach()
+				sequenceRegisterAccessTimeSample = sequenceRegisterAccessTime[sampleIndex]
 				sequenceRegisterMemoryBankHiddenStatesSample = hiddenStatesSample[sequenceRegisterRetainSample]
 				sequenceRegisterMemoryBankAccessTimesSample = sequenceRegisterAccessTimeSample[sequenceRegisterRetainSample]
+			
 				#if(sequenceRegisterRetainSizeSample > sequenceRegisterLength):
 				if(debugPrintSequenceRegisterRetainSize):
 					print("sequenceRegisterRetainSizeSample = ", sequenceRegisterRetainSizeSample.cpu().numpy())
-				if(sequenceRegisterRetainSizeSample < sequenceRegisterLength):
+				if(sequenceRegisterRetainSizeSample < sequenceRegisterLength):	#or sequenceRegisterRetainSizeSample != sequenceRegisterLength
 					#pad sequence register with dummy tokens
 					paddingSize = sequenceRegisterLength-sequenceRegisterRetainSizeSample
 					hiddenSize = sequenceRegisterMemoryBankHiddenStatesSample.shape[1]
@@ -558,7 +565,7 @@ class RobertaAttention(nn.Module):
 					sequenceRegisterMemoryBankHiddenStatesSample = torch.cat((sequenceRegisterMemoryBankHiddenStatesSample, sequenceRegisterMemoryBankHiddenStatesSamplePad), dim=0)
 					sequenceRegisterMemoryBankAccessTimesSample = torch.cat((sequenceRegisterMemoryBankAccessTimesSample, sequenceRegisterMemoryBankAccessTimesSamplePad), dim=0)
 				if(sequenceRegisterVerifyMemoryBankSize):
-					#need to sort memory bank by time to ensure that oldest tokens can easily be deleted if run out of space
+					#sort memory bank by time to ensure that oldest tokens can easily be deleted if run out of space
 					sequenceRegisterMemoryBankAccessTimesSample, indices = torch.sort(sequenceRegisterMemoryBankAccessTimesSample, dim=0)
 					sequenceRegisterMemoryBankHiddenStatesSample = sequenceRegisterMemoryBankHiddenStatesSample[indices]
 			
@@ -573,11 +580,11 @@ class RobertaAttention(nn.Module):
 			
 			#restore contextual window hidden states;
 			hiddenStates = self.restoreContextualWindowHiddenStates(hiddenStates)
-
+			
 			return hiddenStates, sequenceRegisterMemoryBankHiddenStates, sequenceRegisterMemoryBankAccessTimes
 
-		def loadSequenceRegisterHiddenStates(self, hiddenStates, sequenceRegisterMemoryBankHiddenStates):
-			hiddenStates = torch.cat((hiddenStates, sequenceRegisterMemoryBankHiddenStates), dim=1)
+		def loadSequenceRegisterHiddenStates(self, sequenceRegisterContextualWindowHiddenStates, sequenceRegisterMemoryBankHiddenStates):
+			hiddenStates = torch.cat((sequenceRegisterContextualWindowHiddenStates, sequenceRegisterMemoryBankHiddenStates), dim=1)
 			return hiddenStates
 
 		def restoreContextualWindowHiddenStates(self, sequenceRegisterHiddenStates):
