@@ -107,27 +107,26 @@ def createDatasetLargeDocuments(tokenizer, dataElements):
 	
 	dataFileIndexList = list(range(pathIndexMin, pathIndexMax))
 	for dataFileIndex in dataFileIndexList:
-		if(dataFileIndex >= 284):
-			path = paths[dataFileIndex]
-			with open(path, 'r', encoding='utf-8') as fp:
-				lines = fp.read().split('\n')
+		path = paths[dataFileIndex]
+		with open(path, 'r', encoding='utf-8') as fp:
+			lines = fp.read().split('\n')
 
-			linesLargeDocuments = []
-			for documentIndex, documentText in enumerate(lines):
-				if(len(documentText) > orderedDatasetDocMinSizeCharacters):
-					documentTokens = SBNLPpt_dataTokeniser.tokenise(documentText, tokenizer, None)
-					documentTokensIDs = documentTokens.input_ids[0]
-					if(documentTokensIDs.shape[0] >= orderedDatasetDocNumberTokens):
-						linesLargeDocuments.append(documentText)
-					else:
-						linesLargeDocuments.append("SMALL_DOCUMENT_PLACER")
+		linesLargeDocuments = []
+		for documentIndex, documentText in enumerate(lines):
+			if(len(documentText) > orderedDatasetDocMinSizeCharacters):
+				documentTokens = SBNLPpt_dataTokeniser.tokenise(documentText, tokenizer, None)
+				documentTokensIDs = documentTokens.input_ids[0]
+				if(documentTokensIDs.shape[0] >= orderedDatasetDocNumberTokens):
+					linesLargeDocuments.append(documentText)
 				else:
 					linesLargeDocuments.append("SMALL_DOCUMENT_PLACER")
+			else:
+				linesLargeDocuments.append("SMALL_DOCUMENT_PLACER")
 
-			pathLargeDocuments = path.replace('/'+dataFolderName+'/', '/'+dataFolderNameLargeDocuments+'/')
-			print("pathLargeDocuments = ", pathLargeDocuments)
-			with open(pathLargeDocuments, 'w', encoding='utf-8') as fp:
-				fp.write('\n'.join(linesLargeDocuments))
+		pathLargeDocuments = path.replace('/'+dataFolderName+'/', '/'+dataFolderNameLargeDocuments+'/')
+		print("pathLargeDocuments = ", pathLargeDocuments)
+		with open(pathLargeDocuments, 'w', encoding='utf-8') as fp:
+			fp.write('\n'.join(linesLargeDocuments))
 
 	exit()
 

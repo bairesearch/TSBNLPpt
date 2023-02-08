@@ -48,7 +48,7 @@ if(not usePretrainedModelDebug):
 
 	if(relativeTimeEmbeddings):
 		positionEmbeddingType = "relative_time"	#calculates relative time between layer tokens
-		maxPositionEmbeddings = getMaxPositionEmbedding(sequenceRegisterLength)
+		maxPositionEmbeddings = getMaxPositionEmbedding(sequenceRegisterMaxTokenTime)
 	else:
 		positionEmbeddingType = "relative_key"	#"absolute"	#default
 		maxPositionEmbeddings = getMaxPositionEmbedding(sequenceMaxNumTokens)
@@ -60,7 +60,10 @@ if(not usePretrainedModelDebug):
 			numberOfHiddenLayers = 1
 		else:
 			numberOfHiddenLayers = 6	#default: 6
-	hiddenLayerSize = 768	#default: 768
+	if(debugPrintLowHiddenSize):
+		hiddenLayerSize = 24
+	else:
+		hiddenLayerSize = 768	#default: 768
 	numberOfAttentionHeads = 12	#default: 12
 	intermediateSize = 3072	#default: 3072
 

@@ -18,7 +18,7 @@ SBNLPpt globalDefs
 """
 
 
-useLovelyTensors = False
+useLovelyTensors = True
 if(useLovelyTensors):
 	import lovely_tensors as lt
 	lt.monkey_patch()
@@ -47,7 +47,7 @@ simulatedDendriticBranches = False	#optional #nncustom.Linear simulates multiple
 statePreprocessDataset = False	#only required once
 stateTrainTokeniser = False	#only required once
 stateTrainDataset = True
-stateTestDataset = False	#requires reserveValidationSet
+stateTestDataset = True	#requires reserveValidationSet
 
 trainStartEpoch = 0	#start epoch of training (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
 trainNumberOfEpochs = 1	#default: 10	#number of epochs to train (for production typically train x epochs at a time)
@@ -102,21 +102,24 @@ else:
 	LRPpathName = '/media/' + userName + workingDrive + LRPfolderName
 if(debugCreateOrderedDatasetFiles):
 	dataFolderNameLargeDocuments = 'dataLargeDocuments'
-
+dataPreprocessedFileNameStart = "/text_"
+dataPreprocessedFileNameEnd = ".txt"
+ 
 sequenceMaxNumTokensDefault = 512
+orderedDatasetDocNumberSamplesDefault = 10
 
 createOrderedDataset = False	#initialise (dependent var)
 tokenMemoryBank = False	#initialise (dependent var)
 relativeTimeEmbeddings = False	#initialise (dependent var)
 if(useAlgorithmTransformer):
 	tokenMemoryBank = True	#apply attention to all tokens in sequenceRegister (standard contextualWindow + memoryBank), where memoryBank is updated based on recently attended tokens
-	tokenMemoryBankMaxAttentionHeads = 1	#maximum number of attention heads to identify important tokens to remember	#max value allowed = numberOfAttentionHeads (12)
+	tokenMemoryBankMaxAttentionHeads = 12	#12	#1	#maximum number of attention heads to identify important tokens to remember	#max value allowed = numberOfAttentionHeads (12)
 	if(tokenMemoryBank):
-		sequenceMaxNumTokens = sequenceMaxNumTokensDefault	#64	#128	#256	#default: sequenceMaxNumTokensDefault	#override
+		sequenceMaxNumTokens = 128	#64	#128	#256	#default: sequenceMaxNumTokensDefault	#override
 		createOrderedDataset = True
 		#tokenMemoryBank algorithm requires continuous/contiguous textual input	#batchSize > 0, will need to feed contiguous input for each sample in batch
 		relativeTimeEmbeddings = True	#attention scores are weighted based on a (learnable) function of the relative age between queried/keyed tokens
-		memoryBankSizeMultiplier = (sequenceMaxNumTokensDefault//sequenceMaxNumTokens)*tokenMemoryBankMaxAttentionHeads	#relative size of transformer window with memory bank relative to standard transformer contextual window	#determines max number of tokens to be stored in memory bank
+		memoryBankSizeMultiplier = (sequenceMaxNumTokensDefault//sequenceMaxNumTokens)	#*tokenMemoryBankMaxAttentionHeads	#relative size of transformer window with memory bank relative to standard transformer contextual window	#determines max number of tokens to be stored in memory bank
 		sequenceRegisterContextualWindowLength = sequenceMaxNumTokens
 		sequenceRegisterMemoryBankLength = sequenceRegisterContextualWindowLength*memoryBankSizeMultiplier
 		sequenceRegisterLength = sequenceRegisterContextualWindowLength + sequenceRegisterMemoryBankLength
@@ -125,8 +128,12 @@ if(useAlgorithmTransformer):
 		sequenceRegisterTokenAccessTimeContextualWindow = sequenceMaxNumTokens	#how to adjust the access time of a given token last accessed in a previous contextual window 	#will depend on sequenceMaxNumTokens (not directly equal, but this is a rough heuristic)
 		sequenceRegisterVerifyMemoryBankSize = True	#if false, need to set memory bank size sufficiently high such that will never run out of space for retained tokens
 		sequenceRegisterMemoryBankPaddingAccessTime = sequenceRegisterMaxActivationTime	#set access time of padding high to ensure that it will learn to be ignored (does not interfere with positional calculations); may not be required given that all hidden states are zeroed
+		sequenceRegisterMemoryBankPaddingTokenTime = sequenceRegisterMemoryBankPaddingAccessTime*sequenceMaxNumTokens
+		onlyAddAttendedContextualWindowTokensToMemoryBank = False	#optional #saves memory bank space by only adding attended contextual window tokens to memory bank 
+		calculateMemoryBankTokenTimesFromAccessTimes = False #calculate memory bank token times based on last access times
+		sequenceRegisterMaxTokenTime = (orderedDatasetDocNumberSamplesDefault+1)*sequenceMaxNumTokensDefault	#CHECKTHIS: +1 because sequenceRegisterLength = sequenceRegisterContextualWindowLength + sequenceRegisterMemoryBankLength
 		debugPrintSequenceRegisterRetainSize = False
-		onlyAddAttendedContextualWindowTokensToMemoryBank = True	#optional #saves memory bank space by only adding attended contextual window tokens to memory bank 
+		debugPrintLowHiddenSize = False
 	else:
 		if(debugCompareTokenMemoryBankPerformance):
 			sequenceMaxNumTokens = 512	#1024	#512
@@ -300,11 +307,11 @@ specialTokenPadding = '<pad>'
 specialTokenMask = '<mask>'
 
 if(createOrderedDataset):
-	if(debugCompareTokenMemoryBankPerformance):
-		orderedDatasetDocNumberSamples = 10
+	if(sequenceMaxNumTokens > sequenceMaxNumTokensDefault):	#eg debugCompareTokenMemoryBankPerformance and sequenceMaxNumTokens=1024
+		orderedDatasetDocNumberSamples = orderedDatasetDocNumberSamplesDefault
 		sufficientLengthMultiplier = sequenceMaxNumTokens//sequenceMaxNumTokensDefault
 	else:
-		orderedDatasetDocNumberSamples = 10 * sequenceMaxNumTokensDefault//sequenceMaxNumTokens
+		orderedDatasetDocNumberSamples = orderedDatasetDocNumberSamplesDefault * sequenceMaxNumTokensDefault//sequenceMaxNumTokens
 		sufficientLengthMultiplier = 1
 	orderedDatasetDocNumberTokens = orderedDatasetDocNumberSamples*sequenceMaxNumTokens
 	orderedDatasetDocMinSizeCharacters = 10000	#prevents having to tokenise small document samples to count number of tokens

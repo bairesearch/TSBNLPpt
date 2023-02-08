@@ -53,7 +53,7 @@ def loadDataset():
 def prepareDataElements(dataset):
 	if(usePreprocessedDataset):
 		if(Path(dataPathName).exists()):
-			pathsGlob = Path(dataPathName).glob('**/*.txt')
+			pathsGlob = Path(dataPathName).glob('**/*' + dataPreprocessedFileNameEnd)
 			if(sortDataFilesByName):
 				pathsGlob = sorted(pathsGlob, key=os.path.getmtime)	#key required because path names indices are not padded with 0s
 			paths = [str(x) for x in pathsGlob]
@@ -86,10 +86,10 @@ def preprocessDataset(dataset):
 		exit()
 			
 def writeDataFile(fileCount, textData):
-	fileName = dataPathName + "/text_" + str(fileCount) + ".txt"
+	fileName = SBNLPpt_dataTokeniser.generateDataFileName(fileCount)
 	with open(fileName, 'w', encoding='utf-8') as fp:
 		fp.write('\n'.join(textData))
-				
+	
 def getOscar2201DocumentLengthCharacters(document):
 	documentLengthCharacters = len(document['text'])	#number of characters
 	'''

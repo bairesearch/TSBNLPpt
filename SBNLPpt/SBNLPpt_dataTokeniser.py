@@ -168,3 +168,6 @@ def getNextDocument(datasetIterator):
 		documentText = document['text']
 	return documentText
 	
+def generateDataFileName(fileIndex):
+	fileName = dataPathName + dataPreprocessedFileNameStart + str(fileIndex) + dataPreprocessedFileNameEnd
+	return fileName

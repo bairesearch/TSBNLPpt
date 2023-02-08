@@ -73,7 +73,7 @@ class DataloaderDatasetHDD(torch.utils.data.Dataset):
 		if(loadNextDataFile):
 			if(debugPrintDataFileIndex):
 				print("loadNextDataFile: dataFileIndex = ", dataFileIndex)
-			path = self.paths[dataFileIndex]
+			path = SBNLPpt_dataTokeniser.generateDataFileName(dataFileIndex)	#OLD: self.paths[dataFileIndex] - requires dataPathName to contain all dataFiles up to dataFileIndex
 			with open(path, 'r', encoding='utf-8') as fp:
 				lines = fp.read().split('\n')
 			if(createOrderedDataset):

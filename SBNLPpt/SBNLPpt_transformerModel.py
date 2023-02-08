@@ -281,6 +281,7 @@ class RobertaSelfAttention(nn.Module):
 			self.batchIndex = 0
 			self.sequenceRegisterMemoryBankHiddenStates = None
 			self.sequenceRegisterMemoryBankAccessTimes = None
+			self.sequenceRegisterMemoryBankTokenTimes = None
 			self.clearSequenceRegisterMemoryBank()
 			
 	def transpose_for_scores(self, x: torch.Tensor) -> torch.Tensor:
@@ -340,14 +341,15 @@ class RobertaSelfAttention(nn.Module):
 		
 		if(relativeTimeEmbeddings):
 			if self.position_embedding_type == "relative_time":
-				sequenceRegisterTokenTimes = self.getSequenceRegisterTokenTimes(sequenceMaxNumTokens, hidden_states, self.sequenceRegisterMemoryBankAccessTimes)
+				sequenceRegisterTokenTimes = self.getSequenceRegisterTokenTimes(self.sequenceRegisterMemoryBankTokenTimes, self.sequenceRegisterMemoryBankAccessTimes)
 				relativePositionScoresList = []
 				for sampleIndex in range(batchSize):	#do not parallel process samples as their token times are different
 					position_ids_l = sequenceRegisterTokenTimes[sampleIndex].view(-1, 1)
 					position_ids_r = sequenceRegisterTokenTimes[sampleIndex].view(1, -1)
 					distance = position_ids_l - position_ids_r
 					distance = distance.long()
-					positional_embedding = self.time_embedding(distance + self.max_position_embeddings - 1)
+					distancePositive = distance + self.max_position_embeddings - 1
+					positional_embedding = self.time_embedding(distancePositive)
 					positional_embedding = positional_embedding.to(dtype=query_layer.dtype)  # fp16 compatibility
 					queryLayerSample = torch.unsqueeze(query_layer[sampleIndex], dim=0)
 					relative_position_scores = torch.einsum("bhld,lrd->bhlr", queryLayerSample, positional_embedding)
@@ -405,14 +407,27 @@ class RobertaSelfAttention(nn.Module):
 	if(tokenMemoryBank):
 		def clearSequenceRegisterMemoryBank(self):
 			self.sequenceRegisterMemoryBankHiddenStates = torch.zeros(batchSize, sequenceRegisterMemoryBankLength, self.hidden_size).to(device)	#CHECKTHIS; same shape as hidden_states
-			self.sequenceRegisterMemoryBankAccessTimes = torch.ones(batchSize, sequenceRegisterMemoryBankLength).to(device)
-			self.sequenceRegisterMemoryBankAccessTimes = torch.multiply(self.sequenceRegisterMemoryBankAccessTimes, sequenceRegisterMemoryBankPaddingAccessTime)
-
-		def getSequenceRegisterTokenTimes(self, sequenceLength, hiddenStates, sequenceRegisterMemoryBankAccessTimes):
-			sequenceRegisterContextualWindowTokenTimes = torch.arange(start=sequenceLength, end=0, step=-1, device=hiddenStates.device).expand((batchSize, -1))
-			sequenceRegisterMemoryBankTokenTimes = torch.multiply(sequenceRegisterMemoryBankAccessTimes, sequenceRegisterTokenAccessTimeContextualWindow)
+			self.sequenceRegisterMemoryBankAccessTimes = torch.full([batchSize, sequenceRegisterMemoryBankLength], sequenceRegisterMemoryBankPaddingAccessTime).to(device)	
+			self.sequenceRegisterMemoryBankTokenTimes = torch.full([batchSize, sequenceRegisterMemoryBankLength], sequenceRegisterMemoryBankPaddingTokenTime).to(device)	
+			
+		def getSequenceRegisterTokenTimes(self, sequenceRegisterMemoryBankTokenTimes, sequenceRegisterMemoryBankAccessTimes):
+			sequenceRegisterContextualWindowTokenTimes = self.calculateSequenceRegisterContextualWindowTokenTimes()
+			if(calculateMemoryBankTokenTimesFromAccessTimes):
+				sequenceRegisterMemoryBankTokenTimes = self.calculateSequenceRegisterMemoryBankTokenTimes(sequenceRegisterMemoryBankAccessTimes)
 			sequenceRegisterTokenTimes = torch.cat((sequenceRegisterContextualWindowTokenTimes, sequenceRegisterMemoryBankTokenTimes), dim=1)
 			return sequenceRegisterTokenTimes
+
+		def calculateSequenceRegisterContextualWindowTokenTimes(self):
+			sequenceRegisterContextualWindowTokenTimes = torch.arange(start=sequenceMaxNumTokens, end=0, step=-1, device=device).expand((batchSize, -1))
+			return sequenceRegisterContextualWindowTokenTimes
+		
+		def calculateSequenceRegisterMemoryBankTokenTimes(self, sequenceRegisterMemoryBankAccessTimes):
+			sequenceRegisterMemoryBankTokenTimes = torch.multiply(sequenceRegisterMemoryBankAccessTimes, sequenceRegisterTokenAccessTimeContextualWindow)
+			return sequenceRegisterMemoryBankTokenTimes
+
+		def updateSequenceRegisterMemoryBankTokenTimes(self, sequenceRegisterMemoryBankTokenTimes):
+			sequenceRegisterMemoryBankTokenTimes = torch.add(sequenceRegisterMemoryBankTokenTimes, sequenceRegisterTokenAccessTimeContextualWindow)
+			return sequenceRegisterMemoryBankTokenTimes
 		
 		def getAttentionProbsMaxIndex(self, attention_scores):
 			#attention_scores shape: batchSize * nheads * sequenceLength * sequenceLength
@@ -498,60 +513,67 @@ class RobertaAttention(nn.Module):
 
 		#if(tokenMemoryBank):
 		#	hiddenStates = self_outputs[0]
-		#	hidden_states, self.self.sequenceRegisterMemoryBankHiddenStates, self.self.sequenceRegisterMemoryBankAccessTimes = self.updateSequenceRegisterMemoryBank(hiddenStates, attentionProbsMaxIndex, self.self.sequenceRegisterMemoryBankAccessTimes)
+		#	hidden_states, self.self.sequenceRegisterMemoryBankHiddenStates, self.self.sequenceRegisterMemoryBankAccessTimes, self.self.sequenceRegisterMemoryBankTokenTimes = self.updateSequenceRegisterMemoryBank(hiddenStates, attentionProbsMaxIndex, self.self.sequenceRegisterMemoryBankAccessTimes, self.self.sequenceRegisterMemoryBankTokenTimes)
 		#	self_outputs[0] = hiddenStates
 		
 		attention_output = self.output(self_outputs[0], hidden_states)
 		
 		if(tokenMemoryBank):
 			hiddenStates = attention_output
-			hidden_states, self.self.sequenceRegisterMemoryBankHiddenStates, self.self.sequenceRegisterMemoryBankAccessTimes = self.updateSequenceRegisterMemoryBank(hiddenStates, attentionProbsMaxIndex, self.self.sequenceRegisterMemoryBankAccessTimes)
+			hidden_states, self.self.sequenceRegisterMemoryBankHiddenStates, self.self.sequenceRegisterMemoryBankAccessTimes, self.self.sequenceRegisterMemoryBankTokenTimes = self.updateSequenceRegisterMemoryBank(hiddenStates, attentionProbsMaxIndex, self.self.sequenceRegisterMemoryBankAccessTimes, self.self.sequenceRegisterMemoryBankTokenTimes)
 			attention_output = hidden_states
 			
 		outputs = (attention_output,) + self_outputs[1:]  # add attentions if we output them
 		return outputs
 
 	if(tokenMemoryBank):
-		def updateSequenceRegisterMemoryBank(self, hiddenStates, attentionProbsMaxIndex, sequenceRegisterMemoryBankAccessTimes):
+		def updateSequenceRegisterMemoryBank(self, hiddenStates, attentionProbsMaxIndex, sequenceRegisterMemoryBankAccessTimes, sequenceRegisterMemoryBankTokenTimes):
 			#interpretation: access time 0 = recently activated
-			
+				
 			if(onlyAddAttendedContextualWindowTokensToMemoryBank):
 				sequenceRegisterMemoryBankAccessTimes = torch.add(sequenceRegisterMemoryBankAccessTimes, 1)	#update access time for next model propagation	#increment sequenceRegisterMemoryBankAccessTimes
-				sequenceRegisterContextualWindowAccessTimes = torch.full([batchSize, sequenceRegisterContextualWindowLength], sequenceRegisterMaxActivationTime).to(hiddenStates.device)	#prepare default sequenceRegisterContextualWindowAccessTimes (unrenewed)
-				sequenceRegisterAccessTime = torch.cat((sequenceRegisterContextualWindowAccessTimes, sequenceRegisterMemoryBankAccessTimes), dim=1)
+				sequenceRegisterContextualWindowAccessTimes = torch.full([batchSize, sequenceRegisterContextualWindowLength], sequenceRegisterMaxActivationTime).to(device)	#prepare default sequenceRegisterContextualWindowAccessTimes (unrenewed)
+				sequenceRegisterAccessTimes = torch.cat((sequenceRegisterContextualWindowAccessTimes, sequenceRegisterMemoryBankAccessTimes), dim=1)
 			else:
-				sequenceRegisterContextualWindowAccessTimes = torch.zeros(batchSize, sequenceRegisterContextualWindowLength).to(hiddenStates.device)
-				sequenceRegisterAccessTime = torch.cat((sequenceRegisterContextualWindowAccessTimes, sequenceRegisterMemoryBankAccessTimes), dim=1)
-				sequenceRegisterAccessTime = torch.add(sequenceRegisterAccessTime, 1)	#update access time for next model propagation	#increment sequenceRegisterAccessTime;
-
+				sequenceRegisterContextualWindowAccessTimes = torch.zeros(batchSize, sequenceRegisterContextualWindowLength).to(device)
+				sequenceRegisterAccessTimes = torch.cat((sequenceRegisterContextualWindowAccessTimes, sequenceRegisterMemoryBankAccessTimes), dim=1)
+				sequenceRegisterAccessTimes = torch.add(sequenceRegisterAccessTimes, 1)	#update access time for next model propagation	#increment sequenceRegisterAccessTimes;
+			sequenceRegisterMemoryBankTokenTimes = self.self.updateSequenceRegisterMemoryBankTokenTimes(sequenceRegisterMemoryBankTokenTimes)
+			sequenceRegisterTokenTimes = self.self.getSequenceRegisterTokenTimes(sequenceRegisterMemoryBankTokenTimes, sequenceRegisterMemoryBankAccessTimes)
+			
 			#renew the access time of all recently accessed tokens;
 			sequenceRegisterAccessedNew = F.one_hot(attentionProbsMaxIndex, num_classes=sequenceRegisterLength)
 			sequenceRegisterAccessedNew = torch.sum(sequenceRegisterAccessedNew, dim=1)
 			sequenceRegisterAccessedNew = sequenceRegisterAccessedNew.bool().float()
 			sequenceRegisterAccessedNewNot = torch.logical_not(sequenceRegisterAccessedNew.bool()).float()
-			sequenceRegisterAccessTime = torch.multiply(sequenceRegisterAccessTime, sequenceRegisterAccessedNewNot)
+			sequenceRegisterAccessTimes = torch.multiply(sequenceRegisterAccessTimes, sequenceRegisterAccessedNewNot)
 			sequenceRegisterAccessedNewTime = torch.multiply(sequenceRegisterAccessedNew, sequenceRegisterRenewTime)
-			sequenceRegisterAccessTime = torch.add(sequenceRegisterAccessTime, sequenceRegisterAccessedNewTime)
+			sequenceRegisterAccessTimes = torch.add(sequenceRegisterAccessTimes, sequenceRegisterAccessedNewTime)
 
-			#print("sequenceRegisterAccessTime = ", sequenceRegisterAccessTime)
+			if(debugPrintLowHiddenSize):
+				print("sequenceRegisterAccessTimes = ", sequenceRegisterAccessTimes)
 			
 			#calculate if tokens are to be retained in the memory bank;
-			sequenceRegisterRetain = torch.lt(sequenceRegisterAccessTime, sequenceRegisterMaxActivationTime)
+			sequenceRegisterRetain = torch.lt(sequenceRegisterAccessTimes, sequenceRegisterMaxActivationTime)
 			sequenceRegisterRetainSize = torch.sum(sequenceRegisterRetain.int(), dim=1)	
 			
 			#update memory bank;
 			sequenceRegisterMemoryBankHiddenStatesList = []
 			sequenceRegisterMemoryBankAccessTimesList = []
+			sequenceRegisterMemoryBankTokenTimesList = []
 			for sampleIndex in range(batchSize):
 				#must execute mask select for each sample in batch because they will produce different length tensors
 				sequenceRegisterRetainSample = sequenceRegisterRetain[sampleIndex]
 				sequenceRegisterRetainSizeSample = sequenceRegisterRetainSize[sampleIndex]
 				
 				hiddenStatesSample = hiddenStates[sampleIndex].detach()
-				sequenceRegisterAccessTimeSample = sequenceRegisterAccessTime[sampleIndex]
+				sequenceRegisterAccessTimesSample = sequenceRegisterAccessTimes[sampleIndex]
+				sequenceRegisterMemoryBankTokenTimesSample = sequenceRegisterTokenTimes[sampleIndex]
+
 				sequenceRegisterMemoryBankHiddenStatesSample = hiddenStatesSample[sequenceRegisterRetainSample]
-				sequenceRegisterMemoryBankAccessTimesSample = sequenceRegisterAccessTimeSample[sequenceRegisterRetainSample]
-			
+				sequenceRegisterMemoryBankAccessTimesSample = sequenceRegisterAccessTimesSample[sequenceRegisterRetainSample]
+				sequenceRegisterMemoryBankTokenTimesSample = sequenceRegisterMemoryBankTokenTimesSample[sequenceRegisterRetainSample]
+
 				#if(sequenceRegisterRetainSizeSample > sequenceRegisterLength):
 				if(debugPrintSequenceRegisterRetainSize):
 					print("sequenceRegisterRetainSizeSample = ", sequenceRegisterRetainSizeSample.cpu().numpy())
@@ -559,29 +581,41 @@ class RobertaAttention(nn.Module):
 					#pad sequence register with dummy tokens
 					paddingSize = sequenceRegisterLength-sequenceRegisterRetainSizeSample
 					hiddenSize = sequenceRegisterMemoryBankHiddenStatesSample.shape[1]
-					sequenceRegisterMemoryBankHiddenStatesSamplePad = torch.zeros([paddingSize, hiddenSize]).to(hiddenStates.device)
-					sequenceRegisterMemoryBankAccessTimesSamplePad = torch.ones([paddingSize]).to(hiddenStates.device)
-					sequenceRegisterMemoryBankAccessTimesSamplePad = torch.multiply(sequenceRegisterMemoryBankAccessTimesSamplePad, sequenceRegisterMemoryBankPaddingAccessTime)
+					
+					sequenceRegisterMemoryBankHiddenStatesSamplePad = torch.zeros([paddingSize, hiddenSize]).to(device)
+					sequenceRegisterMemoryBankAccessTimesSamplePad = torch.full([paddingSize], sequenceRegisterMemoryBankPaddingAccessTime).to(device)
+					sequenceRegisterMemoryBankTokenTimesSamplePad = torch.full([paddingSize], sequenceRegisterMemoryBankPaddingTokenTime).to(device)
+			
 					sequenceRegisterMemoryBankHiddenStatesSample = torch.cat((sequenceRegisterMemoryBankHiddenStatesSample, sequenceRegisterMemoryBankHiddenStatesSamplePad), dim=0)
 					sequenceRegisterMemoryBankAccessTimesSample = torch.cat((sequenceRegisterMemoryBankAccessTimesSample, sequenceRegisterMemoryBankAccessTimesSamplePad), dim=0)
+					sequenceRegisterMemoryBankTokenTimesSample = torch.cat((sequenceRegisterMemoryBankTokenTimesSample, sequenceRegisterMemoryBankTokenTimesSamplePad), dim=0)
 				if(sequenceRegisterVerifyMemoryBankSize):
 					#sort memory bank by time to ensure that oldest tokens can easily be deleted if run out of space
 					sequenceRegisterMemoryBankAccessTimesSample, indices = torch.sort(sequenceRegisterMemoryBankAccessTimesSample, dim=0)
 					sequenceRegisterMemoryBankHiddenStatesSample = sequenceRegisterMemoryBankHiddenStatesSample[indices]
-			
+					sequenceRegisterMemoryBankTokenTimesSample = sequenceRegisterMemoryBankTokenTimesSample[indices]
+	
+				if(debugPrintLowHiddenSize):
+					#print("sequenceRegisterMemoryBankHiddenStatesSample = ", sequenceRegisterMemoryBankHiddenStatesSample)			
+					#print("sequenceRegisterMemoryBankAccessTimesSample = ", sequenceRegisterMemoryBankAccessTimesSample)
+					print("sequenceRegisterMemoryBankTokenTimesSample = ", sequenceRegisterMemoryBankTokenTimesSample)
+				
 				sequenceRegisterMemoryBankHiddenStatesList.append(sequenceRegisterMemoryBankHiddenStatesSample)
 				sequenceRegisterMemoryBankAccessTimesList.append(sequenceRegisterMemoryBankAccessTimesSample)
+				sequenceRegisterMemoryBankTokenTimesList.append(sequenceRegisterMemoryBankTokenTimesSample)
 			sequenceRegisterMemoryBankHiddenStates = torch.stack(sequenceRegisterMemoryBankHiddenStatesList, dim=0)
 			sequenceRegisterMemoryBankAccessTimes = torch.stack(sequenceRegisterMemoryBankAccessTimesList, dim=0)
+			sequenceRegisterMemoryBankTokenTimes = torch.stack(sequenceRegisterMemoryBankTokenTimesList, dim=0)
 			
 			#delete oldest tokens;
 			sequenceRegisterMemoryBankHiddenStates = sequenceRegisterMemoryBankHiddenStates[:, 0:sequenceRegisterMemoryBankLength]
 			sequenceRegisterMemoryBankAccessTimes = sequenceRegisterMemoryBankAccessTimes[:, 0:sequenceRegisterMemoryBankLength]
+			sequenceRegisterMemoryBankTokenTimes = sequenceRegisterMemoryBankTokenTimes[:, 0:sequenceRegisterMemoryBankLength]
 			
 			#restore contextual window hidden states;
 			hiddenStates = self.restoreContextualWindowHiddenStates(hiddenStates)
 			
-			return hiddenStates, sequenceRegisterMemoryBankHiddenStates, sequenceRegisterMemoryBankAccessTimes
+			return hiddenStates, sequenceRegisterMemoryBankHiddenStates, sequenceRegisterMemoryBankAccessTimes, sequenceRegisterMemoryBankTokenTimes
 
 		def loadSequenceRegisterHiddenStates(self, sequenceRegisterContextualWindowHiddenStates, sequenceRegisterMemoryBankHiddenStates):
 			hiddenStates = torch.cat((sequenceRegisterContextualWindowHiddenStates, sequenceRegisterMemoryBankHiddenStates), dim=1)
