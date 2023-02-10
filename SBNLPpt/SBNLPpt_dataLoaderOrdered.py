@@ -1,4 +1,4 @@
-"""SBNLPpt_data.py
+"""SBNLPpt_dataLoaderOrdered.py
 
 # Author:
 Richard Bruce Baxter - Copyright (c) 2022-2023 Baxter AI (baxterai.com)
@@ -22,7 +22,7 @@ import SBNLPpt_dataTokeniser
 from SBNLPpt_globalDefs import *
 
 def getOrderedBatchSample(documentSegmentsBatchList, documentIndex, sampleIndexInBatch, segmentIndexInDocument, tokenizer, dataFileLinesIterator, useMLM):
-	if(segmentIndexInDocument == 0):
+	if((segmentIndexInDocument == 0) and (sampleIndexInBatch == 0)): 
 		documentSegmentsBatchList, documentIndex, reachedEndOfDataFile = getDocumentSegments(dataFileLinesIterator, documentIndex, tokenizer)
 		if(reachedEndOfDataFile):
 			if(usePreprocessedDataset):
@@ -42,7 +42,7 @@ def getOrderedBatchSample(documentSegmentsBatchList, documentIndex, sampleIndexI
 	if(sampleIndexInBatch == batchSize):
 		segmentIndexInDocument+=1
 		sampleIndexInBatch = 0
-	if(segmentIndexInDocument == orderedDatasetDocNumberSamples):
+	if(segmentIndexInDocument == orderedDatasetDocNumberSegments):
 		segmentIndexInDocument = 0
 		
 	batchSample = encodings
@@ -57,19 +57,19 @@ def getDocumentSegments(datasetIterator, documentIndex, tokenizer):
 		documentText = SBNLPpt_dataTokeniser.getNextDocument(datasetIterator)
 		documentText = SBNLPpt_dataTokeniser.preprocessDocumentText(documentText)
 		documentIndex+=1
-		if(sampleIndex == batchSize):
-			stillFindingDocumentSegmentSamples = False
 		if(len(documentText) > orderedDatasetDocMinSizeCharacters):
 			documentTokens = SBNLPpt_dataTokeniser.tokenise(documentText, tokenizer, None)
 			documentTokensIDs = documentTokens.input_ids[0]
 			sampleIndex = splitDocumentIntoSegments(documentTokensIDs, documentSegmentsSampleList, sampleIndex)
+			if(sampleIndex == batchSize):
+				stillFindingDocumentSegmentSamples = False
 		if(usePreprocessedDataset):
 			if(documentIndex == numberOfDocumentsPerDataFile):
 				reachedEndOfDataset = True
 				stillFindingDocumentSegmentSamples = False
 				while sampleIndex < batchSize:
 					#fill remaining documentSegmentsSampleList rows with pad_token_id	#FUTURE implementation; load next data file
-					documentTokensIDsIgnore = torch.full([sequenceMaxNumTokens*orderedDatasetDocNumberSamples], fill_value=tokenizer.pad_token_id, dtype=torch.long)
+					documentTokensIDsIgnore = torch.full([sequenceMaxNumTokens*orderedDatasetDocNumberSegments], fill_value=tokenizer.pad_token_id, dtype=torch.long)
 					sampleIndex = splitDocumentIntoSegments(documentTokensIDsIgnore, documentSegmentsSampleList, sampleIndex)
 
 	documentSegmentsBatchList = list(map(list, zip(*documentSegmentsSampleList)))	#transpose list of lists: batchSize*numberOfDocumentSegments -> numberOfDocumentSegments*batchSize
@@ -91,7 +91,7 @@ def splitDocumentIntoSegments(documentTokensIDs, documentSegmentsSampleList, sam
 	return sampleIndex
 	
 def printDocumentSegments(tokenizer, documentSegmentsBatchList):
-	for segmentIndex1 in range(orderedDatasetDocNumberSamples):
+	for segmentIndex1 in range(orderedDatasetDocNumberSegments):
 		print("segmentIndex1 = ", segmentIndex1)
 		for sampleIndex in range(batchSize):
 			print("sampleIndex = ", sampleIndex)

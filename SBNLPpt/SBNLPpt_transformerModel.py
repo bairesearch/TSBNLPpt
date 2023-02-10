@@ -496,7 +496,7 @@ class RobertaAttention(nn.Module):
 	) -> Tuple[torch.Tensor]:
 			
 		if(tokenMemoryBank):
-			if(self.self.batchIndex % orderedDatasetDocNumberSamples == 0):
+			if(self.self.batchIndex % orderedDatasetDocNumberSegments == 0):
 				self.self.clearSequenceRegisterMemoryBank()
 			self.self.batchIndex += 1
 			hidden_states = self.loadSequenceRegisterHiddenStates(hidden_states, self.self.sequenceRegisterMemoryBankHiddenStates)	#load additional hidden states from memory bank

@@ -1,4 +1,4 @@
-"""SBNLPpt_data.py
+"""SBNLPpt_dataLoader.py
 
 # Author:
 Richard Bruce Baxter - Copyright (c) 2022-2023 Baxter AI (baxterai.com)
@@ -29,9 +29,13 @@ def createDataLoader(useMLM, tokenizer, dataElements, numberOfDataFiles, pathInd
 		print("dataFileIndexList = ", dataFileIndexList)
 		if(debugPrintPaths):
 			print("paths = ", dataElements[0:pathIndexMax-pathIndexMin])	
-	numberOfDocuments = numberOfDataFiles*numberOfDocumentsPerDataFile	#equivalent number of documents (assuming it were loading data files)
-	print("numberOfDocuments = ", numberOfDocuments)
 	
+	if(createOrderedDataset):
+		numberOfDocuments = numberOfDataFiles*numberOfDocumentsPerDataFile * orderedDatasetDocNumberSegments//orderedDatasetDocNumberSegmentsDefault    #//orderedDatasetDocNumberSegmentsDefault to reduce number datafiles parsed (not required)
+	else:
+		numberOfDocuments = numberOfDataFiles*numberOfDocumentsPerDataFile	#equivalent number of documents (assuming it were loading data files)
+	print("numberOfDocuments = ", numberOfDocuments)
+
 	if(usePreprocessedDataset):
 		dataLoaderDataset = DataloaderDatasetHDD(useMLM, numberOfDocuments, dataFileIndexList, dataElements, tokenizer)
 	else:

@@ -31,6 +31,8 @@ debugCompareTokenMemoryBankPerformance = False
 debugCreateOrderedDatasetFiles = False	#create data files comprising documents of sufficient length for createOrderedDataset
 debugPrintPaths = False
 debugPrintDataFileIndex = False
+debugDoNotTrainModel = False
+debugPrintLowHiddenSize = False
 
 #recursive algorithm selection:
 useAlgorithmTransformer = True
@@ -106,7 +108,7 @@ dataPreprocessedFileNameStart = "/text_"
 dataPreprocessedFileNameEnd = ".txt"
  
 sequenceMaxNumTokensDefault = 512
-orderedDatasetDocNumberSamplesDefault = 10
+orderedDatasetDocNumberSegmentsDefault = 10
 
 createOrderedDataset = False	#initialise (dependent var)
 tokenMemoryBank = False	#initialise (dependent var)
@@ -115,13 +117,17 @@ if(useAlgorithmTransformer):
 	tokenMemoryBank = True	#apply attention to all tokens in sequenceRegister (standard contextualWindow + memoryBank), where memoryBank is updated based on recently attended tokens
 	tokenMemoryBankMaxAttentionHeads = 12	#12	#1	#maximum number of attention heads to identify important tokens to remember	#max value allowed = numberOfAttentionHeads (12)
 	if(tokenMemoryBank):
-		sequenceMaxNumTokens = 128	#64	#128	#256	#default: sequenceMaxNumTokensDefault	#override
+		sequenceMaxNumTokens = 512	#64	#128	#256	#default: sequenceMaxNumTokensDefault	#override
 		createOrderedDataset = True
 		#tokenMemoryBank algorithm requires continuous/contiguous textual input	#batchSize > 0, will need to feed contiguous input for each sample in batch
 		relativeTimeEmbeddings = True	#attention scores are weighted based on a (learnable) function of the relative age between queried/keyed tokens
 		memoryBankSizeMultiplier = (sequenceMaxNumTokensDefault//sequenceMaxNumTokens)	#*tokenMemoryBankMaxAttentionHeads	#relative size of transformer window with memory bank relative to standard transformer contextual window	#determines max number of tokens to be stored in memory bank
 		sequenceRegisterContextualWindowLength = sequenceMaxNumTokens
-		sequenceRegisterMemoryBankLength = sequenceRegisterContextualWindowLength*memoryBankSizeMultiplier
+		if(sequenceMaxNumTokens == sequenceMaxNumTokensDefault):
+			sequenceRegisterMemoryBankLength = sequenceRegisterContextualWindowLength
+		else:
+			sequenceRegisterMemoryBankLength = sequenceRegisterContextualWindowLength*(memoryBankSizeMultiplier-1)
+		#orig: sequenceRegisterMemoryBankLength = sequenceRegisterContextualWindowLength*memoryBankSizeMultiplier
 		sequenceRegisterLength = sequenceRegisterContextualWindowLength + sequenceRegisterMemoryBankLength
 		sequenceRegisterMaxActivationTime = memoryBankSizeMultiplier+1	#how long to remember unaccessed tokens	#will depend on memoryBankSizeMultiplier (not directly proportional, but this is a rough heuristic)
 		sequenceRegisterRenewTime = 0	#if tokens are accessed, what time to renew them to
@@ -129,14 +135,14 @@ if(useAlgorithmTransformer):
 		sequenceRegisterVerifyMemoryBankSize = True	#if false, need to set memory bank size sufficiently high such that will never run out of space for retained tokens
 		sequenceRegisterMemoryBankPaddingAccessTime = sequenceRegisterMaxActivationTime	#set access time of padding high to ensure that it will learn to be ignored (does not interfere with positional calculations); may not be required given that all hidden states are zeroed
 		sequenceRegisterMemoryBankPaddingTokenTime = sequenceRegisterMemoryBankPaddingAccessTime*sequenceMaxNumTokens
-		onlyAddAttendedContextualWindowTokensToMemoryBank = False	#optional #saves memory bank space by only adding attended contextual window tokens to memory bank 
+		onlyAddAttendedContextualWindowTokensToMemoryBank = True	#optional #saves memory bank space by only adding attended contextual window tokens to memory bank 
 		calculateMemoryBankTokenTimesFromAccessTimes = False #calculate memory bank token times based on last access times
-		sequenceRegisterMaxTokenTime = (orderedDatasetDocNumberSamplesDefault+1)*sequenceMaxNumTokensDefault	#CHECKTHIS: +1 because sequenceRegisterLength = sequenceRegisterContextualWindowLength + sequenceRegisterMemoryBankLength
+		sequenceRegisterMaxTokenTime = (orderedDatasetDocNumberSegmentsDefault+1)*sequenceMaxNumTokensDefault	#CHECKTHIS: +1 because sequenceRegisterLength = sequenceRegisterContextualWindowLength + sequenceRegisterMemoryBankLength
 		debugPrintSequenceRegisterRetainSize = False
-		debugPrintLowHiddenSize = False
 	else:
 		if(debugCompareTokenMemoryBankPerformance):
-			sequenceMaxNumTokens = 512	#1024	#512
+			sequenceRegisterLength = 512		#1024	#512	#artificial
+			sequenceMaxNumTokens = sequenceRegisterLength	
 		else:
 			sequenceMaxNumTokens = sequenceMaxNumTokensDefault	#window length (transformer)
 else:
@@ -153,7 +159,6 @@ useTrainedTokenizer = True
 useFullwordTokenizer = False
 useFullwordTokenizerClass = True	
 tokeniserOnlyTrainOnDictionary = False
-debugDoNotTrainModel = False
 useEffectiveFullwordTokenizer = False
 if(useAlgorithmGIA):
 	semanticRelationVectorSpaces = True
@@ -204,7 +209,7 @@ if(not simulatedDendriticBranches):
 if(useLinearCustom):
 	useModuleLinearTemplateCurrent = True	#use current version of class Linear(nn.Module) from https://github.com/pytorch/pytorch/blob/master/torch/nn/modules/linear.py (instead of https://pytorch.org/docs/master/notes/extending.html)
 	useAutoResizeInput = False	#legacy implementation	#required for original python LinearFunction implementation (compared to C++ implementation and modified python LinearFunction)	#see https://discuss.pytorch.org/t/exact-python-implementation-of-linear-function-class/170177
-	
+
 if(memoryTraceBias):
 	createOrderedDataset = True
 	#FUTURE: require update of SBNLPpt_data to ensure that continuous/contiguous textual input (for inference) is provided
@@ -266,11 +271,11 @@ if(simulatedDendriticBranches):
 	batchSize = batchSize//4	#requires more GPU RAM (reduced batchSize)
 if(memoryTraceBias):
 	batchSize = 1	#CHECKTHIS - memoryTraceBias algorithm requires continuous/contiguous textual input
-if(tokenMemoryBank):
-	batchSize = 2	#CHECKTHIS - tokenMemoryBank algorithm requires continuous/contiguous textual input	#batchSize > 0, will need to feed contiguous input for each sample in batch
-if(debugCompareTokenMemoryBankPerformance):
-	batchSize = 2
-
+if(tokenMemoryBank or debugCompareTokenMemoryBankPerformance):
+	if((sequenceRegisterLength // sequenceMaxNumTokensDefault) > 1):
+		batchSize = 2
+print("batchSize = ", batchSize)
+	
 if(useSmallBatchSizeDebug):
 	batchSize = 1	#use small batch size to enable simultaneous execution (GPU ram limited) 
 	
@@ -308,15 +313,15 @@ specialTokenMask = '<mask>'
 
 if(createOrderedDataset):
 	if(sequenceMaxNumTokens > sequenceMaxNumTokensDefault):	#eg debugCompareTokenMemoryBankPerformance and sequenceMaxNumTokens=1024
-		orderedDatasetDocNumberSamples = orderedDatasetDocNumberSamplesDefault
+		orderedDatasetDocNumberSegments = orderedDatasetDocNumberSegmentsDefault
 		sufficientLengthMultiplier = sequenceMaxNumTokens//sequenceMaxNumTokensDefault
 	else:
-		orderedDatasetDocNumberSamples = orderedDatasetDocNumberSamplesDefault * sequenceMaxNumTokensDefault//sequenceMaxNumTokens
+		orderedDatasetDocNumberSegments = orderedDatasetDocNumberSegmentsDefault * sequenceMaxNumTokensDefault//sequenceMaxNumTokens
 		sufficientLengthMultiplier = 1
-	orderedDatasetDocNumberTokens = orderedDatasetDocNumberSamples*sequenceMaxNumTokens
+	orderedDatasetDocNumberTokens = orderedDatasetDocNumberSegments*sequenceMaxNumTokens
 	orderedDatasetDocMinSizeCharacters = 10000	#prevents having to tokenise small document samples to count number of tokens
 	orderedDatasetSplitDocumentsBySentences = False
-	orderedDatasetDocumentProbabilityOfSufficientLength = pow(0.10, sufficientLengthMultiplier) #sequenceMaxNumTokens=512:0.15	#sequenceMaxNumTokens=1024:0.04	#0.01	#min probability that a document is of sufficient length that it can be split into orderedDatasetDocNumberSamples
+	orderedDatasetDocumentProbabilityOfSufficientLength = pow(0.15, sufficientLengthMultiplier) #sequenceMaxNumTokens=512:0.15	#sequenceMaxNumTokens=1024:0.04	#0.01	#min probability that a document is of sufficient length that it can be split into orderedDatasetDocNumberSegments
 	dataFilesFeedMultiplier = (1/orderedDatasetDocumentProbabilityOfSufficientLength)	#math.ceil
 else:
 	dataFilesFeedMultiplier = 1
