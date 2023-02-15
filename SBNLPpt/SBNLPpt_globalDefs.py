@@ -108,20 +108,33 @@ dataPreprocessedFileNameStart = "/text_"
 dataPreprocessedFileNameEnd = ".txt"
  
 sequenceMaxNumTokensDefault = 512
-orderedDatasetDocNumberSegmentsDefault = 10
 
+useMultipleModels = False	#initialise (dependent var)
 createOrderedDataset = False	#initialise (dependent var)
 tokenMemoryBank = False	#initialise (dependent var)
 relativeTimeEmbeddings = False	#initialise (dependent var)
 if(useAlgorithmTransformer):
 	tokenMemoryBank = True	#apply attention to all tokens in sequenceRegister (standard contextualWindow + memoryBank), where memoryBank is updated based on recently attended tokens
-	tokenMemoryBankMaxAttentionHeads = 12	#12	#1	#maximum number of attention heads to identify important tokens to remember	#max value allowed = numberOfAttentionHeads (12)
+	lowSequenceNumTokens = False
+	if(lowSequenceNumTokens):
+		sequenceMaxNumTokens = 8	#8 16 32 64
+		orderedDatasetDocNumberSegmentsDefault = 1
+	else:
+		sequenceMaxNumTokens = 128	#128 256 512	#default: sequenceMaxNumTokensDefault	#override
+		orderedDatasetDocNumberSegmentsDefault = 10
 	if(tokenMemoryBank):
-		sequenceMaxNumTokens = 512	#64	#128	#256	#default: sequenceMaxNumTokensDefault	#override
+		tokenMemoryBankStorageSelectionAlgorithm = True	#automatically learn tokenMemoryBank storage selection algorithm
+		if(tokenMemoryBankStorageSelectionAlgorithm):
+			useMultipleModels = True
+			tokenMemoryBankStorageSelectionBinaryThreshold = 0.5
+		tokenMemoryBankMaxAttentionHeads = 12	#12	#1	#maximum number of attention heads to identify important tokens to remember	#max value allowed = numberOfAttentionHeads (12)
 		createOrderedDataset = True
 		#tokenMemoryBank algorithm requires continuous/contiguous textual input	#batchSize > 0, will need to feed contiguous input for each sample in batch
 		relativeTimeEmbeddings = True	#attention scores are weighted based on a (learnable) function of the relative age between queried/keyed tokens
-		memoryBankSizeMultiplier = (sequenceMaxNumTokensDefault//sequenceMaxNumTokens)	#*tokenMemoryBankMaxAttentionHeads	#relative size of transformer window with memory bank relative to standard transformer contextual window	#determines max number of tokens to be stored in memory bank
+		if(lowSequenceNumTokens):
+			memoryBankSizeMultiplier = 4
+		else:
+			memoryBankSizeMultiplier = (sequenceMaxNumTokensDefault//sequenceMaxNumTokens)	#*tokenMemoryBankMaxAttentionHeads	#relative size of transformer window with memory bank relative to standard transformer contextual window	#determines max number of tokens to be stored in memory bank
 		sequenceRegisterContextualWindowLength = sequenceMaxNumTokens
 		if(sequenceMaxNumTokens == sequenceMaxNumTokensDefault):
 			sequenceRegisterMemoryBankLength = sequenceRegisterContextualWindowLength
@@ -130,7 +143,7 @@ if(useAlgorithmTransformer):
 		#orig: sequenceRegisterMemoryBankLength = sequenceRegisterContextualWindowLength*memoryBankSizeMultiplier
 		sequenceRegisterLength = sequenceRegisterContextualWindowLength + sequenceRegisterMemoryBankLength
 		sequenceRegisterMaxActivationTime = memoryBankSizeMultiplier+1	#how long to remember unaccessed tokens	#will depend on memoryBankSizeMultiplier (not directly proportional, but this is a rough heuristic)
-		sequenceRegisterRenewTime = 0	#if tokens are accessed, what time to renew them to
+		sequenceRegisterRenewTime = 0	#if tokens are accessed, what time to renew them to	#interpretation: access time 0 = recently activated
 		sequenceRegisterTokenAccessTimeContextualWindow = sequenceMaxNumTokens	#how to adjust the access time of a given token last accessed in a previous contextual window 	#will depend on sequenceMaxNumTokens (not directly equal, but this is a rough heuristic)
 		sequenceRegisterVerifyMemoryBankSize = True	#if false, need to set memory bank size sufficiently high such that will never run out of space for retained tokens
 		sequenceRegisterMemoryBankPaddingAccessTime = sequenceRegisterMaxActivationTime	#set access time of padding high to ensure that it will learn to be ignored (does not interfere with positional calculations); may not be required given that all hidden states are zeroed
@@ -139,10 +152,10 @@ if(useAlgorithmTransformer):
 		calculateMemoryBankTokenTimesFromAccessTimes = False #calculate memory bank token times based on last access times
 		sequenceRegisterMaxTokenTime = (orderedDatasetDocNumberSegmentsDefault+1)*sequenceMaxNumTokensDefault	#CHECKTHIS: +1 because sequenceRegisterLength = sequenceRegisterContextualWindowLength + sequenceRegisterMemoryBankLength
 		debugPrintSequenceRegisterRetainSize = False
+		assert debugCompareTokenMemoryBankPerformance == False
 	else:
 		if(debugCompareTokenMemoryBankPerformance):
-			sequenceRegisterLength = 512		#1024	#512	#artificial
-			sequenceMaxNumTokens = sequenceRegisterLength	
+			sequenceRegisterLength = sequenceMaxNumTokens
 		else:
 			sequenceMaxNumTokens = sequenceMaxNumTokensDefault	#window length (transformer)
 else:
@@ -154,7 +167,6 @@ if(debugCreateOrderedDatasetFiles):
 	createOrderedDataset = True
 
 semanticRelationVectorSpaces = False
-useMultipleModels = False
 useTrainedTokenizer = True
 useFullwordTokenizer = False
 useFullwordTokenizerClass = True	
@@ -266,14 +278,17 @@ elif(useAlgorithmGIA):
 	else:
 		batchSize = 8
 	learningRate = 1e-4
-	
-if(simulatedDendriticBranches):
-	batchSize = batchSize//4	#requires more GPU RAM (reduced batchSize)
-if(memoryTraceBias):
-	batchSize = 1	#CHECKTHIS - memoryTraceBias algorithm requires continuous/contiguous textual input
-if(tokenMemoryBank or debugCompareTokenMemoryBankPerformance):
-	if((sequenceRegisterLength // sequenceMaxNumTokensDefault) > 1):
-		batchSize = 2
+
+GPUramLimit12to32GB = True
+if(GPUramLimit12to32GB):
+	if(simulatedDendriticBranches):
+		batchSize = batchSize//4	#requires more GPU RAM (reduced batchSize)
+	if(memoryTraceBias):
+		batchSize = 1	#CHECKTHIS - memoryTraceBias algorithm requires continuous/contiguous textual input
+	if(tokenMemoryBank or debugCompareTokenMemoryBankPerformance):
+		if((sequenceRegisterLength // sequenceMaxNumTokensDefault) > 1):
+			batchSize = 2
+
 print("batchSize = ", batchSize)
 	
 if(useSmallBatchSizeDebug):
@@ -317,6 +332,7 @@ if(createOrderedDataset):
 		sufficientLengthMultiplier = sequenceMaxNumTokens//sequenceMaxNumTokensDefault
 	else:
 		orderedDatasetDocNumberSegments = orderedDatasetDocNumberSegmentsDefault * sequenceMaxNumTokensDefault//sequenceMaxNumTokens
+		print("orderedDatasetDocNumberSegments = ", orderedDatasetDocNumberSegments)
 		sufficientLengthMultiplier = 1
 	orderedDatasetDocNumberTokens = orderedDatasetDocNumberSegments*sequenceMaxNumTokens
 	orderedDatasetDocMinSizeCharacters = 10000	#prevents having to tokenise small document samples to count number of tokens
@@ -329,3 +345,134 @@ else:
 printAccuracyRunningAverage = True
 if(printAccuracyRunningAverage):
 	runningAverageBatches = 10
+
+def getModelPathNameFull(modelPathNameBase, modelName):
+	modelPathNameFull = modelPathNameBase + '/' + modelName + '.pt'
+	return modelPathNameFull
+		
+if(useAlgorithmTransformer):
+	sharedLayerWeights = False	#initialise (dependent var)
+	sharedLayerWeightsOutput = False	#initialise (dependent var)
+	if(not usePretrainedModelDebug):
+		if(recursiveLayers):
+			sharedLayerWeights = False	#orig recursiveLayers implementation
+			if(sharedLayerWeights):
+				sharedLayerWeightsOutput = True	#share RobertaOutputSharedLayerOutput/RobertaSelfOutputSharedLayerOutput parameters also
+			recursiveLayersNormaliseNumParameters = False	#default: True	#optional	#if use recursiveLayers normalise/equalise num of parameters with respect to !recursiveLayers
+			if(recursiveLayersNormaliseNumParameters):
+				recursiveLayersNormaliseNumParametersIntermediate = True	#normalise intermediateSize parameters also
+		else:
+			recursiveLayersNormaliseNumParameters = False	#mandatory
+	
+		if(officialRobertaBaseModel):
+			numberOfHiddenLayers = 12	#default values
+		else:
+			if(useSingleHiddenLayerDebug):
+				numberOfHiddenLayers = 1
+			else:
+				numberOfHiddenLayers = 6	#default: 6
+		if(debugPrintLowHiddenSize):
+			hiddenLayerSize = 24
+		else:
+			hiddenLayerSize = 768	#default: 768
+		numberOfAttentionHeads = 12	#default: 12
+		intermediateSize = 3072	#default: 3072
+		if(recursiveLayers):
+			#same model size irrespective of useSingleHiddenLayerDebug
+			if(recursiveLayersNormaliseNumParameters):
+				if(sharedLayerWeights):
+					if(sharedLayerWeightsOutput):
+						if(recursiveLayersNormaliseNumParametersIntermediate):
+							hiddenLayerSizeMultiplier = (7/4)	#model size = 249MB	
+							#hiddenLayerSizeMultiplier = (5/3)	#~230MB	
+						else:
+							hiddenLayerSizeMultiplier = 2	#model size = ~255MB
+					else:
+						if(recursiveLayersNormaliseNumParametersIntermediate):
+							hiddenLayerSizeMultiplier = (4/3)	#model size = 273MB
+						else:
+							hiddenLayerSizeMultiplier = 1.5	#model size = ~255MB
+				else:
+					hiddenLayerSizeMultiplier = (7/4)	#model size = ~250MB	#optimisation failure observed
+					#hiddenLayerSizeMultiplier = (11/6)	#model size = ~265MB	#optimisation failure observed
+					#hiddenLayerSizeMultiplier = 2.0	#model size = ~280MB	#optimisation failure observed
+
+				hiddenLayerSize = round(hiddenLayerSize*hiddenLayerSizeMultiplier)
+				numberOfAttentionHeads = round(numberOfAttentionHeads*hiddenLayerSizeMultiplier)	#or: round(numberOfAttentionHeads)
+				if(recursiveLayersNormaliseNumParametersIntermediate):
+					intermediateSize = round(intermediateSize*hiddenLayerSizeMultiplier)
+				print("hiddenLayerSize = ", hiddenLayerSize)
+				print("numberOfAttentionHeads = ", numberOfAttentionHeads)
+				print("intermediateSize = ", intermediateSize)
+			else:
+				if(sharedLayerWeights):
+					if(sharedLayerWeightsOutput):
+						pass	#model size = ~120MB
+					else:
+						pass	#model size = 176.7MB
+				else:
+					pass	#model size = 120.4MB
+		else:
+			if(useSingleHiddenLayerDebug):
+				pass	#model size = 120.4MB
+			else:
+				pass	#model size = 255.6MB
+			
+		if(tokenMemoryBankStorageSelectionAlgorithm):
+			tokenMemoryBankStorageSelectionModelInputLayerSize = hiddenLayerSize
+			tokenMemoryBankStorageSelectionModelHiddenLayerSize = 768//2	#between hiddenLayerSize (768) and number of outputs (2:store/delete)
+			tokenMemoryBankStorageSelectionModelOutputLayerSize = 1	#1: BCELoss, 2: CrossEntropyLoss
+			
+			modelName = 'modelTransformer'
+			tokenMemoryBankStorageSelectionModelName = 'modelTokenMemoryBankStorageSelection'	
+			
+			if(recursiveLayers):
+				if(sharedLayerWeights):
+					numberOfHiddenLayersTokenMemoryBankParameters = numberOfHiddenLayers
+				else:
+					numberOfHiddenLayersTokenMemoryBankParameters = 1
+			else:
+				numberOfHiddenLayersTokenMemoryBankParameters = numberOfHiddenLayers
+				
+				
+elif(useAlgorithmRNN):
+	hiddenLayerSize = 1024	#65536	#2^16 - large hidden size is required for recursive RNN as parameters are shared across a) sequence length and b) number of layers
+	if(SBNLPpt_RNNmodel.applyIOconversionLayers):
+		embeddingLayerSize = 768
+	else:
+		embeddingLayerSize = hiddenLayerSize
+
+	numberOfHiddenLayers = 6
+
+	modelName = 'modelRNN'
+	modelPathNameFull = getModelPathNameFull(modelPathName, modelName)
+
+	useBidirectionalRNN = False
+	if(useBidirectionalRNN):
+		bidirectional = 2
+	else:
+		bidirectional = 1
+elif(useAlgorithmSANI):
+	hiddenLayerSize = 1024	#1024	#8192	#1024	#depends on GPU memory	#2^16 = 65536 - large hidden size is required for recursive SANI as parameters are shared across a) sequence length and b) number of layers
+	if(SBNLPpt_SANImodel.applyIOconversionLayers):
+		embeddingLayerSize = 768
+	else:
+		embeddingLayerSize = hiddenLayerSize
+
+	modelName = 'modelSANI'
+	modelPathNameFull = getModelPathNameFull(modelPathName, modelName)
+	
+	#useBidirectionalSANI = False	#not currently supported
+	#if(useBidirectionalSANI):
+	#	bidirectional = 2
+	#else:
+	#	bidirectional = 1
+elif(useAlgorithmGIA):
+	if(debugReduceEmbeddingLayerSize):
+		embeddingLayerSize = 10
+	else:
+		embeddingLayerSize = 768	#word vector embedding size (cany vary based on GIA word vector space)
+
+	modelName = 'modelGIA'
+	modelPathNameFull = getModelPathNameFull(modelPathName, modelName)
+

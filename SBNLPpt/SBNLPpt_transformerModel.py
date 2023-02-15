@@ -51,12 +51,6 @@ import nncustom
 
 from SBNLPpt_globalDefs import *
 
-sharedLayerWeights = False	#initialise (dependent var)
-sharedLayerWeightsOutput = False	#initialise (dependent var)
-if(recursiveLayers):
-	sharedLayerWeights = False	#orig recursiveLayers implementation
-	if(sharedLayerWeights):
-		sharedLayerWeightsOutput = True	#share RobertaOutputSharedLayerOutput/RobertaSelfOutputSharedLayerOutput parameters also
 if(tokenMemoryBank):
 	device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 	import torch.nn.functional as F
@@ -128,6 +122,74 @@ ROBERTA_PRETRAINED_MODEL_ARCHIVE_LIST = [
 ]
 
 
+if(tokenMemoryBankStorageSelectionAlgorithm):
+	from torchmetrics.classification import BinaryAccuracy
+	#https://torchmetrics.readthedocs.io/en/stable/classification/accuracy.html
+	
+	class tokenMemoryBankStorageSelectionConfig():
+		def __init__(self, numberOfHiddenLayers, inputLayerSize, hiddenLayerSize, outputLayerSize):
+			self.numberOfHiddenLayers = numberOfHiddenLayers
+			self.inputLayerSize = inputLayerSize
+			self.hiddenLayerSize = hiddenLayerSize
+			self.outputLayerSize = outputLayerSize
+					
+	class tokenMemoryBankStorageSelectionModel(nn.Module):
+		def __init__(self, config, layerIndex):
+			super().__init__()
+			self.layerIndex = layerIndex	#not currently used
+			self.hidden = nncustom.Linear(config.inputLayerSize, config.hiddenLayerSize)
+			self.hiddenActivationFunction = nn.ReLU()
+			self.output = nncustom.Linear(config.hiddenLayerSize, config.outputLayerSize)
+			if(config.outputLayerSize == 1):
+				self.outputActivationFunction = nn.Sigmoid()
+				self.lossFunction = nn.BCELoss()	#nn.BCEWithLogitsLoss() includes sigmoid
+			elif(config.outputLayerSize == 2):
+				self.outputActivationFunction = nn.LogSoftmax(dim=1)
+				self.lossFunction = nn.NLLLoss()	 #CrossEntropyLoss() includes softmax
+			self.accuracyMetric = BinaryAccuracy(threshold=tokenMemoryBankStorageSelectionBinaryThreshold)
+		def forward(self, x):
+			x = self.hidden(x)
+			x = self.hiddenActivationFunction(x)
+			y = self.output(x)
+			y = self.outputActivationFunction(y)
+			return y
+
+	tokenMemoryBankStorageSelectionModelList = [None]*numberOfHiddenLayersTokenMemoryBankParameters	#similar to modelStoreList
+	
+	def createModelTokenMemoryBankStorageSelection(layerIndex, config):
+		print("layerIndex = ", layerIndex)
+		model = tokenMemoryBankStorageSelectionModel(config, layerIndex)
+		tokenMemoryBankStorageSelectionModelList[layerIndex] = model
+		return model
+
+	sequenceRegisterMemoryBankHiddenStatesTrainRememberLayerList = [None]*numberOfHiddenLayersTokenMemoryBankParameters
+	sequenceRegisterMemoryBankHiddenStatesTrainForgetLayerList = [None]*numberOfHiddenLayersTokenMemoryBankParameters
+	
+	def getTokenMemoryBankStorageSelectionModelBatch(layerIndex):
+		print("layerIndex = ", layerIndex)
+		sequenceRegisterMemoryBankHiddenStatesTrainRememberLayer = sequenceRegisterMemoryBankHiddenStatesTrainRememberLayerList[layerIndex]
+		sequenceRegisterMemoryBankHiddenStatesTrainForgetLayer = sequenceRegisterMemoryBankHiddenStatesTrainForgetLayerList[layerIndex]
+		print("sequenceRegisterMemoryBankHiddenStatesTrainRememberLayer = ", sequenceRegisterMemoryBankHiddenStatesTrainRememberLayer)
+		sequenceRegisterMemoryBankHiddenStatesTrainRememberLayer = torch.cat(sequenceRegisterMemoryBankHiddenStatesTrainRememberLayer, dim=0)	#cat batch list
+		sequenceRegisterMemoryBankHiddenStatesTrainForgetLayer = torch.cat(sequenceRegisterMemoryBankHiddenStatesTrainForgetLayer, dim=0)	#cat batch list
+		print("sequenceRegisterMemoryBankHiddenStatesTrainRememberLayer.shape = ", sequenceRegisterMemoryBankHiddenStatesTrainRememberLayer.shape)
+		print("sequenceRegisterMemoryBankHiddenStatesTrainForgetLayer.shape = ", sequenceRegisterMemoryBankHiddenStatesTrainForgetLayer.shape)
+		sequenceRegisterMemoryBankOutputsTrainRememberLayer = torch.ones(sequenceRegisterMemoryBankHiddenStatesTrainRememberLayer.shape[0])
+		sequenceRegisterMemoryBankOutputsTrainForgetLayer = torch.zeros(sequenceRegisterMemoryBankHiddenStatesTrainForgetLayer.shape[0])
+		print("sequenceRegisterMemoryBankOutputsTrainRememberLayer.shape = ", sequenceRegisterMemoryBankOutputsTrainRememberLayer.shape)
+		print("sequenceRegisterMemoryBankOutputsTrainForgetLayer.shape = ", sequenceRegisterMemoryBankOutputsTrainForgetLayer.shape)
+		xLabels = torch.cat([sequenceRegisterMemoryBankHiddenStatesTrainRememberLayer, sequenceRegisterMemoryBankHiddenStatesTrainForgetLayer])
+		yLabels = torch.cat([sequenceRegisterMemoryBankOutputsTrainRememberLayer, sequenceRegisterMemoryBankOutputsTrainForgetLayer])
+		yLabels = torch.unsqueeze(yLabels, dim=1)
+		print("xLabels.shape = ", xLabels.shape)
+		print("yLabels.shape = ", yLabels.shape)
+		xLabels = xLabels.to(device)
+		yLabels = yLabels.to(device)
+		labels = {}
+		labels['xLabels'] = xLabels
+		labels['yLabels'] = yLabels
+		return labels
+		
 class RobertaSharedLayerModules:
 	def __init__(self, config):
 		#precalculate these parameters locally (temp);
@@ -424,6 +486,10 @@ class RobertaSelfAttention(nn.Module):
 		def calculateSequenceRegisterMemoryBankTokenTimes(self, sequenceRegisterMemoryBankAccessTimes):
 			sequenceRegisterMemoryBankTokenTimes = torch.multiply(sequenceRegisterMemoryBankAccessTimes, sequenceRegisterTokenAccessTimeContextualWindow)
 			return sequenceRegisterMemoryBankTokenTimes
+			
+		def calculateSequenceRegisterMemoryBankTheoreticalNoAccessTimes(self, sequenceRegisterMemoryBankTokenTimes):
+			sequenceRegisterMemoryBankTheoreticalNoAccessTimes = torch.floor_divide(sequenceRegisterMemoryBankTokenTimes, sequenceRegisterTokenAccessTimeContextualWindow)
+			return sequenceRegisterMemoryBankTheoreticalNoAccessTimes
 
 		def updateSequenceRegisterMemoryBankTokenTimes(self, sequenceRegisterMemoryBankTokenTimes):
 			sequenceRegisterMemoryBankTokenTimes = torch.add(sequenceRegisterMemoryBankTokenTimes, sequenceRegisterTokenAccessTimeContextualWindow)
@@ -460,8 +526,9 @@ class RobertaSelfOutput(nn.Module):
 
 # Copied from transformers.models.bert.modeling_bert.BertAttention with Bert->Roberta
 class RobertaAttention(nn.Module):
-	def __init__(self, config, robertaSharedLayerModules=None, position_embedding_type=None):
+	def __init__(self, config, layerIndex=None, robertaSharedLayerModules=None, position_embedding_type=None):
 		super().__init__()
+		self.layerIndex = layerIndex
 		self.self = RobertaSelfAttention(config, robertaSharedLayerModules, position_embedding_type=position_embedding_type)
 		self.output = RobertaSelfOutput(config, robertaSharedLayerModules)
 		self.pruned_heads = set()
@@ -499,7 +566,7 @@ class RobertaAttention(nn.Module):
 			if(self.self.batchIndex % orderedDatasetDocNumberSegments == 0):
 				self.self.clearSequenceRegisterMemoryBank()
 			self.self.batchIndex += 1
-			hidden_states = self.loadSequenceRegisterHiddenStates(hidden_states, self.self.sequenceRegisterMemoryBankHiddenStates)	#load additional hidden states from memory bank
+			hidden_states = self.loadSequenceRegisterValues(hidden_states, self.self.sequenceRegisterMemoryBankHiddenStates)	#load additional hidden states from memory bank
 		
 		self_outputs, attentionProbsMaxIndex = self.self(
 			hidden_states,
@@ -527,29 +594,45 @@ class RobertaAttention(nn.Module):
 		return outputs
 
 	if(tokenMemoryBank):
+			
 		def updateSequenceRegisterMemoryBank(self, hiddenStates, attentionProbsMaxIndex, sequenceRegisterMemoryBankAccessTimes, sequenceRegisterMemoryBankTokenTimes):
 			#interpretation: access time 0 = recently activated
 				
-			if(onlyAddAttendedContextualWindowTokensToMemoryBank):
+			if(tokenMemoryBankStorageSelectionAlgorithm):
+				sequenceRegisterContextualWindowHiddenStates = self.getSequenceRegisterContextualWindow(hiddenStates)	#shape: batchSize*contextualWindowSize*hiddenLayerSize
+				tokenMemoryBankStorageSelectionModel = tokenMemoryBankStorageSelectionModelList[self.layerIndex]
+				y = tokenMemoryBankStorageSelectionModel(sequenceRegisterContextualWindowHiddenStates)	#shape: batchSize*contextualWindowSize*2
+				sequenceRegisterContextualWindowStore = torch.gt(y, tokenMemoryBankStorageSelectionBinaryThreshold)
+				if(tokenMemoryBankStorageSelectionModelOutputLayerSize == 1):
+					sequenceRegisterContextualWindowStore = torch.squeeze(sequenceRegisterContextualWindowStore, dim=2)
+				elif(tokenMemoryBankStorageSelectionModelOutputLayerSize == 2):
+					print("error: tokenMemoryBankStorageSelectionModelOutputLayerSize==2 not yet coded")
+				
 				sequenceRegisterMemoryBankAccessTimes = torch.add(sequenceRegisterMemoryBankAccessTimes, 1)	#update access time for next model propagation	#increment sequenceRegisterMemoryBankAccessTimes
-				sequenceRegisterContextualWindowAccessTimes = torch.full([batchSize, sequenceRegisterContextualWindowLength], sequenceRegisterMaxActivationTime).to(device)	#prepare default sequenceRegisterContextualWindowAccessTimes (unrenewed)
-				sequenceRegisterAccessTimes = torch.cat((sequenceRegisterContextualWindowAccessTimes, sequenceRegisterMemoryBankAccessTimes), dim=1)
+				sequenceRegisterContextualWindowAccessTimes = (torch.logical_not(sequenceRegisterContextualWindowStore)).float()
+				sequenceRegisterContextualWindowAccessTimes = torch.multiply(sequenceRegisterContextualWindowAccessTimes, sequenceRegisterMaxActivationTime)
+				#sequenceRegisterAccessTimes = torch.cat((sequenceRegisterContextualWindowAccessTimes, sequenceRegisterMemoryBankAccessTimes), dim=1)	#not used (sequenceRegisterMemoryBankAccessTimes is recalculated independently later)
+				
+				sequenceRegisterAccessedNew = self.calculateSequenceRegisterAccessedNew(attentionProbsMaxIndex)
+				sequenceRegisterMemoryBankAccessedNew = self.getSequenceRegisterMemoryBank(sequenceRegisterAccessedNew)
+				sequenceRegisterMemoryBankAccessTimes = self.renewAccessTimeOfRecentlyAccessedTokens(sequenceRegisterMemoryBankAccessedNew, sequenceRegisterMemoryBankAccessTimes)
+				sequenceRegisterAccessTimes = self.loadSequenceRegisterValues(sequenceRegisterContextualWindowAccessTimes, sequenceRegisterMemoryBankAccessTimes)
 			else:
-				sequenceRegisterContextualWindowAccessTimes = torch.zeros(batchSize, sequenceRegisterContextualWindowLength).to(device)
-				sequenceRegisterAccessTimes = torch.cat((sequenceRegisterContextualWindowAccessTimes, sequenceRegisterMemoryBankAccessTimes), dim=1)
-				sequenceRegisterAccessTimes = torch.add(sequenceRegisterAccessTimes, 1)	#update access time for next model propagation	#increment sequenceRegisterAccessTimes;
+				if(onlyAddAttendedContextualWindowTokensToMemoryBank):
+					sequenceRegisterMemoryBankAccessTimes = torch.add(sequenceRegisterMemoryBankAccessTimes, 1)	#update access time for next model propagation	#increment sequenceRegisterMemoryBankAccessTimes
+					sequenceRegisterContextualWindowAccessTimes = torch.full([batchSize, sequenceRegisterContextualWindowLength], sequenceRegisterMaxActivationTime).to(device)	#prepare default sequenceRegisterContextualWindowAccessTimes (unrenewed)
+					sequenceRegisterAccessTimes = self.loadSequenceRegisterValues(sequenceRegisterContextualWindowAccessTimes, sequenceRegisterMemoryBankAccessTimes)
+				else:
+					sequenceRegisterContextualWindowAccessTimes = torch.zeros(batchSize, sequenceRegisterContextualWindowLength).to(device)
+					sequenceRegisterAccessTimes = self.loadSequenceRegisterValues(sequenceRegisterContextualWindowAccessTimes, sequenceRegisterMemoryBankAccessTimes)
+					sequenceRegisterAccessTimes = torch.add(sequenceRegisterAccessTimes, 1)	#update access time for next model propagation	#increment sequenceRegisterAccessTimes;
+			
+				sequenceRegisterAccessedNew = self.calculateSequenceRegisterAccessedNew(attentionProbsMaxIndex)
+				sequenceRegisterAccessTimes = self.renewAccessTimeOfRecentlyAccessedTokens(sequenceRegisterAccessedNew, sequenceRegisterAccessTimes)
+
 			sequenceRegisterMemoryBankTokenTimes = self.self.updateSequenceRegisterMemoryBankTokenTimes(sequenceRegisterMemoryBankTokenTimes)
 			sequenceRegisterTokenTimes = self.self.getSequenceRegisterTokenTimes(sequenceRegisterMemoryBankTokenTimes, sequenceRegisterMemoryBankAccessTimes)
 			
-			#renew the access time of all recently accessed tokens;
-			sequenceRegisterAccessedNew = F.one_hot(attentionProbsMaxIndex, num_classes=sequenceRegisterLength)
-			sequenceRegisterAccessedNew = torch.sum(sequenceRegisterAccessedNew, dim=1)
-			sequenceRegisterAccessedNew = sequenceRegisterAccessedNew.bool().float()
-			sequenceRegisterAccessedNewNot = torch.logical_not(sequenceRegisterAccessedNew.bool()).float()
-			sequenceRegisterAccessTimes = torch.multiply(sequenceRegisterAccessTimes, sequenceRegisterAccessedNewNot)
-			sequenceRegisterAccessedNewTime = torch.multiply(sequenceRegisterAccessedNew, sequenceRegisterRenewTime)
-			sequenceRegisterAccessTimes = torch.add(sequenceRegisterAccessTimes, sequenceRegisterAccessedNewTime)
-
 			if(debugPrintLowHiddenSize):
 				print("sequenceRegisterAccessTimes = ", sequenceRegisterAccessTimes)
 			
@@ -557,15 +640,36 @@ class RobertaAttention(nn.Module):
 			sequenceRegisterRetain = torch.lt(sequenceRegisterAccessTimes, sequenceRegisterMaxActivationTime)
 			sequenceRegisterRetainSize = torch.sum(sequenceRegisterRetain.int(), dim=1)	
 			
+			if(tokenMemoryBankStorageSelectionAlgorithm):
+				#learn TrainRemember tokens that are accessed in the memory bank
+				#learn TrainForget tokens that are never accessed in the memory bank
+				sequenceRegisterTrainRemember = self.getSequenceRegisterMemoryBank(sequenceRegisterAccessedNew)
+				sequenceRegisterTrainRememberSize = torch.sum(sequenceRegisterTrainRemember.int(), dim=1)	
+				
+				sequenceRegisterTrainForget = torch.logical_not(sequenceRegisterRetain)
+				sequenceRegisterTrainForget = self.getSequenceRegisterMemoryBank(sequenceRegisterTrainForget)
+				sequenceRegisterMemoryBankTheoreticalNoAccessTimes = self.self.calculateSequenceRegisterMemoryBankTheoreticalNoAccessTimes(sequenceRegisterMemoryBankTokenTimes)
+				sequenceRegisterMemoryBankNoAccess = torch.eq(sequenceRegisterMemoryBankTheoreticalNoAccessTimes, sequenceRegisterMaxActivationTime)	#CHECKTHIS
+				sequenceRegisterTrainForget = torch.logical_and(sequenceRegisterTrainForget, sequenceRegisterMemoryBankNoAccess)
+				sequenceRegisterTrainForgetSize = torch.sum(sequenceRegisterTrainForget.int(), dim=1)
+							
 			#update memory bank;
 			sequenceRegisterMemoryBankHiddenStatesList = []
 			sequenceRegisterMemoryBankAccessTimesList = []
 			sequenceRegisterMemoryBankTokenTimesList = []
+			if(tokenMemoryBankStorageSelectionAlgorithm):
+				sequenceRegisterMemoryBankHiddenStatesTrainRememberList = []
+				sequenceRegisterMemoryBankHiddenStatesTrainForgetList = []
 			for sampleIndex in range(batchSize):
 				#must execute mask select for each sample in batch because they will produce different length tensors
 				sequenceRegisterRetainSample = sequenceRegisterRetain[sampleIndex]
 				sequenceRegisterRetainSizeSample = sequenceRegisterRetainSize[sampleIndex]
-				
+				if(tokenMemoryBankStorageSelectionAlgorithm):
+					sequenceRegisterTrainRememberSample = sequenceRegisterTrainRemember[sampleIndex]
+					sequenceRegisterTrainRememberSizeSample = sequenceRegisterTrainRememberSize[sampleIndex]
+					sequenceRegisterTrainForgetSample = sequenceRegisterTrainForget[sampleIndex]
+					sequenceRegisterTrainForgetSizeSample = sequenceRegisterTrainForgetSize[sampleIndex]
+					
 				hiddenStatesSample = hiddenStates[sampleIndex].detach()
 				sequenceRegisterAccessTimesSample = sequenceRegisterAccessTimes[sampleIndex]
 				sequenceRegisterMemoryBankTokenTimesSample = sequenceRegisterTokenTimes[sampleIndex]
@@ -573,6 +677,10 @@ class RobertaAttention(nn.Module):
 				sequenceRegisterMemoryBankHiddenStatesSample = hiddenStatesSample[sequenceRegisterRetainSample]
 				sequenceRegisterMemoryBankAccessTimesSample = sequenceRegisterAccessTimesSample[sequenceRegisterRetainSample]
 				sequenceRegisterMemoryBankTokenTimesSample = sequenceRegisterMemoryBankTokenTimesSample[sequenceRegisterRetainSample]
+				if(tokenMemoryBankStorageSelectionAlgorithm):
+					hiddenStatesSampleMemoryBank = self.getSequenceRegisterMemoryBankSample(hiddenStatesSample)
+					sequenceRegisterMemoryBankHiddenStatesSampleTrainRemember = hiddenStatesSampleMemoryBank[sequenceRegisterTrainRememberSample]
+					sequenceRegisterMemoryBankHiddenStatesSampleTrainForget = hiddenStatesSampleMemoryBank[sequenceRegisterTrainForgetSample]
 
 				#if(sequenceRegisterRetainSizeSample > sequenceRegisterLength):
 				if(debugPrintSequenceRegisterRetainSize):
@@ -589,12 +697,13 @@ class RobertaAttention(nn.Module):
 					sequenceRegisterMemoryBankHiddenStatesSample = torch.cat((sequenceRegisterMemoryBankHiddenStatesSample, sequenceRegisterMemoryBankHiddenStatesSamplePad), dim=0)
 					sequenceRegisterMemoryBankAccessTimesSample = torch.cat((sequenceRegisterMemoryBankAccessTimesSample, sequenceRegisterMemoryBankAccessTimesSamplePad), dim=0)
 					sequenceRegisterMemoryBankTokenTimesSample = torch.cat((sequenceRegisterMemoryBankTokenTimesSample, sequenceRegisterMemoryBankTokenTimesSamplePad), dim=0)
+
 				if(sequenceRegisterVerifyMemoryBankSize):
 					#sort memory bank by time to ensure that oldest tokens can easily be deleted if run out of space
 					sequenceRegisterMemoryBankAccessTimesSample, indices = torch.sort(sequenceRegisterMemoryBankAccessTimesSample, dim=0)
 					sequenceRegisterMemoryBankHiddenStatesSample = sequenceRegisterMemoryBankHiddenStatesSample[indices]
 					sequenceRegisterMemoryBankTokenTimesSample = sequenceRegisterMemoryBankTokenTimesSample[indices]
-	
+
 				if(debugPrintLowHiddenSize):
 					#print("sequenceRegisterMemoryBankHiddenStatesSample = ", sequenceRegisterMemoryBankHiddenStatesSample)			
 					#print("sequenceRegisterMemoryBankAccessTimesSample = ", sequenceRegisterMemoryBankAccessTimesSample)
@@ -603,10 +712,20 @@ class RobertaAttention(nn.Module):
 				sequenceRegisterMemoryBankHiddenStatesList.append(sequenceRegisterMemoryBankHiddenStatesSample)
 				sequenceRegisterMemoryBankAccessTimesList.append(sequenceRegisterMemoryBankAccessTimesSample)
 				sequenceRegisterMemoryBankTokenTimesList.append(sequenceRegisterMemoryBankTokenTimesSample)
+				if(tokenMemoryBankStorageSelectionAlgorithm):
+					sequenceRegisterMemoryBankHiddenStatesTrainRememberList.append(sequenceRegisterMemoryBankHiddenStatesSampleTrainRemember)
+					sequenceRegisterMemoryBankHiddenStatesTrainForgetList.append(sequenceRegisterMemoryBankHiddenStatesSampleTrainForget)
+			
 			sequenceRegisterMemoryBankHiddenStates = torch.stack(sequenceRegisterMemoryBankHiddenStatesList, dim=0)
 			sequenceRegisterMemoryBankAccessTimes = torch.stack(sequenceRegisterMemoryBankAccessTimesList, dim=0)
 			sequenceRegisterMemoryBankTokenTimes = torch.stack(sequenceRegisterMemoryBankTokenTimesList, dim=0)
-			
+		
+			if(tokenMemoryBankStorageSelectionAlgorithm):
+				global sequenceRegisterMemoryBankHiddenStatesTrainRememberLayerList
+				global sequenceRegisterMemoryBankHiddenStatesTrainForgetLayerList
+				sequenceRegisterMemoryBankHiddenStatesTrainRememberLayerList[self.layerIndex] = sequenceRegisterMemoryBankHiddenStatesTrainRememberList
+				sequenceRegisterMemoryBankHiddenStatesTrainForgetLayerList[self.layerIndex] = sequenceRegisterMemoryBankHiddenStatesTrainForgetList
+				
 			#delete oldest tokens;
 			sequenceRegisterMemoryBankHiddenStates = sequenceRegisterMemoryBankHiddenStates[:, 0:sequenceRegisterMemoryBankLength]
 			sequenceRegisterMemoryBankAccessTimes = sequenceRegisterMemoryBankAccessTimes[:, 0:sequenceRegisterMemoryBankLength]
@@ -617,7 +736,20 @@ class RobertaAttention(nn.Module):
 			
 			return hiddenStates, sequenceRegisterMemoryBankHiddenStates, sequenceRegisterMemoryBankAccessTimes, sequenceRegisterMemoryBankTokenTimes
 
-		def loadSequenceRegisterHiddenStates(self, sequenceRegisterContextualWindowHiddenStates, sequenceRegisterMemoryBankHiddenStates):
+		def calculateSequenceRegisterAccessedNew(self, attentionProbsMaxIndex):
+			sequenceRegisterAccessedNew = F.one_hot(attentionProbsMaxIndex, num_classes=sequenceRegisterLength)
+			sequenceRegisterAccessedNew = torch.sum(sequenceRegisterAccessedNew, dim=1)
+			sequenceRegisterAccessedNew = sequenceRegisterAccessedNew.bool()
+			return sequenceRegisterAccessedNew
+			
+		def renewAccessTimeOfRecentlyAccessedTokens(self, sequenceRegisterAccessedNew, sequenceRegisterAccessTimes):
+			sequenceRegisterAccessedNewNot = torch.logical_not(sequenceRegisterAccessedNew)
+			sequenceRegisterAccessTimes = torch.multiply(sequenceRegisterAccessTimes, sequenceRegisterAccessedNewNot.float())
+			sequenceRegisterAccessedNewTime = torch.multiply(sequenceRegisterAccessedNew.float(), sequenceRegisterRenewTime)
+			sequenceRegisterAccessTimes = torch.add(sequenceRegisterAccessTimes, sequenceRegisterAccessedNewTime)
+			return sequenceRegisterAccessTimes
+			
+		def loadSequenceRegisterValues(self, sequenceRegisterContextualWindowHiddenStates, sequenceRegisterMemoryBankHiddenStates):
 			hiddenStates = torch.cat((sequenceRegisterContextualWindowHiddenStates, sequenceRegisterMemoryBankHiddenStates), dim=1)
 			return hiddenStates
 
@@ -632,6 +764,10 @@ class RobertaAttention(nn.Module):
 		def getSequenceRegisterContextualWindow(self, sequenceRegisterHiddenStates):
 			sequenceRegisterContextualWindow = sequenceRegisterHiddenStates[:, 0:sequenceRegisterContextualWindowLength]
 			return sequenceRegisterContextualWindow
+			
+		def getSequenceRegisterMemoryBankSample(self, sequenceRegisterHiddenStatesSample):
+			sequenceRegisterMemoryBankSample = sequenceRegisterHiddenStatesSample[sequenceRegisterContextualWindowLength:]
+			return sequenceRegisterMemoryBankSample
 
 
 # Copied from transformers.models.bert.modeling_bert.BertIntermediate
@@ -673,17 +809,18 @@ class RobertaOutput(nn.Module):
 
 # Copied from transformers.models.bert.modeling_bert.BertLayer with Bert->Roberta
 class RobertaLayer(nn.Module):
-	def __init__(self, config, robertaSharedLayerModules=None):
+	def __init__(self, config, layerIndex=None, robertaSharedLayerModules=None):
 		super().__init__()
+		self.layerIndex = layerIndex
 		self.chunk_size_feed_forward = config.chunk_size_feed_forward
 		self.seq_len_dim = 1
-		self.attention = RobertaAttention(config, robertaSharedLayerModules)
+		self.attention = RobertaAttention(config, layerIndex, robertaSharedLayerModules)
 		self.is_decoder = config.is_decoder
 		self.add_cross_attention = config.add_cross_attention
 		if self.add_cross_attention:
 			if not self.is_decoder:
 				raise ValueError(f"{self} should be used as a decoder model if cross attention is added")
-			self.crossattention = RobertaAttention(config, robertaSharedLayerModules, position_embedding_type="absolute")
+			self.crossattention = RobertaAttention(config, layerIndex, robertaSharedLayerModules, position_embedding_type="absolute")
 		self.intermediate = RobertaIntermediate(config, robertaSharedLayerModules)
 		self.output = RobertaOutput(config, robertaSharedLayerModules)
 
@@ -767,12 +904,12 @@ class RobertaEncoder(nn.Module):
 		if(recursiveLayers):
 			if(sharedLayerWeights):
 				robertaSharedLayerModules = RobertaSharedLayerModules(config)
-				self.layer = nn.ModuleList([RobertaLayer(config, robertaSharedLayerModules) for _ in range(config.num_hidden_layers)])
+				self.layer = nn.ModuleList([RobertaLayer(config, layerIndex, robertaSharedLayerModules) for layerIndex in range(config.num_hidden_layers)])
 			else:
-				self.recursiveLayer = RobertaLayer(config)
-				self.layer = nn.ModuleList([self.recursiveLayer for _ in range(config.num_hidden_layers)])
+				self.recursiveLayer = RobertaLayer(config, layerIndex=0)
+				self.layer = nn.ModuleList([self.recursiveLayer for layerIndex in range(config.num_hidden_layers)])
 		else:
-			self.layer = nn.ModuleList([RobertaLayer(config) for _ in range(config.num_hidden_layers)])			
+			self.layer = nn.ModuleList([RobertaLayer(config, layerIndex) for layerIndex in range(config.num_hidden_layers)])			
 		self.gradient_checkpointing = False
 
 	def forward(
@@ -1893,3 +2030,4 @@ def create_position_ids_from_input_ids(input_ids, padding_idx, past_key_values_l
 def getMaxPositionEmbedding(sequenceLength):
 	maxPositionEmbedding = sequenceLength+2
 	return maxPositionEmbedding
+

@@ -23,22 +23,6 @@ from SBNLPpt_globalDefs import *
 import SBNLPpt_data
 import SBNLPpt_RNNmodel
 
-hiddenLayerSize = 1024	#65536	#2^16 - large hidden size is required for recursive RNN as parameters are shared across a) sequence length and b) number of layers
-if(SBNLPpt_RNNmodel.applyIOconversionLayers):
-	embeddingLayerSize = 768
-else:
-	embeddingLayerSize = hiddenLayerSize
-
-numberOfHiddenLayers = 6
-
-modelPathName = modelPathName + '/modelRNN.pt'
-
-useBidirectionalRNN = False
-if(useBidirectionalRNN):
-	bidirectional = 2
-else:
-	bidirectional = 1
-
 def createModel(vocabSize):
 	print("creating new model")
 	config = SBNLPpt_RNNmodel.RNNconfig(
@@ -55,11 +39,11 @@ def createModel(vocabSize):
 
 def loadModel():
 	print("loading existing model")
-	model = pt.load(modelPathName)
+	model = pt.load(modelPathNameFull)
 	return model
 	
 def saveModel(model):
-	pt.save(model, modelPathName)
+	pt.save(model, modelPathNameFull)
 
 def propagate(device, model, tokenizer, batch):
 	inputIDs = batch['inputIDs'].to(device)

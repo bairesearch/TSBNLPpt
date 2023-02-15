@@ -25,20 +25,6 @@ from SBNLPpt_globalDefs import *
 import SBNLPpt_data
 import SBNLPpt_SANImodel
 
-hiddenLayerSize = 1024	#1024	#8192	#1024	#depends on GPU memory	#2^16 = 65536 - large hidden size is required for recursive SANI as parameters are shared across a) sequence length and b) number of layers
-if(SBNLPpt_SANImodel.applyIOconversionLayers):
-	embeddingLayerSize = 768
-else:
-	embeddingLayerSize = hiddenLayerSize
-
-modelPathName = modelPathName + '/modelSANI.pt'
-
-#useBidirectionalSANI = False	#not currently supported
-#if(useBidirectionalSANI):
-#	bidirectional = 2
-#else:
-#	bidirectional = 1
-
 def createModel(vocabSize):
 	print("creating new model")
 	config = SBNLPpt_SANImodel.SANIconfig(
@@ -55,11 +41,11 @@ def createModel(vocabSize):
 
 def loadModel():
 	print("loading existing model")
-	model = pt.load(modelPathName)
+	model = pt.load(modelPathNameFull)
 	return model
 	
 def saveModel(model):
-	pt.save(model, modelPathName)
+	pt.save(model, modelPathNameFull)
 
 def propagate(device, model, tokenizer, batch):
 	inputIDs = batch['inputIDs'].to(device)

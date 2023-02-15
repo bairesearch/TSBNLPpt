@@ -32,86 +32,37 @@ if(usePretrainedModelDebug):
 	from transformers import RobertaForMaskedLM
 else:
 	from SBNLPpt_transformerModel import RobertaForMaskedLM
+import SBNLPpt_transformerModel
 
-from SBNLPpt_transformerModel import getMaxPositionEmbedding
-
-if(recursiveLayers):
-	from SBNLPpt_transformerModel import sharedLayerWeights
-	from SBNLPpt_transformerModel import sharedLayerWeightsOutput
-	recursiveLayersNormaliseNumParameters = False	#default: True	#optional	#if use recursiveLayers normalise/equalise num of parameters with respect to !recursiveLayers
-	if(recursiveLayersNormaliseNumParameters):
-		recursiveLayersNormaliseNumParametersIntermediate = True	#normalise intermediateSize parameters also
-else:
-	recursiveLayersNormaliseNumParameters = False	#mandatory
-	
 if(not usePretrainedModelDebug):
-
+	from SBNLPpt_transformerModel import getMaxPositionEmbedding
 	if(relativeTimeEmbeddings):
 		positionEmbeddingType = "relative_time"	#calculates relative time between layer tokens
 		maxPositionEmbeddings = getMaxPositionEmbedding(sequenceRegisterMaxTokenTime)
 	else:
 		positionEmbeddingType = "relative_key"	#"absolute"	#default
 		maxPositionEmbeddings = getMaxPositionEmbedding(sequenceMaxNumTokens)
-		
-	if(officialRobertaBaseModel):
-		numberOfHiddenLayers = 12	#default values
-	else:
-		if(useSingleHiddenLayerDebug):
-			numberOfHiddenLayers = 1
-		else:
-			numberOfHiddenLayers = 6	#default: 6
-	if(debugPrintLowHiddenSize):
-		hiddenLayerSize = 24
-	else:
-		hiddenLayerSize = 768	#default: 768
-	numberOfAttentionHeads = 12	#default: 12
-	intermediateSize = 3072	#default: 3072
 
-	if(recursiveLayers):
-		#same model size irrespective of useSingleHiddenLayerDebug
-		if(recursiveLayersNormaliseNumParameters):
-			if(sharedLayerWeights):
-				if(sharedLayerWeightsOutput):
-					if(recursiveLayersNormaliseNumParametersIntermediate):
-						hiddenLayerSizeMultiplier = (7/4)	#model size = 249MB	
-						#hiddenLayerSizeMultiplier = (5/3)	#~230MB	
-					else:
-						hiddenLayerSizeMultiplier = 2	#model size = ~255MB
-				else:
-					if(recursiveLayersNormaliseNumParametersIntermediate):
-						hiddenLayerSizeMultiplier = (4/3)	#model size = 273MB
-					else:
-						hiddenLayerSizeMultiplier = 1.5	#model size = ~255MB
-			else:
-				hiddenLayerSizeMultiplier = (7/4)	#model size = ~250MB	#optimisation failure observed
-				#hiddenLayerSizeMultiplier = (11/6)	#model size = ~265MB	#optimisation failure observed
-				#hiddenLayerSizeMultiplier = 2.0	#model size = ~280MB	#optimisation failure observed
-					
-			hiddenLayerSize = round(hiddenLayerSize*hiddenLayerSizeMultiplier)
-			numberOfAttentionHeads = round(numberOfAttentionHeads*hiddenLayerSizeMultiplier)	#or: round(numberOfAttentionHeads)
-			if(recursiveLayersNormaliseNumParametersIntermediate):
-				intermediateSize = round(intermediateSize*hiddenLayerSizeMultiplier)
-			print("hiddenLayerSize = ", hiddenLayerSize)
-			print("numberOfAttentionHeads = ", numberOfAttentionHeads)
-			print("intermediateSize = ", intermediateSize)
+if(useMultipleModels):
+	def createModelIndex(vocabSize, modelStoreIndex):
+		if(modelStoreIndex == 0):
+			model = createModel(vocabSize)
 		else:
-			if(sharedLayerWeights):
-				if(sharedLayerWeightsOutput):
-					pass	#model size = ~120MB
-				else:
-					pass	#model size = 176.7MB
-			else:
-				pass	#model size = 120.4MB
-	else:
-		if(useSingleHiddenLayerDebug):
-			pass	#model size = 120.4MB
+			model = createTokenMemoryBankStorageSelectionModel(modelStoreIndex)
+		return model
+	def loadModelIndex(modelStoreIndex):
+		if(modelStoreIndex == 0):
+			model = loadModel()
 		else:
-			pass	#model size = 255.6MB
+			model = loadTokenMemoryBankStorageSelectionModel(modelStoreIndex)
+		return model
+	def saveModelIndex(model, modelStoreIndex):
+		if(modelStoreIndex == 0):
+			saveModel(model)
+		else:		
+			saveTokenMemoryBankStorageSelectionModel(model, modelStoreIndex)
 		
-
-
-def createModel(vocabularySize):
-		
+def createModel(vocabularySize):	
 	print("creating new model")	
 	config = RobertaConfig(
 		vocab_size=vocabularySize,  #sync with tokenizer vocab_size
@@ -134,6 +85,12 @@ def loadModel():
 def saveModel(model):
 	model.save_pretrained(modelPathName)
 
+def propagateIndex(device, model, tokenizer, batch, modelStoreIndex):	
+	if(modelStoreIndex == 0):
+		return propagate(device, model, tokenizer, batch)
+	else:
+		return propagateTokenMemoryBankStorageSelection(device, model, tokenizer, batch)
+			
 def propagate(device, model, tokenizer, batch):	
 	inputIDs = batch['inputIDs'].to(device)
 	attentionMask = batch['attentionMask'].to(device)
@@ -150,3 +107,72 @@ def propagate(device, model, tokenizer, batch):
 	loss = outputs.loss
 	
 	return loss, accuracy
+
+if(tokenMemoryBankStorageSelectionAlgorithm):
+
+	def getTokenMemoryBankStorageSelectionModelBatch(layerIndex):
+		return SBNLPpt_transformerModel.getTokenMemoryBankStorageSelectionModelBatch(layerIndex)
+		
+	def createTokenMemoryBankStorageSelectionModel(modelStoreIndex):	
+		print("creating new tokenMemoryBankStorageSelection model")	
+		layerIndex = getLayerIndex(modelStoreIndex)
+		model = SBNLPpt_transformerModel.createModelTokenMemoryBankStorageSelection(layerIndex, tokenMemoryBankStorageSelectionConfig)
+		return model
+
+	def loadTokenMemoryBankStorageSelectionModel(modelStoreIndex):
+		print("loading existing tokenMemoryBankStorageSelection model")
+		modelPathNameFull = getTokenMemoryBankStorageSelectionModelPathName(modelStoreIndex)
+		model = pt.load(modelPathNameFull)
+		return model
+		
+	def saveTokenMemoryBankStorageSelectionModel(model, modelStoreIndex):
+		#print("save tokenMemoryBankStorageSelection model")
+		#modelStoreIndex = model.modelStoreIndex
+		modelPathNameFull = getTokenMemoryBankStorageSelectionModelPathName(modelStoreIndex)
+		pt.save(model, modelPathNameFull)
+		
+	def getTokenMemoryBankStorageSelectionModelName(modelStoreIndex):
+		modelName = tokenMemoryBankStorageSelectionModelName + str(modelStoreIndex)
+		return modelName
+
+	def getTokenMemoryBankStorageSelectionModelPathName(modelStoreIndex):
+		modelName = getTokenMemoryBankStorageSelectionModelName(modelStoreIndex)
+		modelPathNameFull = getModelPathNameFull(modelPathName, modelName)
+		return modelPathNameFull
+		
+	def getModelStoreIndex(layerIndex):
+		modelStoreIndex = layerIndex+1	#0: modelTransformer, 1+: modelTokenMemoryBankStorageSelection*
+		return modelStoreIndex
+
+	def getLayerIndex(modelStoreIndex):
+		layerIndex = modelStoreIndex-1	#0: modelTransformer, 1+: modelTokenMemoryBankStorageSelection*
+		return layerIndex
+
+	def propagateTokenMemoryBankStorageSelection(device, model, tokenizer, batch):	
+		xLabels = batch['xLabels'].to(device)
+		yLabels = batch['yLabels'].to(device)
+		y = model(xLabels)
+		loss = model.lossFunction(y, yLabels)
+		accuracy = model.accuracyMetric(y, yLabels)	#CHECKTHIS: calculate top-1 accuracy	#threshold = 0.5
+		return loss, accuracy
+
+	class modelStoreClass():
+		def __init__(self, name):
+			self.name = name
+			#self.config = None
+			self.model = None
+			self.optim = None
+
+	modelStoreList = [None]*(1+numberOfHiddenLayersTokenMemoryBankParameters)
+	modelStoreList[0] = modelStoreClass(modelName)
+	for layerIndex in range(numberOfHiddenLayersTokenMemoryBankParameters):
+		modelStoreIndex = getModelStoreIndex(layerIndex)
+		modelStoreList[modelStoreIndex] = modelStoreClass(getTokenMemoryBankStorageSelectionModelName(modelStoreIndex))
+
+	tokenMemoryBankStorageSelectionConfig = SBNLPpt_transformerModel.tokenMemoryBankStorageSelectionConfig(
+		numberOfHiddenLayers=numberOfHiddenLayers,	#or numberOfHiddenLayersTokenMemoryBankParameters?
+		inputLayerSize=tokenMemoryBankStorageSelectionModelInputLayerSize,
+		hiddenLayerSize=tokenMemoryBankStorageSelectionModelHiddenLayerSize,
+		outputLayerSize=tokenMemoryBankStorageSelectionModelOutputLayerSize,
+	)
+		

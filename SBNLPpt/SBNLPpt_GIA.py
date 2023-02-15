@@ -33,15 +33,6 @@ else:
 
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
-if(debugReduceEmbeddingLayerSize):
-	embeddingLayerSize = 10
-else:
-	embeddingLayerSize = 768	#word vector embedding size (cany vary based on GIA word vector space)
-
-
-
-modelPathName = modelPathName + '/modelGIA.pt'
-
 def preparePOSdictionary():
 	if(useVectorisedSemanticRelationIdentification):
 		global posVectorList
@@ -50,6 +41,12 @@ def preparePOSdictionary():
 	else:
 		SBNLPpt_GIAsemanticRelationStandard.preparePOSdictionary()
 	
+
+if(useMultipleModels):
+	def createModelIndex(vocabSize, modelStoreIndex):
+		return createModel(vocabSize)
+	def loadModelIndex(modelStoreIndex):
+		return loadModel()
 	
 def createModel(vocabSize):
 	print("creating new model")
@@ -60,11 +57,11 @@ def createModel(vocabSize):
 
 def loadModel():
 	print("loading existing model")
-	model = pt.load(modelPathName)
+	model = pt.load(modelPathNameFull)
 	return model
 	
 def saveModel(model):
-	pt.save(model, modelPathName)
+	pt.save(model, modelPathNameFull)
 
 def propagate(device, model, tokenizer, labels):
 	(xLabels, yLabels) = labels

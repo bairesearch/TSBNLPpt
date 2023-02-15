@@ -31,7 +31,7 @@ def createDataLoader(useMLM, tokenizer, dataElements, numberOfDataFiles, pathInd
 			print("paths = ", dataElements[0:pathIndexMax-pathIndexMin])	
 	
 	if(createOrderedDataset):
-		numberOfDocuments = numberOfDataFiles*numberOfDocumentsPerDataFile * orderedDatasetDocNumberSegments//orderedDatasetDocNumberSegmentsDefault    #//orderedDatasetDocNumberSegmentsDefault to reduce number datafiles parsed (not required)
+		numberOfDocuments = numberOfDataFiles*numberOfDocumentsPerDataFile * orderedDatasetDocNumberSegments//10    #//10 to reduce number datafiles parsed (not required)
 	else:
 		numberOfDocuments = numberOfDataFiles*numberOfDocumentsPerDataFile	#equivalent number of documents (assuming it were loading data files)
 	print("numberOfDocuments = ", numberOfDocuments)

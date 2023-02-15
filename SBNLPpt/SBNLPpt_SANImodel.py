@@ -73,7 +73,7 @@ class ModelVocabPredictionHead(nn.Module):
 		self.layer_norm = nn.LayerNorm(config.hiddenLayerSize, eps=config.layer_norm_eps)
 		self.decoder = nncustom.Linear(config.hiddenLayerSize, config.vocab_size)
 
-	def forward(self, features, **kwargs):
+	def forward(self, features):
 		x = self.dense(features)
 		x = gelu(x)
 		x = self.layer_norm(x)
