@@ -33,6 +33,7 @@ debugPrintPaths = False
 debugPrintDataFileIndex = False
 debugDoNotTrainModel = False
 debugPrintLowHiddenSize = False
+debugPrintMultipleModelAccuracy = False
 
 #recursive algorithm selection:
 useAlgorithmTransformer = True
@@ -112,6 +113,7 @@ sequenceMaxNumTokensDefault = 512
 useMultipleModels = False	#initialise (dependent var)
 createOrderedDataset = False	#initialise (dependent var)
 tokenMemoryBank = False	#initialise (dependent var)
+tokenMemoryBankStorageSelectionAlgorithmAuto = False	#initialise (dependent var)
 relativeTimeEmbeddings = False	#initialise (dependent var)
 if(useAlgorithmTransformer):
 	tokenMemoryBank = True	#apply attention to all tokens in sequenceRegister (standard contextualWindow + memoryBank), where memoryBank is updated based on recently attended tokens
@@ -123,10 +125,20 @@ if(useAlgorithmTransformer):
 		sequenceMaxNumTokens = 128	#128 256 512	#default: sequenceMaxNumTokensDefault	#override
 		orderedDatasetDocNumberSegmentsDefault = 10
 	if(tokenMemoryBank):
-		tokenMemoryBankStorageSelectionAlgorithm = True	#automatically learn tokenMemoryBank storage selection algorithm
-		if(tokenMemoryBankStorageSelectionAlgorithm):
+		tokenMemoryBankStorageSelectionAlgorithmAuto = True	#automatically learn tokenMemoryBank storage selection algorithm
+		if(tokenMemoryBankStorageSelectionAlgorithmAuto):
 			useMultipleModels = True
-			tokenMemoryBankStorageSelectionBinaryThreshold = 0.5
+			tokenMemoryBankStorageSelectionBinaryThreshold = 0.2	#0.2	#<0.5: decrease tokenMemoryBankStorageSelectionBinaryThreshold to ensure a majority of contextualWindow tokens are forgotten (not added to memory)	#[biased forget] 0->0.5 [no bias] 0.5->1.0 [biased remember]
+			tokenMemoryBankStorageSelectionNormaliseForgetRememberSize = True
+			if(tokenMemoryBankStorageSelectionNormaliseForgetRememberSize):
+				tokenMemoryBankStorageSelectionNormaliseForgetRememberSizeBias = 0.5	#0.2	 #[biased forget] 0->0.5 [no bias] 0.5->1.0 [biased remember]
+			tokenMemoryBankStorageSelectionInitiationBias = True
+			if(tokenMemoryBankStorageSelectionInitiationBias):
+				tokenMemoryBankStorageSelectionInitiationBiasOutputLayerMean = -0.1	#bias initiation of tokenMemoryBankStorageSelectionModel to not select tokens for memory bank insertion (such that sufficient number of tokens are forgotten to successfully train the model)
+			debugTokenMemoryBankStorageSelectionAlgorithmAuto = True
+			debugPrintMultipleModelAccuracy = True
+		else:
+			onlyAddAttendedContextualWindowTokensToMemoryBank = True	#optional #saves memory bank space by only adding attended contextual window tokens to memory bank 
 		tokenMemoryBankMaxAttentionHeads = 12	#12	#1	#maximum number of attention heads to identify important tokens to remember	#max value allowed = numberOfAttentionHeads (12)
 		createOrderedDataset = True
 		#tokenMemoryBank algorithm requires continuous/contiguous textual input	#batchSize > 0, will need to feed contiguous input for each sample in batch
@@ -148,7 +160,6 @@ if(useAlgorithmTransformer):
 		sequenceRegisterVerifyMemoryBankSize = True	#if false, need to set memory bank size sufficiently high such that will never run out of space for retained tokens
 		sequenceRegisterMemoryBankPaddingAccessTime = sequenceRegisterMaxActivationTime	#set access time of padding high to ensure that it will learn to be ignored (does not interfere with positional calculations); may not be required given that all hidden states are zeroed
 		sequenceRegisterMemoryBankPaddingTokenTime = sequenceRegisterMemoryBankPaddingAccessTime*sequenceMaxNumTokens
-		onlyAddAttendedContextualWindowTokensToMemoryBank = True	#optional #saves memory bank space by only adding attended contextual window tokens to memory bank 
 		calculateMemoryBankTokenTimesFromAccessTimes = False #calculate memory bank token times based on last access times
 		sequenceRegisterMaxTokenTime = (orderedDatasetDocNumberSegmentsDefault+1)*sequenceMaxNumTokensDefault	#CHECKTHIS: +1 because sequenceRegisterLength = sequenceRegisterContextualWindowLength + sequenceRegisterMemoryBankLength
 		debugPrintSequenceRegisterRetainSize = False
@@ -418,7 +429,7 @@ if(useAlgorithmTransformer):
 			else:
 				pass	#model size = 255.6MB
 			
-		if(tokenMemoryBankStorageSelectionAlgorithm):
+		if(tokenMemoryBankStorageSelectionAlgorithmAuto):
 			tokenMemoryBankStorageSelectionModelInputLayerSize = hiddenLayerSize
 			tokenMemoryBankStorageSelectionModelHiddenLayerSize = 768//2	#between hiddenLayerSize (768) and number of outputs (2:store/delete)
 			tokenMemoryBankStorageSelectionModelOutputLayerSize = 1	#1: BCELoss, 2: CrossEntropyLoss
@@ -430,7 +441,7 @@ if(useAlgorithmTransformer):
 				if(sharedLayerWeights):
 					numberOfHiddenLayersTokenMemoryBankParameters = numberOfHiddenLayers
 				else:
-					numberOfHiddenLayersTokenMemoryBankParameters = 1
+					numberOfHiddenLayersTokenMemoryBankParameters = numberOfHiddenLayers	#1
 			else:
 				numberOfHiddenLayersTokenMemoryBankParameters = numberOfHiddenLayers
 				

@@ -115,8 +115,11 @@ def trainDataset(tokenizer, dataElements):
 				(loss, accuracy) = (runningLoss, runningAccuracy) = (runningLoss/runningAverageBatches*(runningAverageBatches-1)+(loss/runningAverageBatches), runningAccuracy/runningAverageBatches*(runningAverageBatches-1)+(accuracy/runningAverageBatches))
 				
 			loop.set_description(f'Epoch {epoch}')
-			loop.set_postfix(batchIndex=batchIndex, loss=loss, accuracy=accuracy)
-		
+			if(debugPrintMultipleModelAccuracy):
+				loop.set_postfix(batchIndex=batchIndex, accuracy2=loss, accuracy=accuracy)
+			else:
+				loop.set_postfix(batchIndex=batchIndex, loss=loss, accuracy=accuracy)
+
 		print("finished training model")
 		saveModel(model)
 		
@@ -183,9 +186,10 @@ def prepareModelTrainOrTestWrapper(trainOrTest):
 def trainOrTestBatchWrapper(trainOrTest, batchIndex, batch, tokenizer, model, optim=None):
 	if(useMultipleModels):
 		averageAccuracy = 0.0
+		averageAccuracy2 = 0.0
 		averageLoss = 0.0 
 		spaceCount = 0
-		print("trainOrTestBatchWrapper")
+		spaceCount2 = 0
 		batchList, batchFoundList = multipleModelsGetBatchList(tokenizer, batch)
 		for modelStoreIndex, modelStore in enumerate(modelStoreList):
 			model = modelStore.model
@@ -196,12 +200,24 @@ def trainOrTestBatchWrapper(trainOrTest, batchIndex, batch, tokenizer, model, op
 				loss, accuracy = trainOrTestBatch(trainOrTest, batchIndex, batch, tokenizer, model, optim, modelStoreIndex)
 			else:
 				(loss, accuracy) = (0.0, 0.0)
-			averageAccuracy = averageAccuracy + accuracy
-			averageLoss = averageLoss + loss
-			spaceCount = spaceCount + 1
-			
-		accuracy = averageAccuracy/spaceCount
-		loss = averageLoss/spaceCount
+			if(debugPrintMultipleModelAccuracy):	
+				if(modelStoreIndex == 0):
+					averageAccuracy = averageAccuracy + accuracy
+					spaceCount += 1
+				else:
+					averageAccuracy2 = averageAccuracy2 + accuracy
+					spaceCount2 += 1
+			else:
+				averageAccuracy = averageAccuracy + accuracy
+				averageLoss = averageLoss + loss
+				spaceCount += 1
+		
+		if(debugPrintMultipleModelAccuracy):
+			accuracy = averageAccuracy/spaceCount
+			loss = averageAccuracy2/spaceCount2
+		else:
+			accuracy = averageAccuracy/spaceCount
+			loss = averageLoss/spaceCount
 	else:
 		loss, accuracy = trainOrTestBatch(trainOrTest, batchIndex, batch, tokenizer, model, optim)
 	return loss, accuracy
@@ -278,9 +294,11 @@ def prepareModelTest(modelStoreIndex=None):
 
 def trainOrTestBatch(trainOrTest, batchIndex, batch, tokenizer, model, optim=None, modelStoreIndex=None):
 	if(trainOrTest):
-		return trainBatch(batchIndex, batch, tokenizer, model, optim, modelStoreIndex)
+		loss, accuracy = trainBatch(batchIndex, batch, tokenizer, model, optim, modelStoreIndex)
 	else:
-		return testBatch(batchIndex, batch, tokenizer, model, modelStoreIndex)
+		loss, accuracy = testBatch(batchIndex, batch, tokenizer, model, modelStoreIndex)
+
+	return loss, accuracy	
 	
 def trainBatch(batchIndex, batch, tokenizer, model, optim, modelStoreIndex=None):
 	if(debugDoNotTrainModel):
@@ -288,21 +306,23 @@ def trainBatch(batchIndex, batch, tokenizer, model, optim, modelStoreIndex=None)
 		accuracy = 0.0
 	else:
 		optim.zero_grad()
-
+	
+		result = True
 		if(useMultipleModels):
-			loss, accuracy = propagateIndex(device, model, tokenizer, batch, modelStoreIndex)
+			loss, accuracy, result = propagateIndex(device, model, tokenizer, batch, modelStoreIndex)
 		else:
 			loss, accuracy = propagate(device, model, tokenizer, batch)
-
-		loss.backward()
-		optim.step()
+		if(result):
+			loss.backward()
+			optim.step()
 
 		if(batchIndex % modelSaveNumberOfBatches == 0):
 			if(useMultipleModels):
 				saveModelIndex(model, modelStoreIndex)
 			else:
 				saveModel(model)
-		loss = loss.item()
+		if(result):
+			loss = loss.item()
 	return loss, accuracy
 			
 def testBatch(batchIndex, batch, tokenizer, model, modelStoreIndex=None):

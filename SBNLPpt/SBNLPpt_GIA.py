@@ -63,6 +63,11 @@ def loadModel():
 def saveModel(model):
 	pt.save(model, modelPathNameFull)
 
+def propagateIndex(device, model, tokenizer, batch, modelStoreIndex):
+	loss, accuracy = propagate(device, model, tokenizer, labels)
+	result = True
+	return loss, accuracy, result
+	 
 def propagate(device, model, tokenizer, labels):
 	(xLabels, yLabels) = labels
 	loss, outputs = model(xLabels, yLabels)

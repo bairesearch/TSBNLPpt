@@ -87,9 +87,11 @@ def saveModel(model):
 
 def propagateIndex(device, model, tokenizer, batch, modelStoreIndex):	
 	if(modelStoreIndex == 0):
-		return propagate(device, model, tokenizer, batch)
+		loss, accuracy = propagate(device, model, tokenizer, batch)
+		result = True
 	else:
-		return propagateTokenMemoryBankStorageSelection(device, model, tokenizer, batch)
+		loss, accuracy, result = propagateTokenMemoryBankStorageSelection(device, model, tokenizer, batch)
+	return loss, accuracy, result
 			
 def propagate(device, model, tokenizer, batch):	
 	inputIDs = batch['inputIDs'].to(device)
@@ -108,7 +110,7 @@ def propagate(device, model, tokenizer, batch):
 	
 	return loss, accuracy
 
-if(tokenMemoryBankStorageSelectionAlgorithm):
+if(tokenMemoryBankStorageSelectionAlgorithmAuto):
 
 	def getTokenMemoryBankStorageSelectionModelBatch(layerIndex):
 		return SBNLPpt_transformerModel.getTokenMemoryBankStorageSelectionModelBatch(layerIndex)
@@ -149,12 +151,19 @@ if(tokenMemoryBankStorageSelectionAlgorithm):
 		return layerIndex
 
 	def propagateTokenMemoryBankStorageSelection(device, model, tokenizer, batch):	
-		xLabels = batch['xLabels'].to(device)
-		yLabels = batch['yLabels'].to(device)
-		y = model(xLabels)
-		loss = model.lossFunction(y, yLabels)
-		accuracy = model.accuracyMetric(y, yLabels)	#CHECKTHIS: calculate top-1 accuracy	#threshold = 0.5
-		return loss, accuracy
+		result = True
+		if(batch['xLabels'].shape[0] > 0):	#ensure there are samples to propagate
+			xLabels = batch['xLabels'].to(device)
+			yLabels = batch['yLabels'].to(device)
+			y = model(xLabels)
+			loss = model.lossFunction(y, yLabels)
+			accuracy = model.accuracyMetric(y, yLabels)	#CHECKTHIS: calculate top-1 accuracy	#threshold = 0.5
+			accuracy = accuracy.cpu().numpy()
+		else:
+			loss = 0.0
+			accuracy = 0.0
+			result = False
+		return loss, accuracy, result
 
 	class modelStoreClass():
 		def __init__(self, name):
