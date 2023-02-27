@@ -20,7 +20,8 @@ import nncustom initialisations
 from SBNLPpt_globalDefs import *
 
 if(useLinearCustom):
-	from .LinearCustom import Linear
+	#from .LinearCustom import Linear
+	from .LinearCustom import LinearCustom as Linear
 else:
 	from torch.nn.modules import Linear
 	

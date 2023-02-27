@@ -13,7 +13,7 @@ see XXXpt_globalDefs.py
 see XXXpt_globalDefs.py
 
 # Description:
-Linear Auto Resize
+Linear Custom Auto Resize
 
 """
 

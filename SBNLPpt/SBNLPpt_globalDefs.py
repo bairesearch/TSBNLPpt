@@ -17,15 +17,15 @@ SBNLPpt globalDefs
 
 """
 
-
-useLovelyTensors = True
+import torch
+useLovelyTensors = False
 if(useLovelyTensors):
 	import lovely_tensors as lt
 	lt.monkey_patch()
 else:
-	import torch as pt
-	pt.set_printoptions(profile="full")
+	torch.set_printoptions(profile="full")
 import math
+import pynvml
 
 debugCompareTokenMemoryBankPerformance = False
 debugCreateOrderedDatasetFiles = False	#create data files comprising documents of sufficient length for createOrderedDataset
@@ -46,6 +46,7 @@ sortDataFilesByName = True	#orig; False
 recursiveLayers = True	#optional
 memoryTraceBias = False	 #optional	#nncustom.Linear adjusts training/inference based on network prior activations
 simulatedDendriticBranches = False	#optional #nncustom.Linear simulates multiple independent fully connected weights per neuron
+memoryTraceAtrophy = False	#initialise (dependent var)
 
 statePreprocessDataset = False	#only required once
 stateTrainTokeniser = False	#only required once
@@ -115,8 +116,11 @@ createOrderedDataset = False	#initialise (dependent var)
 tokenMemoryBank = False	#initialise (dependent var)
 tokenMemoryBankStorageSelectionAlgorithmAuto = False	#initialise (dependent var)
 relativeTimeEmbeddings = False	#initialise (dependent var)
+useGIAwordEmbeddings = False	#initialise (dependent var)
+GIAsemanticRelationVectorSpaces = False 	#initialise (dependent var)
 if(useAlgorithmTransformer):
-	tokenMemoryBank = True	#apply attention to all tokens in sequenceRegister (standard contextualWindow + memoryBank), where memoryBank is updated based on recently attended tokens
+	useGIAwordEmbeddings = True	#use pretrained GIA word embeddings instead of nn.Embedding exclusively (transformer supports multiple embedding vectors)
+	tokenMemoryBank = False	#apply attention to all tokens in sequenceRegister (standard contextualWindow + memoryBank), where memoryBank is updated based on recently attended tokens
 	lowSequenceNumTokens = False
 	if(lowSequenceNumTokens):
 		sequenceMaxNumTokens = 8	#8 16 32 64
@@ -124,6 +128,8 @@ if(useAlgorithmTransformer):
 	else:
 		sequenceMaxNumTokens = 128	#128 256 512	#default: sequenceMaxNumTokensDefault	#override
 		orderedDatasetDocNumberSegmentsDefault = 10
+	if(useGIAwordEmbeddings):
+		GIAsemanticRelationVectorSpaces = True
 	if(tokenMemoryBank):
 		tokenMemoryBankStorageSelectionAlgorithmAuto = True	#automatically learn tokenMemoryBank storage selection algorithm
 		if(tokenMemoryBankStorageSelectionAlgorithmAuto):
@@ -177,27 +183,46 @@ if(debugCompareTokenMemoryBankPerformance):
 if(debugCreateOrderedDatasetFiles):
 	createOrderedDataset = True
 
-semanticRelationVectorSpaces = False
-useTrainedTokenizer = True
-useFullwordTokenizer = False
-useFullwordTokenizerClass = True	
-tokeniserOnlyTrainOnDictionary = False
-useEffectiveFullwordTokenizer = False
+useTrainedTokenizer = True	#initialise (dependent var)
+useFullwordTokenizer = False	#initialise (dependent var)
+useFullwordTokenizerClass = True	#initialise (dependent var)
+tokeniserOnlyTrainOnDictionary = False	#initialise (dependent var)
+useEffectiveFullwordTokenizer = False	#initialise (dependent var)
+GIAmemoryTraceAtrophy = False	#initialise (dependent var)
 if(useAlgorithmGIA):
-	semanticRelationVectorSpaces = True
-	useVectorisedSemanticRelationIdentification = True	#optional
+	GIAsemanticRelationVectorSpaces = True
+	useGIAwordEmbeddings = True	#required to prepare for useAlgorithmTransformer with useGIAwordEmbeddings compatibility
+if(GIAsemanticRelationVectorSpaces):
+	GIAuseOptimisedEmbeddingLayer = True	#currently required
+	if(GIAuseOptimisedEmbeddingLayer):
+		GIAuseOptimisedEmbeddingLayer1 = False	#use nn.Embedding instead of nn.Linear	#incomplete (results in incorrect embedding shape)
+		GIAuseOptimisedEmbeddingLayer2 = True	#generate n.Embedding posthoc from nn.Linear 
+	GIAuseVectorisedSemanticRelationIdentification = True	#optional
 	useEffectiveFullwordTokenizer = True	#required for useAlgorithmGIA
-
+	GIAsuppressWordEmbeddingsForInvalidPOStype = True  #suppress GIA word embeddings (to zero) if wrong pos type - atrophy word vector weights for dict inputs that are never used
+	if(GIAsuppressWordEmbeddingsForInvalidPOStype):
+		GIAmemoryTraceAtrophy = True	#use LinearCustom MTB for GIA word embedding weights
+	if(useGIAwordEmbeddings):
+		GIAgenerateUniqueWordVectorsForRelationTypes = True	#only generate unique word vectors for semantic relation types (else use generic/noun word vectors)
+		GIArelationTypesIntermediate = False	#useGIAwordEmbeddings does not currently support intermediate semantic relation word embeddings, as this would require the language model itself (eg transformer) to read token context to generate the word embeddings	#GIArelationTypesIntermediate: verb/preposition relations are defined by both subject and object tokens
+	else:
+		GIAgenerateUniqueWordVectorsForRelationTypes = False	#optional: generate word vectors for semantic relations
+		GIArelationTypesIntermediate = True	#optional
+		
 	debugPrintModelPropagation = False
 	debugPrintRelationExtractionProgress = False
-	debugTruncateBatch = True	#reduce GPU memory during
-	debugReduceEmbeddingLayerSize = True	#reduce GPU memory during
+	debugTruncateBatch = False	#reduce GPU memory	#only add a single batch of model samples
+	debugReduceEmbeddingLayerSize = False	#reduce GPU memory	#not supported by useGIAwordEmbeddings
 	debugUseSmallNumberOfModels = False	#reduce GPU memory
 	debugDoNotTrainModel = False	#reduce GPU memory
 	
 	encode3tuples = True
-	useMultipleModels = True
-	useFullwordTokenizer = False	#optional	#tokenizer only identifies whole words
+	if(useAlgorithmGIA):
+		useMultipleModels = True
+	if(useGIAwordEmbeddings):
+		useFullwordTokenizer = False	#useGIAwordEmbeddings requires GIAsemanticRelationVectorSpaces tokenisation to be the same as that used by transformer (ie trainTokeniserSubwords)
+	else:
+		useFullwordTokenizer = False	#optional	#tokenizer only identifies whole words
 	if(useFullwordTokenizer):
 		tokeniserOnlyTrainOnDictionary = True	#optional
 		useFullwordTokenizerNLTK = False	#optional	#else use DistilBertTokenizer.basic_tokenizer.tokenize
@@ -212,10 +237,12 @@ if(useAlgorithmGIA):
 			tokensVocabPathName = modelPathName + "/" + "vocab-fullword.json"
 			tokensSpecialPathName = modelPathName + "/" + "special_tokens-fullword.json" 
 	else:
-		tokeniserOnlyTrainOnDictionary = True	#optional	#ensures effective fullword tokenisation of dictionary words
-	useIndependentReverseRelationsModels = False	#else take input linear layer as forward embeddings and output linear layer [inversed] as reverse embeddings
-
-if(recursiveLayers or memoryTraceBias or simulatedDendriticBranches or semanticRelationVectorSpaces or tokenMemoryBank):
+		tokeniserOnlyTrainOnDictionary = True	#optional	#ensures effective fullword tokenisation of dictionary words #CHECKTHIS
+	useIndependentReverseRelationsModels = False	#initialise (dependent var)
+	if(not GIAgenerateUniqueWordVectorsForRelationTypes):
+		useIndependentReverseRelationsModels = False	#else take input linear layer as forward embeddings and output linear layer [inversed] as reverse embeddings
+		
+if(recursiveLayers or memoryTraceBias or simulatedDendriticBranches or GIAsemanticRelationVectorSpaces or tokenMemoryBank):
 	useSyntacticBiases = True
 else:
 	useSyntacticBiases = False
@@ -237,16 +264,23 @@ if(memoryTraceBias):
 	createOrderedDataset = True
 	#FUTURE: require update of SBNLPpt_data to ensure that continuous/contiguous textual input (for inference) is provided
 	memoryTraceBiasHalflife = 2.0	#number of batches of batchSize=1 (ie sequences) to pass before memoryTrace is halved
-	memoryTraceWeightDirectionDependent = True
-	memoryTraceSigned = False	#initialise (dependent var)
-	if(memoryTraceWeightDirectionDependent):
-		memoryTraceWeightDependent = True	#optional: memory trace dependent on the strength of the weights
-		memoryTraceSigned = True	#optional: calculate positive/negative memory trace: positive memory trace calculated based on true positives and true negatives, negative memory trace calculated based on false positives and false negatives
-	if(memoryTraceSigned):
+	memoryTraceBiasWeightDirectionDependent = True
+	memoryTraceBiasSigned = False	#initialise (dependent var)
+	if(memoryTraceBiasWeightDirectionDependent):
+		memoryTraceBiasWeightDependent = True	#optional: memory trace dependent on the strength of the weights
+		memoryTraceBiasSigned = True	#optional: calculate positive/negative memory trace: positive memory trace calculated based on true positives and true negatives, negative memory trace calculated based on false positives and false negatives
+	if(memoryTraceBiasSigned):
 		normaliseActivationSparsity = False
 	else:
 		normaliseActivationSparsity = True
-	
+if(memoryTraceAtrophy or GIAmemoryTraceAtrophy):
+	#only weaken unused connections (do not strengthen used connections)
+	memoryTraceAtrophyMultiplication = True
+	if(memoryTraceAtrophyMultiplication):
+		memoryTraceAtrophyRate = 0.0001	#per batch: amount to decrease weights if input is zero
+	else:
+		memoryTraceAtrophyRate = 0.00001	#per batch: amount to decrease weights if input is zero
+				
 if(simulatedDendriticBranches):
 	numberOfIndependentDendriticBranches = 2	#10	#2	#depends on GPU RAM (note recursiveLayers reduces RAM usage)
 	normaliseActivationSparsity = True
@@ -287,7 +321,7 @@ elif(useAlgorithmGIA):
 	if(debugTruncateBatch):
 		batchSize = 1	#useAlgorithmGIAsemanticRelationVectorSpace batchSize is dynamic (>batchSize)	
 	else:
-		batchSize = 8
+		batchSize = 8	#low batch size is not required for high vocabularySize (since useAlgorithmGIA model does not propagate every token in sequence contextual window simulataneously)
 	learningRate = 1e-4
 
 GPUramLimit12to32GB = True
@@ -299,11 +333,11 @@ if(GPUramLimit12to32GB):
 	if(tokenMemoryBank or debugCompareTokenMemoryBankPerformance):
 		if((sequenceRegisterLength // sequenceMaxNumTokensDefault) > 1):
 			batchSize = 2
-
-print("batchSize = ", batchSize)
-	
+	if(useGIAwordEmbeddings):
+		batchSize = 2	#low batch size is required for high vocabularySize
 if(useSmallBatchSizeDebug):
 	batchSize = 1	#use small batch size to enable simultaneous execution (GPU ram limited) 
+print("batchSize = ", batchSize)
 	
 numberOfDocumentsPerDataFile = 10000	#if !usePreprocessedDataset; numberOfDocumentsPerDataFile = number of documents per artificial datafile index (e.g. trainNumberOfDataFiles)
 if(datasetName == 'OSCAR1900'):
@@ -323,11 +357,12 @@ modelSaveNumberOfBatches = 1000	#resave model after x training batches
 customMaskTokenID = 4	#3
 fractionOfMaskedTokens = 0.15
 
+#Warning: if change vocabularySize, require reexecution of python SBNLPpt_GIAdefinePOSwordLists.py (LRPdata/NLTK/wordlistVector*.txt)
 if(useEffectiveFullwordTokenizer):
 	if(useFullwordTokenizer):
 		vocabularySize = 2000000	#approx number of unique words in dataset
 	else:
-		vocabularySize = 240000	#approx number of unique words in english	#236736	#200000
+		vocabularySize = 240000		#approx number of unique words in english	#236736	#requirement: must be >= size of NLTK wordlistAll.txt
 else:
 	vocabularySize = 30522	#default: 30522	#number of independent tokens identified by SBNLPpt_data.trainTokeniserSubwords
 
@@ -360,7 +395,9 @@ if(printAccuracyRunningAverage):
 def getModelPathNameFull(modelPathNameBase, modelName):
 	modelPathNameFull = modelPathNameBase + '/' + modelName + '.pt'
 	return modelPathNameFull
-		
+	
+GIAmodelName = 'modelGIA'				
+hiddenLayerSizeTransformer = 768	#default: 768
 if(useAlgorithmTransformer):
 	sharedLayerWeights = False	#initialise (dependent var)
 	sharedLayerWeightsOutput = False	#initialise (dependent var)
@@ -385,7 +422,7 @@ if(useAlgorithmTransformer):
 		if(debugPrintLowHiddenSize):
 			hiddenLayerSize = 24
 		else:
-			hiddenLayerSize = 768	#default: 768
+			hiddenLayerSize = hiddenLayerSizeTransformer
 		numberOfAttentionHeads = 12	#default: 12
 		intermediateSize = 3072	#default: 3072
 		if(recursiveLayers):
@@ -444,8 +481,6 @@ if(useAlgorithmTransformer):
 					numberOfHiddenLayersTokenMemoryBankParameters = numberOfHiddenLayers	#1
 			else:
 				numberOfHiddenLayersTokenMemoryBankParameters = numberOfHiddenLayers
-				
-				
 elif(useAlgorithmRNN):
 	hiddenLayerSize = 1024	#65536	#2^16 - large hidden size is required for recursive RNN as parameters are shared across a) sequence length and b) number of layers
 	if(SBNLPpt_RNNmodel.applyIOconversionLayers):
@@ -479,11 +514,51 @@ elif(useAlgorithmSANI):
 	#else:
 	#	bidirectional = 1
 elif(useAlgorithmGIA):
+	modelName = GIAmodelName
+	#modelPathNameFull = getModelPathNameFull(modelPathName, modelName)
+
+if(GIAsemanticRelationVectorSpaces):
+	#ensure vectorSpaceListLen is a factor of hiddenLayerSizeTransformer
+	if(GIAgenerateUniqueWordVectorsForRelationTypes):
+		if(GIArelationTypesIntermediate):
+			vectorSpaceListLen = 8
+		else:
+			vectorSpaceListLen = 8
+	else:
+		vectorSpaceListLen = 8	
+		if(useIndependentReverseRelationsModels):
+			vectorSpaceListLen = vectorSpaceListLen + vectorSpaceListLen
+	
+	if(GIAgenerateUniqueWordVectorsForRelationTypes):
+		trainableEmbeddingSpaceFraction = 2	#interpretation: 1/x	#currently assign equal amount of embedding space memory to pretrained GIA word embeddings (pertaining to relation type tokens) and transformer trained word embeddings (pertaining to non-relation type tokens)
+		embeddingListLen = vectorSpaceListLen * trainableEmbeddingSpaceFraction	
+	else:
+		embeddingListLen = vectorSpaceListLen
+		
 	if(debugReduceEmbeddingLayerSize):
 		embeddingLayerSize = 10
 	else:
-		embeddingLayerSize = 768	#word vector embedding size (cany vary based on GIA word vector space)
+		embeddingLayerSize = hiddenLayerSizeTransformer//embeddingListLen	#word vector embedding size (cany vary based on GIA word vector space)
+		if(GIAgenerateUniqueWordVectorsForRelationTypes):
+			pretrainedHiddenSize = hiddenLayerSizeTransformer//trainableEmbeddingSpaceFraction	#explicated for debugging only
+			trainableHiddenSize = hiddenLayerSizeTransformer - pretrainedHiddenSize	#explicated for debugging only
 
-	modelName = 'modelGIA'
-	modelPathNameFull = getModelPathNameFull(modelPathName, modelName)
-
+def printCUDAmemory(tag):
+	print(tag)
+	
+	pynvml.nvmlInit()
+	h = pynvml.nvmlDeviceGetHandleByIndex(0)
+	info = pynvml.nvmlDeviceGetMemoryInfo(h)
+	total_memory = info.total
+	memory_free = info.free
+	memory_allocated = info.used
+	'''
+	total_memory = torch.cuda.get_device_properties(0).total_memory
+	memory_reserved = torch.cuda.memory_reserved(0)
+	memory_allocated = torch.cuda.memory_allocated(0)
+	memory_free = memory_reserved-memory_allocated  # free inside reserved
+	'''
+	print("CUDA total_memory = ", total_memory)
+	#print("CUDA memory_reserved = ", memory_reserved)
+	print("CUDA memory_allocated = ", memory_allocated)
+	print("CUDA memory_free = ", memory_free)

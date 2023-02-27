@@ -33,6 +33,7 @@ if(usePretrainedModelDebug):
 else:
 	from SBNLPpt_transformerModel import RobertaForMaskedLM
 import SBNLPpt_transformerModel
+import SBNLPpt_transformerTokenMemoryBank
 
 if(not usePretrainedModelDebug):
 	from SBNLPpt_transformerModel import getMaxPositionEmbedding
@@ -113,12 +114,12 @@ def propagate(device, model, tokenizer, batch):
 if(tokenMemoryBankStorageSelectionAlgorithmAuto):
 
 	def getTokenMemoryBankStorageSelectionModelBatch(layerIndex):
-		return SBNLPpt_transformerModel.getTokenMemoryBankStorageSelectionModelBatch(layerIndex)
+		return SBNLPpt_transformerTokenMemoryBank.getTokenMemoryBankStorageSelectionModelBatch(layerIndex)
 		
 	def createTokenMemoryBankStorageSelectionModel(modelStoreIndex):	
 		print("creating new tokenMemoryBankStorageSelection model")	
 		layerIndex = getLayerIndex(modelStoreIndex)
-		model = SBNLPpt_transformerModel.createModelTokenMemoryBankStorageSelection(layerIndex, tokenMemoryBankStorageSelectionConfig)
+		model = SBNLPpt_transformerTokenMemoryBank.createModelTokenMemoryBankStorageSelection(layerIndex, tokenMemoryBankStorageSelectionConfig)
 		return model
 
 	def loadTokenMemoryBankStorageSelectionModel(modelStoreIndex):
@@ -178,7 +179,7 @@ if(tokenMemoryBankStorageSelectionAlgorithmAuto):
 		modelStoreIndex = getModelStoreIndex(layerIndex)
 		modelStoreList[modelStoreIndex] = modelStoreClass(getTokenMemoryBankStorageSelectionModelName(modelStoreIndex))
 
-	tokenMemoryBankStorageSelectionConfig = SBNLPpt_transformerModel.tokenMemoryBankStorageSelectionConfig(
+	tokenMemoryBankStorageSelectionConfig = SBNLPpt_transformerTokenMemoryBank.tokenMemoryBankStorageSelectionConfig(
 		numberOfHiddenLayers=numberOfHiddenLayers,	#or numberOfHiddenLayersTokenMemoryBankParameters?
 		inputLayerSize=tokenMemoryBankStorageSelectionModelInputLayerSize,
 		hiddenLayerSize=tokenMemoryBankStorageSelectionModelHiddenLayerSize,

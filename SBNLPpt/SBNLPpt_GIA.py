@@ -25,7 +25,7 @@ import SBNLPpt_GIAmodel
 import torch.nn.functional as F
 
 import SBNLPpt_GIAdefinePOSwordLists
-if(useVectorisedSemanticRelationIdentification):
+if(GIAuseVectorisedSemanticRelationIdentification):
 	import SBNLPpt_GIAsemanticRelationVectorised
 else:
 	import SBNLPpt_GIAsemanticRelationStandard
@@ -34,7 +34,7 @@ else:
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
 def preparePOSdictionary():
-	if(useVectorisedSemanticRelationIdentification):
+	if(GIAuseVectorisedSemanticRelationIdentification):
 		global posVectorList
 		posVectorList = SBNLPpt_GIAdefinePOSwordLists.loadPOSwordListVectors()
 		numberOfVectorSpaces = len(SBNLPpt_GIAdefinePOSwordLists.vectorSpaceList)
@@ -42,29 +42,41 @@ def preparePOSdictionary():
 		SBNLPpt_GIAsemanticRelationStandard.preparePOSdictionary()
 	
 
-if(useMultipleModels):
-	def createModelIndex(vocabSize, modelStoreIndex):
-		return createModel(vocabSize)
-	def loadModelIndex(modelStoreIndex):
-		return loadModel()
-	
+#if(useMultipleModels):
+def createModelIndex(vocabSize, modelStoreIndex):
+	return createModel(vocabSize)
+def loadModelIndex(modelStoreIndex):
+	modelNameIndex = getModelNameIndex(modelStoreIndex)
+	modelPathNameFull = getModelPathNameFull(modelPathName, modelNameIndex)
+	return loadModel(modelPathNameFull)
+def saveModelIndex(model, modelStoreIndex):
+	modelNameIndex = getModelNameIndex(modelStoreIndex)
+	modelPathNameFull = getModelPathNameFull(modelPathName, modelNameIndex)
+	pt.save(model, modelPathNameFull)
+def getModelNameIndex(modelStoreIndex):
+	modelNameIndex = GIAmodelName + str(modelStoreIndex)
+	return modelNameIndex
+			
 def createModel(vocabSize):
 	print("creating new model")
 	config = SBNLPpt_GIAmodel.GIAwordEmbeddingConfig(vocabSize, embeddingLayerSize)
 	model = SBNLPpt_GIAmodel.GIAwordEmbeddingModel(config)
-		
 	return model
 
-def loadModel():
+def loadModel(modelPathNameFull):
 	print("loading existing model")
 	model = pt.load(modelPathNameFull)
 	return model
-	
-def saveModel(model):
+
+def saveAllModels():
+	for modelStoreIndex in range(vectorSpaceListLen):
+		saveModelIndex(model, modelStoreIndex)
+			
+def saveModel(model, modelPathNameFull):
 	pt.save(model, modelPathNameFull)
 
 def propagateIndex(device, model, tokenizer, batch, modelStoreIndex):
-	loss, accuracy = propagate(device, model, tokenizer, labels)
+	loss, accuracy = propagate(device, model, tokenizer, batch)
 	result = True
 	return loss, accuracy, result
 	 
@@ -75,10 +87,11 @@ def propagate(device, model, tokenizer, labels):
 	return loss, accuracy
 
 
-if(useVectorisedSemanticRelationIdentification):
+if(GIAuseVectorisedSemanticRelationIdentification):
 	def calculateXYlabels(tokenizer, batch, vocabSize):
 		return SBNLPpt_GIAsemanticRelationVectorised.calculateXYlabels(tokenizer, batch, vocabSize, posVectorList)
 else:
 	def calculateXYlabels(tokenizer, vectorSpace, vectorSpaceIndex, batch, vocabSize):
 		return SBNLPpt_GIAsemanticRelationStandard.calculateXYlabels(tokenizer, vectorSpace, vectorSpaceIndex, batch, vocabSize)
 	
+

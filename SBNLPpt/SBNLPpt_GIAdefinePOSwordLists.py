@@ -61,8 +61,8 @@ nltkPOStagsWhAdverb = ["WRB"]
 
 #auxiliary relation words
 wordAuxiliaryHavingPossessive = ["have", "has", "had", "'s"]
-if(useVectorisedSemanticRelationIdentification):
-	wordAuxiliaryBeingDefinition = ["is", "are"]	#useVectorisedSemanticRelationIdentification does not currently support multiword relations
+if(GIAuseVectorisedSemanticRelationIdentification):
+	wordAuxiliaryBeingDefinition = ["is", "are"]	#GIAuseVectorisedSemanticRelationIdentification does not currently support multiword relations
 else:
 	wordAuxiliaryBeingDefinition = [["is", "a"], ["is", "the"], "are"]
 wordAuxiliaryBeingQuality = ["am", "is", "are", "was", "were", "being", "been", "be"]	#will be
@@ -135,10 +135,13 @@ keypointTypePOS = 1
 keypointTypeWord = 2
 
 keypointMaxDetectionDistance = 5 #max number of tokens between keypoints
-#if(useVectorisedSemanticRelationIdentification):
+#if(GIAuseVectorisedSemanticRelationIdentification):
 #	if(keypointMaxDetectionDistance%2 == 0):
 #		print("SBNLPpt_GIAsemanticRelationVectorised error: keypointMaxDetectionDistance must be an odd number (Conv1d kernel size)")
 #		exit()
+
+if(GIAgenerateUniqueWordVectorsForRelationTypes):
+	keypointNone = -1
 			
 class vectorSpaceProperties():
 	def __init__(self, vectorSpaceName, direction, detectionType, intermediateType, keyPrior, keyAfter, keyIntermediate):
@@ -155,38 +158,67 @@ class vectorSpaceProperties():
 		self.optim = None
 
 
-#useVectorisedSemanticRelationIdentification: detectionTypeNearest is not supported for keyIntermediate (detectionTypeAdjacent only)
+#GIAuseVectorisedSemanticRelationIdentification: detectionTypeNearest is not supported for keyIntermediate (detectionTypeAdjacent only)
 
 if(debugUseSmallNumberOfModels):
 	vectorSpaceList = [
 	vectorSpaceProperties("action", directionForward, detectionTypeNearest, intermediateTypeNone, keypointPosNoun, keypointPosVerb, keypointNone)
 	]
 else:
-	vectorSpaceList = [
-	vectorSpaceProperties("definition", directionForward, detectionTypeNearest, intermediateTypeWord, keypointPosNoun, keypointPosNoun, keypointWordAuxiliaryBeingDefinition),
-	vectorSpaceProperties("action", directionForward, detectionTypeNearest, intermediateTypePOS, keypointPosNoun, keypointPosNoun, keypointPosVerb),
-	vectorSpaceProperties("actionSubject", directionForward, detectionTypeNearest, intermediateTypeNone, keypointPosNoun, keypointPosVerb, keypointNone),
-	vectorSpaceProperties("actionObject", directionForward, detectionTypeNearest, intermediateTypeNone, keypointPosVerb, keypointPosNoun, keypointNone),
-	vectorSpaceProperties("property", directionForward, detectionTypeNearest, intermediateTypeWord, keypointPosNoun, keypointPosNoun, keypointWordAuxiliaryPossessive),
-	vectorSpaceProperties("qualitySubstance1", directionForward, detectionTypeAdjacent, intermediateTypeWord, keypointPosNoun, keypointPosAdjective, keypointWordAuxiliaryBeingQuality),
-	vectorSpaceProperties("qualitySubstance2", directionForward, detectionTypeAdjacent, intermediateTypeNone, keypointPosAdjective, keypointPosNoun, keypointNone),
-	vectorSpaceProperties("qualityAction1", directionForward, detectionTypeAdjacent, intermediateTypeNone, keypointPosVerb, keypointPosAdverb, keypointNone),
-	vectorSpaceProperties("preposition", directionForward, detectionTypeNearest, intermediateTypePOS, keypointPosNoun, keypointPosNoun, keypointPosPreposition)
-	]
-	if(useIndependentReverseRelationsModels):
-		vectorSpaceListR = [
-			vectorSpaceProperties("definitionR", directionReverse, detectionTypeNearest, intermediateTypeWord, keypointPosNoun, keypointPosNoun, keypointWordAuxiliaryBeingDefinition),
-			vectorSpaceProperties("actionR", directionForward, detectionTypeNearest, intermediateTypePOS, keypointPosNoun, keypointPosNoun, keypointPosVerb),
-			vectorSpaceProperties("actionSubjectR", directionReverse, detectionTypeNearest, intermediateTypeNone, keypointPosNoun, keypointPosVerb, keypointNone),
-			vectorSpaceProperties("actionObjectR", directionReverse, detectionTypeNearest, intermediateTypeNone, keypointPosVerb, keypointPosNoun, keypointNone),
-			vectorSpaceProperties("propertyR", directionReverse, detectionTypeNearest, intermediateTypeWord, keypointPosNoun, keypointPosNoun, keypointWordAuxiliaryPossessive),
-			vectorSpaceProperties("qualitySubstance1R", directionReverse, detectionTypeAdjacent, intermediateTypeWord, keypointPosNoun, keypointPosAdjective, keypointWordAuxiliaryBeingQuality),
-			vectorSpaceProperties("qualitySubstance2R", directionReverse, detectionTypeAdjacent, intermediateTypeNone, keypointPosAdjective, keypointPosNoun, keypointNone),
-			vectorSpaceProperties("qualityAction1R", directionReverse, detectionTypeAdjacent, intermediateTypeNone, keypointPosVerb, keypointPosAdverb, keypointNone),
-			vectorSpaceProperties("prepositionR", directionReverse, detectionTypeNearest, intermediateTypePOS, keypointPosNoun, keypointPosNoun, keypointPosPreposition)
+	if(GIAgenerateUniqueWordVectorsForRelationTypes):
+		if(GIArelationTypesIntermediate):
+			vectorSpaceList = [
+			vectorSpaceProperties("definition", directionForward, detectionTypeNearest, intermediateTypeWord, keypointPosNoun, keypointPosNoun, keypointWordAuxiliaryBeingDefinition),
+			vectorSpaceProperties("action", directionForward, detectionTypeNearest, intermediateTypePOS, keypointPosNoun, keypointPosNoun, keypointPosVerb),
+			vectorSpaceProperties("property", directionForward, detectionTypeNearest, intermediateTypeWord, keypointPosNoun, keypointPosNoun, keypointWordAuxiliaryPossessive),
+			vectorSpaceProperties("qualitySubstance1", directionForward, detectionTypeAdjacent, intermediateTypeWord, keypointPosNoun, keypointPosAdjective, keypointWordAuxiliaryBeingQuality),
+			vectorSpaceProperties("qualitySubstance2", directionForward, detectionTypeAdjacent, intermediateTypeNone, keypointPosAdjective, keypointPosNoun, keypointNone),
+			vectorSpaceProperties("qualityAction1", directionForward, detectionTypeAdjacent, intermediateTypeNone, keypointPosAdverb, keypointPosVerb, keypointNone),
+			vectorSpaceProperties("qualityAction2", directionReverse, detectionTypeAdjacent, intermediateTypeNone, keypointPosVerb, keypointPosAdverb, keypointNone),
+			vectorSpaceProperties("preposition", directionForward, detectionTypeNearest, intermediateTypePOS, keypointPosNoun, keypointPosNoun, keypointPosPreposition)
+			]
+		else:
+			#does not support intermediateTypePOS;
+			vectorSpaceList = [
+			vectorSpaceProperties("definition", directionForward, detectionTypeNearest, intermediateTypeWord, keypointPosNoun, keypointPosNoun, keypointWordAuxiliaryBeingDefinition),
+			vectorSpaceProperties("actionSubject", directionForward, detectionTypeNearest, intermediateTypeNone, keypointPosNoun, keypointPosVerb, keypointNone),
+			vectorSpaceProperties("actionObject", directionReverse, detectionTypeNearest, intermediateTypeNone, keypointPosVerb, keypointPosNoun, keypointNone),
+			vectorSpaceProperties("property", directionForward, detectionTypeNearest, intermediateTypeWord, keypointPosNoun, keypointPosNoun, keypointWordAuxiliaryPossessive),
+			vectorSpaceProperties("qualitySubstance1", directionForward, detectionTypeAdjacent, intermediateTypeWord, keypointPosNoun, keypointPosAdjective, keypointWordAuxiliaryBeingQuality),	
+			vectorSpaceProperties("qualitySubstance2", directionForward, detectionTypeAdjacent, intermediateTypeNone, keypointPosAdjective, keypointPosNoun, keypointNone),
+			#vectorSpaceProperties("qualityAction1", directionForward, detectionTypeAdjacent, intermediateTypeNone, keypointPosAdverb, keypointPosVerb, keypointNone),	#temporarily disable to ensure vectorSpaceListLen is a factor of hiddenLayerSizeTransformer
+			#vectorSpaceProperties("qualityAction2", directionReverse, detectionTypeAdjacent, intermediateTypeNone, keypointPosVerb, keypointPosAdverb, keypointNone),	#temporarily disable to ensure vectorSpaceListLen is a factor of hiddenLayerSizeTransformer
+			vectorSpaceProperties("prepositionSubject", directionForward, detectionTypeNearest, intermediateTypeNone, keypointPosNoun, keypointPosPreposition, keypointNone),
+			vectorSpaceProperties("prepositionObject", directionReverse, detectionTypeNearest, intermediateTypeNone, keypointPosPreposition, keypointPosNoun, keypointNone)
+			]
+	else:
+		vectorSpaceList = [
+		vectorSpaceProperties("definition", directionForward, detectionTypeNearest, intermediateTypeWord, keypointPosNoun, keypointPosNoun, keypointWordAuxiliaryBeingDefinition),
+		vectorSpaceProperties("action", directionForward, detectionTypeNearest, intermediateTypePOS, keypointPosNoun, keypointPosNoun, keypointPosVerb),
+		vectorSpaceProperties("actionSubject", directionForward, detectionTypeNearest, intermediateTypeNone, keypointPosNoun, keypointPosVerb, keypointNone),
+		vectorSpaceProperties("actionObject", directionForward, detectionTypeNearest, intermediateTypeNone, keypointPosVerb, keypointPosNoun, keypointNone),
+		vectorSpaceProperties("property", directionForward, detectionTypeNearest, intermediateTypeWord, keypointPosNoun, keypointPosNoun, keypointWordAuxiliaryPossessive),
+		vectorSpaceProperties("qualitySubstance1", directionForward, detectionTypeAdjacent, intermediateTypeWord, keypointPosNoun, keypointPosAdjective, keypointWordAuxiliaryBeingQuality),
+		vectorSpaceProperties("qualitySubstance2", directionForward, detectionTypeAdjacent, intermediateTypeNone, keypointPosAdjective, keypointPosNoun, keypointNone),
+		#vectorSpaceProperties("qualityAction1", directionForward, detectionTypeAdjacent, intermediateTypeNone, keypointPosAdverb, keypointPosVerb, keypointNone),
+		#vectorSpaceProperties("qualityAction2", directionForward, detectionTypeAdjacent, intermediateTypeNone, keypointPosVerb, keypointPosAdverb, keypointNone),
+		vectorSpaceProperties("preposition", directionForward, detectionTypeNearest, intermediateTypePOS, keypointPosNoun, keypointPosNoun, keypointPosPreposition)
 		]
-		vectorSpaceList = vectorSpaceList + vectorSpaceListR
-		
+		if(useIndependentReverseRelationsModels):
+			vectorSpaceListR = [
+				vectorSpaceProperties("definitionR", directionReverse, detectionTypeNearest, intermediateTypeWord, keypointPosNoun, keypointPosNoun, keypointWordAuxiliaryBeingDefinition),
+				vectorSpaceProperties("actionR", directionForward, detectionTypeNearest, intermediateTypePOS, keypointPosNoun, keypointPosNoun, keypointPosVerb),
+				vectorSpaceProperties("actionSubjectR", directionReverse, detectionTypeNearest, intermediateTypeNone, keypointPosNoun, keypointPosVerb, keypointNone),
+				vectorSpaceProperties("actionObjectR", directionReverse, detectionTypeNearest, intermediateTypeNone, keypointPosVerb, keypointPosNoun, keypointNone),
+				vectorSpaceProperties("propertyR", directionReverse, detectionTypeNearest, intermediateTypeWord, keypointPosNoun, keypointPosNoun, keypointWordAuxiliaryPossessive),
+				vectorSpaceProperties("qualitySubstance1R", directionReverse, detectionTypeAdjacent, intermediateTypeWord, keypointPosNoun, keypointPosAdjective, keypointWordAuxiliaryBeingQuality),	#temporarily disable to ensure vectorSpaceListLen is a factor of hiddenLayerSizeTransformer
+				vectorSpaceProperties("qualitySubstance2R", directionReverse, detectionTypeAdjacent, intermediateTypeNone, keypointPosAdjective, keypointPosNoun, keypointNone),
+				#vectorSpaceProperties("qualityAction1R", directionReverse, detectionTypeAdjacent, intermediateTypeNone, keypointPosAdverb, keypointPosVerb, keypointNone),
+				#vectorSpaceProperties("qualityAction2R", directionReverse, detectionTypeAdjacent, intermediateTypeNone, keypointPosVerb, keypointPosAdverb, keypointNone),
+				vectorSpaceProperties("prepositionR", directionReverse, detectionTypeNearest, intermediateTypePOS, keypointPosNoun, keypointPosNoun, keypointPosPreposition)
+			]
+			vectorSpaceList = vectorSpaceList + vectorSpaceListR
+	assert(len(vectorSpaceList) == vectorSpaceListLen)
 		
 
 def generateWordlists():
@@ -287,30 +319,50 @@ def loadPOSwordListVectors():
 		posVectorFileName = "Vector" + POSname
 		posList = readWordList(posVectorFileName)
 		posList = [int(i) for i in posList]	#convert list to ints
+		#print("len(posList) = ", len(posList))
 		posVector = torch.tensor(posList, requires_grad=False)	#.bool()
 		posVectorList.append(posVector)
 	return posVectorList
 
 
 def addModelSampleToList(vectorSpace, modelSamplesX, modelSamplesY, modelSamplesI, wordIndexKeypoint0, wordIndexKeypoint1, wordIndexKeypoint2):
-	if(useIndependentReverseRelationsModels):
-		if(vectorSpace.direction == directionForward):
+	if(GIAgenerateUniqueWordVectorsForRelationTypes):
+		if(GIArelationTypesIntermediate):
+			if(vectorSpace.direction == directionForward):
+				xTokenIndex = wordIndexKeypoint0
+				yTokenIndex = wordIndexKeypoint2
+				iTokenIndex = wordIndexKeypoint1
+			elif(vectorSpace.direction == directionReverse):
+				xTokenIndex = wordIndexKeypoint2
+				yTokenIndex = wordIndexKeypoint0
+				iTokenIndex = wordIndexKeypoint1
+		else:
+			if(vectorSpace.direction == directionForward):
+				xTokenIndex = wordIndexKeypoint0
+				yTokenIndex = wordIndexKeypoint2
+			else:
+				xTokenIndex = wordIndexKeypoint2
+				yTokenIndex = wordIndexKeypoint0
+	else:
+		if(useIndependentReverseRelationsModels):
+			if(vectorSpace.direction == directionForward):
+				xTokenIndex = wordIndexKeypoint0
+				yTokenIndex = wordIndexKeypoint2
+				iTokenIndex = wordIndexKeypoint1
+			elif(vectorSpace.direction == directionReverse):
+				xTokenIndex = wordIndexKeypoint2
+				yTokenIndex = wordIndexKeypoint0
+				iTokenIndex = wordIndexKeypoint1
+		else:		
 			xTokenIndex = wordIndexKeypoint0
-			yTokenIndex = wordIndexKeypoint2
+			yTokenIndex = wordIndexKeypoint2	
 			iTokenIndex = wordIndexKeypoint1
-		elif(vectorSpace.direction == directionReverse):
-			xTokenIndex = wordIndexKeypoint2
-			yTokenIndex = wordIndexKeypoint0
-			iTokenIndex = wordIndexKeypoint1
-	else:		
-		xTokenIndex = wordIndexKeypoint0
-		yTokenIndex = wordIndexKeypoint2	
-		iTokenIndex = wordIndexKeypoint1
 
 	if(not debugTruncateBatch or len(modelSamplesX)==0):
 		modelSamplesX.append(xTokenIndex)
 		modelSamplesY.append(yTokenIndex)
-		modelSamplesI.append(iTokenIndex)
+		if(GIArelationTypesIntermediate):
+			modelSamplesI.append(iTokenIndex)
 
 def createXYlabelsFromModelSampleList(vectorSpace, modelSamplesX, modelSamplesY, modelSamplesI, vocabSize):
 	labelsFound = False

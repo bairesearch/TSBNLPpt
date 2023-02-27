@@ -16,6 +16,7 @@ pip install torch
 pip install lovely-tensors
 pip install nltk
 pip install torchmetrics
+pip install pynvml
 
 # Usage:
 source activate transformersenv
@@ -23,7 +24,7 @@ python SBNLPpt_main.py
 
 # Description:
 SBNLPpt main - Syntactic Bias natural language processing (SBNLP): neural architectures with various syntactic inductive biases 
-(recursiveLayers, simulatedDendriticBranches, memoryTraceBias, semanticRelationVectorSpaces, tokenMemoryBank)
+(recursiveLayers, simulatedDendriticBranches, memoryTraceBias, GIAsemanticRelationVectorSpaces, tokenMemoryBank)
 
 """
 
@@ -53,7 +54,7 @@ elif(useAlgorithmGIA):
 	import SBNLPpt_GIA
 	import SBNLPpt_GIAdefinePOSwordLists
 	if(useMultipleModels):
-		from SBNLPpt_GIA import loadModelIndex, createModelIndex #TODO:, saveModelIndex, propagateIndex
+		from SBNLPpt_GIA import loadModelIndex, createModelIndex, saveModelIndex, propagateIndex
 
 
 if(useMultipleModels):
@@ -121,8 +122,9 @@ def trainDataset(tokenizer, dataElements):
 				loop.set_postfix(batchIndex=batchIndex, loss=loss, accuracy=accuracy)
 
 		print("finished training model")
-		saveModel(model)
-		
+		if(not useMultipleModels):	#limitation; useMultipleModels cannot save model after last train batch
+			saveModel(model)
+					
 def testDataset(tokenizer, dataElements):
 
 	model = prepareModelTrainOrTestWrapper(False)
@@ -175,9 +177,11 @@ def prepareModelTrainOrTestWrapper(trainOrTest):
 			vocabSize = vocabularySize
 			if(useAlgorithmGIA):
 				if(encode3tuples):
-					if(vectorSpace.intermediateType == SBNLPpt_GIAdefinePOSwordLists.intermediateTypePOS):
+					if(modelStore.intermediateType == SBNLPpt_GIAdefinePOSwordLists.intermediateTypePOS):
 						vocabSize = vocabularySize + vocabularySize	#size = referenceSetSuj/Obj (entity) + referenceSetDelimiter (semanticRelation)
 			model, optim = prepareModelTrainOrTest(trainOrTest, vocabSize, modelStoreIndex)
+			if(useAlgorithmGIA):
+				saveModelIndex(model, modelStoreIndex)	#save required to quickly generate GIA model files for useAlgorithmTransformer testing
 			(modelStore.model, modelStore.optim) = (model, optim)
 	else:
 		model, optim = prepareModelTrainOrTest(trainOrTest, vocabularySize)
@@ -195,9 +199,9 @@ def trainOrTestBatchWrapper(trainOrTest, batchIndex, batch, tokenizer, model, op
 			model = modelStore.model
 			if(trainOrTest):
 				optim = modelStore.optim
-			batch, batchFound = multipleModelsGetBatch(modelStoreIndex, batch, batchList, batchFoundList, model)
-			if(batchFound):
-				loss, accuracy = trainOrTestBatch(trainOrTest, batchIndex, batch, tokenizer, model, optim, modelStoreIndex)
+			labels, labelsFound = multipleModelsGetBatch(tokenizer, modelStoreIndex, batch, batchList, batchFoundList, model)
+			if(labelsFound):
+				loss, accuracy = trainOrTestBatch(trainOrTest, batchIndex, labels, tokenizer, model, optim, modelStoreIndex)
 			else:
 				(loss, accuracy) = (0.0, 0.0)
 			if(debugPrintMultipleModelAccuracy):	
@@ -225,16 +229,16 @@ def trainOrTestBatchWrapper(trainOrTest, batchIndex, batch, tokenizer, model, op
 def multipleModelsGetBatchList(tokenizer, batch):
 	(labelsList, labelsFoundList) = (None, None)
 	if(useAlgorithmGIA):
-		if(useVectorisedSemanticRelationIdentification):
+		if(GIAuseVectorisedSemanticRelationIdentification):
 			labelsList, labelsFoundList = SBNLPpt_GIA.calculateXYlabels(tokenizer, batch, vocabularySize)
 	return labelsList, labelsFoundList
 
-def multipleModelsGetBatch(modelStoreIndex, batch, labelsList=None, labelsFoundList=None, model=None):
+def multipleModelsGetBatch(tokenizer, modelStoreIndex, batch, labelsList=None, labelsFoundList=None, model=None):
 	if(useAlgorithmGIA):
-		if(useVectorisedSemanticRelationIdentification):
-			(labels, labelsFound) = (labelsList[vectorSpaceIndex], labelsFoundList[vectorSpaceIndex])
+		if(GIAuseVectorisedSemanticRelationIdentification):
+			(labels, labelsFound) = (labelsList[modelStoreIndex], labelsFoundList[modelStoreIndex])
 		else:
-			labels, labelsFound = SBNLPpt_GIA.calculateXYlabels(tokenizer, vectorSpace, vectorSpaceIndex, batch, vocabularySize)
+			labels, labelsFound = SBNLPpt_GIA.calculateXYlabels(tokenizer, modelStoreList[modelStoreIndex], modelStoreIndex, batch, vocabularySize)
 	elif(useAlgorithmTransformer):
 		if(modelStoreIndex == 0):
 			labels = batch

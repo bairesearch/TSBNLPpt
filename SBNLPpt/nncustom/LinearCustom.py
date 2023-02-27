@@ -29,16 +29,13 @@ from torch.nn import init
 from torch.nn import functional as F
 from torch.autograd import Function
 
-if(useAutoResizeInput):
-	from . import LinearCustomAutoResize
-if(memoryTraceBias):
-	from . import LinearCustomMTB
-if(simulatedDendriticBranches):
-	from . import LinearCustomSDB
+from . import LinearCustomAutoResize
+from . import LinearCustomMTB
+from . import LinearCustomSDB
 
 if(useAutoResizeInput):
 	#from https://pytorch.org/docs/master/notes/extending.html
-	class LinearFunction(Function):
+	class LinearCustomFunction(Function):
 		@staticmethod
 		# ctx is the first argument to forward
 		def forward(ctx, input, weight, bias):
@@ -64,7 +61,7 @@ if(useAutoResizeInput):
 			return grad_input, grad_weight, grad_bias	
 else:
 	#from https://pytorch.org/docs/master/notes/extending.html
-	class LinearFunction(Function):
+	class LinearCustomFunction(Function):
 		@staticmethod
 		# ctx is the first argument to forward
 		def forward(ctx, input, weight, bias):
@@ -91,7 +88,7 @@ else:
 
 
 if(useModuleLinearTemplateCurrent):
-	class Linear(nn.Module):
+	class LinearCustom(nn.Module):
 		#from https://github.com/pytorch/pytorch/blob/master/torch/nn/modules/linear.py
 		r"""Applies a linear transformation to the incoming data: :math:`y = xA^T + b`
 		This module supports :ref:`TensorFloat32<tf32_on_ampere>`.
@@ -127,10 +124,9 @@ if(useModuleLinearTemplateCurrent):
 		out_features: int
 		weight: Tensor
 
-		def __init__(self, in_features: int, out_features: int, bias: bool = True,
-					 device=None, dtype=None) -> None:
+		def __init__(self, in_features: int, out_features: int, bias: bool = True, device=None, dtype=None, simulatedDendriticBranches=simulatedDendriticBranches, memoryTraceBias=memoryTraceBias, memoryTraceAtrophy=memoryTraceAtrophy) -> None:
 			factory_kwargs = {'device': device, 'dtype': dtype}
-			super(Linear, self).__init__()
+			super(LinearCustom, self).__init__()
 			self.in_features = in_features
 			self.out_features = out_features
 			self.weight = Parameter(torch.empty((out_features*numberOfIndependentDendriticBranches, in_features), **factory_kwargs))
@@ -140,7 +136,11 @@ if(useModuleLinearTemplateCurrent):
 				self.register_parameter('bias', None)
 			self.reset_parameters()
 			
-			if(memoryTraceBias):
+			self.simulatedDendriticBranches=simulatedDendriticBranches
+			self.memoryTraceBias=memoryTraceBias
+			self.memoryTraceAtrophy=memoryTraceAtrophy
+			if(self.memoryTraceBias):
+				self.memoryTraceAtrophyActive = True
 				device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 				self.memoryTrace = torch.empty(in_features, out_features*numberOfIndependentDendriticBranches).to(device)	#note memoryTrace.shape = [input_features, output_features] (transpose of weights)
 				#self.memoryTrace = nn.Parameter(torch.empty(in_features, out_features*numberOfIndependentDendriticBranches), requires_grad=False)
@@ -163,16 +163,19 @@ if(useModuleLinearTemplateCurrent):
 
 			if(useAutoResizeInput):
 				input, requireResizeInput, shapeOutput = LinearCustomAutoResize.autoResizeInput(input, self.weight)
-			if(memoryTraceBias):
+			if(self.memoryTraceBias):
 				output, memoryTraceUpdate = LinearCustomMTB.executeAndCalculateMemoryTraceUpdate(input, self.weight, self.bias, self.memoryTrace)
 			else:
 				#See the autograd section for explanation of what happens here.
-				output = LinearFunction.apply(input, self.weight, self.bias)
+				output = LinearCustomFunction.apply(input, self.weight, self.bias)
 
-			if(simulatedDendriticBranches):
-				output, shapeOutput, memoryTraceUpdate = LinearCustomSDB.selectDendriticBranchOutput(output, requireResizeInput, shapeOutput, memoryTraceUpdate)
-			if(memoryTraceBias):
+			if(self.simulatedDendriticBranches):
+				output, shapeOutput, memoryTraceUpdate = LinearCustomSDB.selectDendriticBranchOutput(output, requireResizeInput, shapeOutput, self.memoryTraceBias, memoryTraceUpdate)
+			if(self.memoryTraceBias):
 				self.memoryTrace = LinearCustomMTB.updateMemoryTrace(self.memoryTrace, memoryTraceUpdate)
+			if(self.memoryTraceAtrophy):
+				with torch.no_grad():
+					self.weight = LinearCustomMTA.updateWeights(self.weight, input, output, self.memoryTraceAtrophyActive)
 			if(useAutoResizeInput):
 				output = LinearCustomAutoResize.autoResizeOutput(requireResizeInput, output, shapeOutput)
 
@@ -184,9 +187,9 @@ if(useModuleLinearTemplateCurrent):
 			)	
 else:
 	#from https://pytorch.org/docs/master/notes/extending.html
-	class Linear(nn.Module):
-		def __init__(self, input_features, output_features, bias=True):
-			super(Linear, self).__init__()
+	class LinearCustom(nn.Module):
+		def __init__(self, input_features, output_features, bias=True, simulatedDendriticBranches=simulatedDendriticBranches, memoryTraceBias=memoryTraceBias, memoryTraceAtrophy=memoryTraceAtrophy):
+			super(LinearCustom, self).__init__()
 			self.input_features = input_features
 			self.output_features = output_features
 
@@ -210,13 +213,17 @@ else:
 			if self.bias is not None:
 				nn.init.uniform_(self.bias, -0.1, 0.1)
 
-			if(memoryTraceBias):
+			self.simulatedDendriticBranches=simulatedDendriticBranches
+			self.memoryTraceBias=memoryTraceBias
+			self.memoryTraceAtrophy=memoryTraceAtrophy
+			if(self.memoryTraceBias):
+				self.memoryTraceAtrophyActive = True
 				device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 				self.memoryTrace = torch.empty(input_features, output_features*numberOfIndependentDendriticBranches).to(device)	#note memoryTrace.shape = [input_features, output_features] (transpose of weights)
 				#self.memoryTrace = nn.Parameter(torch.empty(input_features, output_features*numberOfIndependentDendriticBranches), requires_grad=False)
 
 		def forward(self, input):
-			#orig: return LinearFunction.apply(input, self.weight, self.bias)
+			#orig: return LinearCustomFunction.apply(input, self.weight, self.bias)
 
 			requireResizeInput = False
 			shapeOutput = None
@@ -224,16 +231,19 @@ else:
 
 			if(useAutoResizeInput):
 				input, requireResizeInput, shapeOutput = LinearCustomAutoResize.autoResizeInput(input, self.weight)
-			if(memoryTraceBias):
+			if(self.memoryTraceBias):
 				output, memoryTraceUpdate = LinearCustomMTB.executeAndCalculateMemoryTraceUpdate(input, self.weight, self.bias, self.memoryTrace)
 			else:
 				#See the autograd section for explanation of what happens here.
-				output = LinearFunction.apply(input, self.weight, self.bias)
+				output = LinearCustomFunction.apply(input, self.weight, self.bias)
 
-			if(simulatedDendriticBranches):
-				output, shapeOutput, memoryTraceUpdate = LinearCustomSDB.selectDendriticBranchOutput(output, requireResizeInput, shapeOutput, memoryTraceUpdate)
-			if(memoryTraceBias):
+			if(self.simulatedDendriticBranches):
+				output, shapeOutput, memoryTraceUpdate = LinearCustomSDB.selectDendriticBranchOutput(output, requireResizeInput, shapeOutput, self.memoryTraceBias, memoryTraceUpdate)
+			if(self.memoryTraceBias):
 				self.memoryTrace = LinearCustomMTB.updateMemoryTrace(self.memoryTrace, memoryTraceUpdate)
+			if(self.memoryTraceAtrophy):
+				with torch.no_grad():
+					self.weight = LinearCustomMTA.updateWeights(self.weight, input, output, self.memoryTraceAtrophyActive)
 			if(useAutoResizeInput):
 				output = LinearCustomAutoResize.autoResizeOutput(requireResizeInput, output, shapeOutput)
 

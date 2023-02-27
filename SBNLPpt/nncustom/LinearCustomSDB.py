@@ -22,7 +22,7 @@ from SBNLPpt_globalDefs import *
 import torch
 from torch import nn
 
-def selectDendriticBranchOutput(output, requireResizeInput, shapeOutput, memoryTraceUpdate=None):
+def selectDendriticBranchOutput(output, requireResizeInput, shapeOutput, memoryTraceBias=False, memoryTraceUpdate=None):
 	newShape = [i for i in output.shape[0:-1]] + [numberOfIndependentDendriticBranches] + [output.shape[-1]//numberOfIndependentDendriticBranches]
 	output = torch.reshape(output, newShape)
 	#note LinearCustom simulatedDendriticBranches implementation uses additional biases (*numberOfIndependentDendriticBranches) for simplicity, which are not theoretically necessary/useful

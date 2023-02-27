@@ -25,7 +25,7 @@ from torch.autograd import Function
 
 if(useAutoResizeInput):
 	#from https://pytorch.org/docs/master/notes/extending.html
-	class LinearFunctionMTB(Function):
+	class LinearCustomFunctionMTB(Function):
 		@staticmethod
 		# ctx is the first argument to forward
 		def forward(ctx, input, weight, bias, memoryTrace):
@@ -51,7 +51,7 @@ if(useAutoResizeInput):
 			return grad_input, grad_weight, grad_bias, grad_memoryTrace
 else:
 	#from https://pytorch.org/docs/master/notes/extending.html
-	class LinearFunctionMTB(Function):
+	class LinearCustomFunctionMTB(Function):
 		@staticmethod
 		# ctx is the first argument to forward
 		def forward(ctx, input, weight, bias, memoryTrace):
@@ -75,9 +75,10 @@ else:
 				grad_bias = grad_output.sum(0)
 
 			return grad_input, grad_weight, grad_bias, grad_memoryTrace
-
+			
 def executeAndCalculateMemoryTraceUpdate(input, weight, bias, memoryTrace):
-	output = LinearFunctionMTB.apply(input, weight, bias, memoryTrace)
+	memoryTraceUpdate = None
+	output = LinearCustomFunctionMTB.apply(input, weight, bias, memoryTrace)
 	if(normaliseActivationSparsity):
 		output = nn.functional.layer_norm(output, output.shape[1:])	#CHECKTHIS: normalized_shape does not include batchSize
 	memoryTraceUpdate = calculateMemoryTraceUpdate(input.detach(), output.detach(), weight.detach())
@@ -95,7 +96,7 @@ def fadeMemoryTrace(memoryTrace):
 def calculateMemoryTraceUpdate(input, output, weight):
 	#limitations: calculateMemoryTraceUpdate expects input/output to be batched (ie first dimension is batchSize)
 	
-	#memoryTraceSigned - calculate positive/negative memory trace: positive memory trace calculated based on true positives and true negatives, negative memory trace calculated based on false positives and false negatives
+	#memoryTraceBiasSigned - calculate positive/negative memory trace: positive memory trace calculated based on true positives and true negatives, negative memory trace calculated based on false positives and false negatives
 
 	weight = weight.t()	#note weight.shape = [output_features, input_features]; therefore requires transpose
 	
@@ -105,6 +106,7 @@ def calculateMemoryTraceUpdate(input, output, weight):
 	
 	memoryTraceUpdateExcite = torch.matmul(input.swapaxes(-1, -2), outputActivation)	#coincidenceMatrixExcite
 	memoryTraceUpdateInhibit = torch.matmul(input.swapaxes(-1, -2), outputDeactivation)	#coincidenceMatrixInhibit
+	
 	if(input.shape[0] > 1):
 		pass
 		#assume input/output is not batched (eg applyIOconversionLayers)
@@ -116,20 +118,20 @@ def calculateMemoryTraceUpdate(input, output, weight):
 	else:
 		memoryTraceUpdateExcite = memoryTraceUpdateExcite[0]	#take only first batch sample
 		memoryTraceUpdateInhibit = memoryTraceUpdateInhibit[0]	#take only first batch sample
-	
-	if(memoryTraceWeightDirectionDependent):
+
+	if(memoryTraceBiasWeightDirectionDependent):
 		weightPos = torch.gt(weight, 0).float()
-		if(memoryTraceWeightDependent):
+		if(memoryTraceBiasWeightDependent):
 			weightPos = weight * weightPos
 		weightNeg = torch.lt(weight, 0).float()
-		if(memoryTraceWeightDependent):
+		if(memoryTraceBiasWeightDependent):
 			weightNeg = weight * weightNeg
 			weightNeg = weightNeg * -1	#make values positive or 0
-			
+
 		memoryTraceUpdateTruePos = memoryTraceUpdateExcite*weightPos	#true positives
 		memoryTraceUpdateTrueNeg = memoryTraceUpdateInhibit*weightNeg	#true negatives
 		memoryTraceUpdate = memoryTraceUpdateTruePos + memoryTraceUpdateTrueNeg	#TruePos/TrueNeg/FalsePos/FalseNeg are mutually exclusive memoryTrace indices
-		if(memoryTraceSigned):
+		if(memoryTraceBiasSigned):
 			memoryTraceUpdateFalsePos = memoryTraceUpdateExcite*weightNeg	#false positives
 			memoryTraceUpdateFalseNeg = memoryTraceUpdateInhibit*weightPos	#false negatives
 			memoryTraceUpdate = memoryTraceUpdate - memoryTraceUpdateFalsePos - memoryTraceUpdateFalseNeg	#TruePos/TrueNeg/FalsePos/FalseNeg are mutually exclusive memoryTrace indices
