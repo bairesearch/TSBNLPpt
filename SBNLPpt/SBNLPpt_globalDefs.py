@@ -119,20 +119,23 @@ relativeTimeEmbeddings = False	#initialise (dependent var)
 useGIAwordEmbeddings = False	#initialise (dependent var)
 GIAsemanticRelationVectorSpaces = False 	#initialise (dependent var)
 transformerAttentionHeadPermutations = False	#initialise (dependent var)
-transformerAttentionHeadPermutationsSoftmax = False	#initialise (dependent var)
+transformerAttentionHeadPermutationsType = "none"	#initialise (dependent var)
 transformerAttentionHeadPermutationsIndependent = False	#initialise (dependent var)
 if(useAlgorithmTransformer):
 	transformerAttentionHeadPermutations = True	#calculates KQ for all attention head permutations
 	useGIAwordEmbeddings = False	#use pretrained GIA word embeddings instead of nn.Embedding exclusively (transformer supports multiple embedding vectors)
 	tokenMemoryBank = False	#apply attention to all tokens in sequenceRegister (standard contextualWindow + memoryBank), where memoryBank is updated based on recently attended tokens
 	lowSequenceNumTokens = False
+	mediumSequenceNumTokens = False
 	if(transformerAttentionHeadPermutations):
-		transformerAttentionHeadPermutationsSoftmax = True	#perform softmax over all permutations (rather than over each permutation independently)
-		if(not transformerAttentionHeadPermutationsSoftmax):
-			transformerAttentionHeadPermutationsIndependent = True
+		#transformerAttentionHeadPermutationsType = "independent"
+		transformerAttentionHeadPermutationsType = "dependent"	#perform softmax over all permutations (rather than over each permutation independently)
+		if(transformerAttentionHeadPermutationsType=="dependent"):
+			mediumSequenceNumTokens = True	#optional	#reduced sequence tokens is required
 	if(useGIAwordEmbeddings):
 		GIAsemanticRelationVectorSpaces = True
 	if(tokenMemoryBank):
+		mediumSequenceNumTokens = True
 		tokenMemoryBankStorageSelectionAlgorithmAuto = True	#automatically learn tokenMemoryBank storage selection algorithm
 		if(tokenMemoryBankStorageSelectionAlgorithmAuto):
 			useMultipleModels = True
@@ -181,7 +184,10 @@ if(useAlgorithmTransformer):
 		sequenceMaxNumTokens = 8	#8 16 32 64
 		orderedDatasetDocNumberSegmentsDefault = 1
 	else:
-		sequenceMaxNumTokens = 128	#128 256 512	#default: sequenceMaxNumTokensDefault	#override
+		if(mediumSequenceNumTokens):
+			sequenceMaxNumTokens = 128	#128 256 
+		else:
+			sequenceMaxNumTokens = sequenceMaxNumTokensDefault		#512	#default: sequenceMaxNumTokensDefault	#override
 		orderedDatasetDocNumberSegmentsDefault = 10
 else:
 	sequenceMaxNumTokens = sequenceMaxNumTokensDefault	#window length (RNN/SANI)
@@ -343,6 +349,14 @@ if(GPUramLimit12to32GB):
 			batchSize = 2
 	if(useGIAwordEmbeddings):
 		batchSize = 2	#low batch size is required for high vocabularySize
+	if(transformerAttentionHeadPermutations):
+		if(transformerAttentionHeadPermutationsType=="independent"):
+			batchSize = 4	#8	
+		elif(transformerAttentionHeadPermutationsType=="dependent"):
+			if(mediumSequenceNumTokens):
+				batchSize = 8	#high batch size is allowed	as assume mediumSequenceNumTokens
+			else:
+				printe("GPUramLimit12to32GB error: transformerAttentionHeadPermutationsSoftmax+!mediumSequenceNumTokens requires >= 24GB GPU ram")
 if(useSmallBatchSizeDebug):
 	batchSize = 1	#use small batch size to enable simultaneous execution (GPU ram limited) 
 print("batchSize = ", batchSize)
@@ -570,3 +584,7 @@ def printCUDAmemory(tag):
 	#print("CUDA memory_reserved = ", memory_reserved)
 	print("CUDA memory_allocated = ", memory_allocated)
 	print("CUDA memory_free = ", memory_free)
+
+def printe(str):
+	print(str)
+	exit()

@@ -127,7 +127,7 @@ def trainDataset(tokenizer, dataElements):
 					
 def testDataset(tokenizer, dataElements):
 
-	model = prepareModelTrainOrTestWrapper(False)
+	model, optim = prepareModelTrainOrTestWrapper(False)
 	
 	if(usePreprocessedDataset):
 		if(reserveValidationSet):

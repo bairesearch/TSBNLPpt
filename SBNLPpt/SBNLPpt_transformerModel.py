@@ -56,7 +56,9 @@ if(sharedLayerWeights):
 	import SBNLPpt_transformerSharedLayers
 if(tokenMemoryBank):
 	import SBNLPpt_transformerTokenMemoryBank
-
+if(transformerAttentionHeadPermutations):
+	import SBNLPpt_transformerAttentionHeadPermutations
+			
 integratedPythonModule = False	#custom/modeling_roberta_sharedLayerWeights.py code has been integrated into transformers python module
 
 if(not integratedPythonModule):
@@ -315,104 +317,10 @@ class RobertaSelfAttention(nn.Module):
 			# if encoder bi-directional self-attention `past_key_value` is always `None`
 			past_key_value = (key_layer, value_layer)
 
-		if(transformerAttentionHeadPermutationsIndependent):
-			query_layerP = query_layer
-			key_layerP = key_layer
-								
-		# Take the dot product between "query" and "key" to get the raw attention scores.
 		if(transformerAttentionHeadPermutations):
-			batchSize = query_layer.shape[0]
-			sequenceLength = query_layer.shape[2]
-			if(transformerAttentionHeadPermutationsSoftmax):
-				#shape: batchSize, 1, sequenceLength*numberAttentionHeads, attention_head_size	#emulate single headed attention
-				query_layer = query_layer.reshape(batchSize, 1, sequenceLength*self.num_attention_heads, self.attention_head_size)
-				key_layer = key_layer.reshape(batchSize, 1, sequenceLength*self.num_attention_heads, self.attention_head_size)
-				value_layer = value_layer.reshape(batchSize, 1, sequenceLength*self.num_attention_heads, self.attention_head_size)
-			else:
-				#shape: batchSize, numberAttentionHeads*numberAttentionHeads, sequenceLength, attention_head_size
-				query_layer = query_layer.repeat(1, self.num_attention_heads, 1, 1)	
-				key_layer = torch.repeat_interleave(key_layer, repeats=self.num_attention_heads, dim=1)
-
-		attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
-		
-		if(not transformerAttentionHeadPermutationsIndependent):
-			query_layerP = query_layer
-			key_layerP = key_layer
-		if(relativeTimeEmbeddings):
-			if self.position_embedding_type == "relative_time":
-				sequenceRegisterTokenTimes = self.tokenMemoryBankClass.getSequenceRegisterTokenTimes(self.tokenMemoryBankClass.sequenceRegisterMemoryBankTokenTimes, self.tokenMemoryBankClass.sequenceRegisterMemoryBankAccessTimes)
-				relativePositionScoresList = []
-				for sampleIndex in range(batchSize):	#do not parallel process samples as their token times are different
-					position_ids_l = sequenceRegisterTokenTimes[sampleIndex].view(-1, 1)
-					position_ids_r = sequenceRegisterTokenTimes[sampleIndex].view(1, -1)
-					distance = position_ids_l - position_ids_r
-					distance = distance.long()
-					distancePositive = distance + self.max_position_embeddings - 1
-					positional_embedding = self.time_embedding(distancePositive)
-					positional_embedding = positional_embedding.to(dtype=query_layerP.dtype)  # fp16 compatibility
-					queryLayerSample = torch.unsqueeze(query_layerP[sampleIndex], dim=0)
-					if(transformerAttentionHeadPermutationsSoftmax):
-						positional_embedding = positional_embedding.repeat(self.num_attention_heads, self.num_attention_heads, 1)	#CHECKTHIS
-					relative_position_scores = torch.einsum("bhld,lrd->bhlr", queryLayerSample, positional_embedding)
-					relativePositionScoresList.append(relative_position_scores[0])
-				relative_position_scores = torch.stack(relativePositionScoresList, dim=0)
+			attention_probs, context_layer = SBNLPpt_transformerAttentionHeadPermutations.applySelfAttention(self, hidden_states, attention_mask, head_mask, query_layer, key_layer, value_layer)
 		else:
-			if self.position_embedding_type == "relative_key" or self.position_embedding_type == "relative_key_query":
-				seq_length = hidden_states.size()[1]
-				position_ids_l = torch.arange(seq_length, dtype=torch.long, device=hidden_states.device).view(-1, 1)
-				position_ids_r = torch.arange(seq_length, dtype=torch.long, device=hidden_states.device).view(1, -1)
-				distance = position_ids_l - position_ids_r
-				positional_embedding = self.distance_embedding(distance + self.max_position_embeddings - 1)
-				positional_embedding = positional_embedding.to(dtype=query_layerP.dtype)  # fp16 compatibility
-				if self.position_embedding_type == "relative_key":
-					#print("query_layerP.shape = ", query_layerP.shape)
-					#print("positional_embedding.shape = ", positional_embedding.shape)
-					if(transformerAttentionHeadPermutationsSoftmax):
-						positional_embedding = positional_embedding.repeat(self.num_attention_heads, self.num_attention_heads, 1)	#CHECKTHIS
-					relative_position_scores = torch.einsum("bhld,lrd->bhlr", query_layerP, positional_embedding)
-				elif self.position_embedding_type == "relative_key_query":
-					if(transformerAttentionHeadPermutationsSoftmax):
-						positional_embedding = positional_embedding.repeat(self.num_attention_heads, self.num_attention_heads, 1)	#CHECKTHIS
-					relative_position_scores_query = torch.einsum("bhld,lrd->bhlr", query_layerP, positional_embedding)
-					relative_position_scores_key = torch.einsum("bhrd,lrd->bhlr", key_layerP, positional_embedding)
-					relative_position_scores = relative_position_scores_query + relative_position_scores_key
-					
-		if(transformerAttentionHeadPermutationsIndependent):
-			relative_position_scores = relative_position_scores.repeat(1, self.num_attention_heads, 1, 1)
-		attention_scores = attention_scores + relative_position_scores	
-		
-		attention_scores = attention_scores / math.sqrt(self.attention_head_size)
-
-		if attention_mask is not None:
-			if(transformerAttentionHeadPermutationsSoftmax):
-				attention_mask = attention_mask.repeat(1, 1, 1, self.num_attention_heads)
-			# Apply the attention mask is (precomputed for all layers in RobertaModel forward() function)
-			attention_scores = attention_scores + attention_mask
-
-		# Normalize the attention scores to probabilities.
-		attention_probs = nn.functional.softmax(attention_scores, dim=-1)
-		
-		if(transformerAttentionHeadPermutationsIndependent):
-			attention_probs = attention_probs.view(batchSize, self.num_attention_heads, self.num_attention_heads, sequenceLength, sequenceLength)
-			attention_probs = torch.topk(attention_probs, k=1, dim=2).values
-			attention_probs = torch.squeeze(attention_probs, dim=2)
-		
-		if(tokenMemoryBank):
-			self.tokenMemoryBankClass.calculateAttentionProbsMaxIndex(attention_scores.detach())
-
-		# This is actually dropping out entire tokens to attend to, which might
-		# seem a bit unusual, but is taken from the original Transformer paper.
-		attention_probs = self.dropout(attention_probs)
-
-		# Mask heads if we want to
-		if head_mask is not None:
-			if(transformerAttentionHeadPermutationsSoftmax):
-				head_mask = head_mask.repeat(1, 1, self.num_attention_heads, 1)
-			attention_probs = attention_probs * head_mask
-
-		context_layer = torch.matmul(attention_probs, value_layer)
-		if(transformerAttentionHeadPermutationsSoftmax):
-			context_layer = context_layer.view(batchSize, self.num_attention_heads, sequenceLength, self.attention_head_size)
+			attention_probs, context_layer = self.applySelfAttention(hidden_states, attention_mask, head_mask, query_layer, key_layer, value_layer)
 
 		context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
 		new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
@@ -424,7 +332,77 @@ class RobertaSelfAttention(nn.Module):
 			outputs = outputs + (past_key_value,)
 		return outputs
 
+	def applySelfAttention(self, hidden_states, attention_mask, head_mask, query_layer, key_layer, value_layer):
 	
+		# Take the dot product between "query" and "key" to get the raw attention scores.
+		attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+		
+		relative_position_scores = self.calculateRelativePositionScores(hidden_states, query_layer, key_layer)
+		attention_scores = attention_scores + relative_position_scores
+		attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+
+		if attention_mask is not None:
+			# Apply the attention mask is (precomputed for all layers in RobertaModel forward() function)
+			attention_scores = attention_scores + attention_mask
+
+		# Normalize the attention scores to probabilities.
+		attention_probs = nn.functional.softmax(attention_scores, dim=-1)
+		
+		if(tokenMemoryBank):
+			self.tokenMemoryBankClass.calculateAttentionProbsMaxIndex(attention_scores.detach())
+
+		# This is actually dropping out entire tokens to attend to, which might
+		# seem a bit unusual, but is taken from the original Transformer paper.
+		attention_probs = self.dropout(attention_probs)
+
+		# Mask heads if we want to
+		if head_mask is not None:
+			attention_probs = attention_probs * head_mask
+
+		context_layer = torch.matmul(attention_probs, value_layer)
+
+		return attention_probs, context_layer
+
+	def calculateRelativePositionScores(self, hidden_states, query_layer, key_layer):
+		if(relativeTimeEmbeddings):
+			if self.position_embedding_type == "relative_time":
+				sequenceRegisterTokenTimes = self.tokenMemoryBankClass.getSequenceRegisterTokenTimes(self.tokenMemoryBankClass.sequenceRegisterMemoryBankTokenTimes, self.tokenMemoryBankClass.sequenceRegisterMemoryBankAccessTimes)
+				relativePositionScoresList = []
+				for sampleIndex in range(batchSize):	#do not parallel process samples as their token times are different
+					position_ids_l = sequenceRegisterTokenTimes[sampleIndex].view(-1, 1)
+					position_ids_r = sequenceRegisterTokenTimes[sampleIndex].view(1, -1)
+					distance = position_ids_l - position_ids_r
+					distance = distance.long()
+					distancePositive = distance + self.max_position_embeddings - 1
+					positional_embedding = self.time_embedding(distancePositive)
+					positional_embedding = positional_embedding.to(dtype=query_layer.dtype)  # fp16 compatibility
+					queryLayerSample = torch.unsqueeze(query_layer[sampleIndex], dim=0)
+					if(transformerAttentionHeadPermutationsType=="dependent"):
+						positional_embedding = positional_embedding.repeat(self.num_attention_heads, self.num_attention_heads, 1)	#CHECKTHIS
+					relative_position_scores = torch.einsum("bhld,lrd->bhlr", queryLayerSample, positional_embedding)
+					relativePositionScoresList.append(relative_position_scores[0])
+				relative_position_scores = torch.stack(relativePositionScoresList, dim=0)
+		else:
+			if self.position_embedding_type == "relative_key" or self.position_embedding_type == "relative_key_query":
+				seq_length = hidden_states.size()[1]
+				position_ids_l = torch.arange(seq_length, dtype=torch.long, device=hidden_states.device).view(-1, 1)
+				position_ids_r = torch.arange(seq_length, dtype=torch.long, device=hidden_states.device).view(1, -1)
+				distance = position_ids_l - position_ids_r
+				positional_embedding = self.distance_embedding(distance + self.max_position_embeddings - 1)
+				positional_embedding = positional_embedding.to(dtype=query_layer.dtype)  # fp16 compatibility
+				if self.position_embedding_type == "relative_key":
+					#print("query_layer.shape = ", query_layer.shape)
+					#print("positional_embedding.shape = ", positional_embedding.shape)
+					if(transformerAttentionHeadPermutationsType=="dependent"):
+						positional_embedding = positional_embedding.repeat(self.num_attention_heads, self.num_attention_heads, 1)	#CHECKTHIS
+					relative_position_scores = torch.einsum("bhld,lrd->bhlr", query_layer, positional_embedding)
+				elif self.position_embedding_type == "relative_key_query":
+					if(transformerAttentionHeadPermutationsType=="dependent"):
+						positional_embedding = positional_embedding.repeat(self.num_attention_heads, self.num_attention_heads, 1)	#CHECKTHIS
+					relative_position_scores_query = torch.einsum("bhld,lrd->bhlr", query_layer, positional_embedding)
+					relative_position_scores_key = torch.einsum("bhrd,lrd->bhlr", key_layer, positional_embedding)
+					relative_position_scores = relative_position_scores_query + relative_position_scores_key
+		return relative_position_scores
 
 # Copied from transformers.models.bert.modeling_bert.BertSelfOutput
 class RobertaSelfOutput(nn.Module):
