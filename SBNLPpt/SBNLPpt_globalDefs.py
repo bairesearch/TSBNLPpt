@@ -118,16 +118,18 @@ tokenMemoryBankStorageSelectionAlgorithmAuto = False	#initialise (dependent var)
 relativeTimeEmbeddings = False	#initialise (dependent var)
 useGIAwordEmbeddings = False	#initialise (dependent var)
 GIAsemanticRelationVectorSpaces = False 	#initialise (dependent var)
+transformerAttentionHeadPermutations = False	#initialise (dependent var)
+transformerAttentionHeadPermutationsSoftmax = False	#initialise (dependent var)
+transformerAttentionHeadPermutationsIndependent = False	#initialise (dependent var)
 if(useAlgorithmTransformer):
-	useGIAwordEmbeddings = True	#use pretrained GIA word embeddings instead of nn.Embedding exclusively (transformer supports multiple embedding vectors)
+	transformerAttentionHeadPermutations = True	#calculates KQ for all attention head permutations
+	useGIAwordEmbeddings = False	#use pretrained GIA word embeddings instead of nn.Embedding exclusively (transformer supports multiple embedding vectors)
 	tokenMemoryBank = False	#apply attention to all tokens in sequenceRegister (standard contextualWindow + memoryBank), where memoryBank is updated based on recently attended tokens
 	lowSequenceNumTokens = False
-	if(lowSequenceNumTokens):
-		sequenceMaxNumTokens = 8	#8 16 32 64
-		orderedDatasetDocNumberSegmentsDefault = 1
-	else:
-		sequenceMaxNumTokens = 128	#128 256 512	#default: sequenceMaxNumTokensDefault	#override
-		orderedDatasetDocNumberSegmentsDefault = 10
+	if(transformerAttentionHeadPermutations):
+		transformerAttentionHeadPermutationsSoftmax = True	#perform softmax over all permutations (rather than over each permutation independently)
+		if(not transformerAttentionHeadPermutationsSoftmax):
+			transformerAttentionHeadPermutationsIndependent = True
 	if(useGIAwordEmbeddings):
 		GIAsemanticRelationVectorSpaces = True
 	if(tokenMemoryBank):
@@ -175,6 +177,12 @@ if(useAlgorithmTransformer):
 			sequenceRegisterLength = sequenceMaxNumTokens
 		else:
 			sequenceMaxNumTokens = sequenceMaxNumTokensDefault	#window length (transformer)
+	if(lowSequenceNumTokens):
+		sequenceMaxNumTokens = 8	#8 16 32 64
+		orderedDatasetDocNumberSegmentsDefault = 1
+	else:
+		sequenceMaxNumTokens = 128	#128 256 512	#default: sequenceMaxNumTokensDefault	#override
+		orderedDatasetDocNumberSegmentsDefault = 10
 else:
 	sequenceMaxNumTokens = sequenceMaxNumTokensDefault	#window length (RNN/SANI)
 
@@ -242,7 +250,7 @@ if(GIAsemanticRelationVectorSpaces):
 	if(not GIAgenerateUniqueWordVectorsForRelationTypes):
 		useIndependentReverseRelationsModels = False	#else take input linear layer as forward embeddings and output linear layer [inversed] as reverse embeddings
 		
-if(recursiveLayers or memoryTraceBias or simulatedDendriticBranches or GIAsemanticRelationVectorSpaces or tokenMemoryBank):
+if(recursiveLayers or memoryTraceBias or simulatedDendriticBranches or GIAsemanticRelationVectorSpaces or tokenMemoryBank or transformerAttentionHeadPermutations):
 	useSyntacticBiases = True
 else:
 	useSyntacticBiases = False
