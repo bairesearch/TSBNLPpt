@@ -43,6 +43,9 @@ def applySelfAttention(self, hidden_states, attention_mask, head_mask, query_lay
 	# Take the dot product between "query" and "key" to get the raw attention scores.
 	attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
 
+	#print("query_layer.shape = ", query_layer.shape)
+	#print("attention_scores.shape = ", attention_scores.shape)
+	
 	if(transformerAttentionHeadPermutationsType=="independent"):
 		relative_position_scores = self.calculateRelativePositionScores(hidden_states, query_layerP, key_layerP)
 	else:

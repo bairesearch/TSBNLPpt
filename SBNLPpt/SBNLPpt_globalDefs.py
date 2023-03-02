@@ -121,17 +121,27 @@ GIAsemanticRelationVectorSpaces = False 	#initialise (dependent var)
 transformerAttentionHeadPermutations = False	#initialise (dependent var)
 transformerAttentionHeadPermutationsType = "none"	#initialise (dependent var)
 transformerAttentionHeadPermutationsIndependent = False	#initialise (dependent var)
+hiddenLayerSizeTransformer = 768	#default: 768
 if(useAlgorithmTransformer):
 	transformerAttentionHeadPermutations = True	#calculates KQ for all attention head permutations
 	useGIAwordEmbeddings = False	#use pretrained GIA word embeddings instead of nn.Embedding exclusively (transformer supports multiple embedding vectors)
 	tokenMemoryBank = False	#apply attention to all tokens in sequenceRegister (standard contextualWindow + memoryBank), where memoryBank is updated based on recently attended tokens
 	lowSequenceNumTokens = False
-	mediumSequenceNumTokens = False
+	mediumSequenceNumTokens = False	#initialise (dependent var)
 	if(transformerAttentionHeadPermutations):
-		#transformerAttentionHeadPermutationsType = "independent"
 		transformerAttentionHeadPermutationsType = "dependent"	#perform softmax over all permutations (rather than over each permutation independently)
-		if(transformerAttentionHeadPermutationsType=="dependent"):
-			mediumSequenceNumTokens = True	#optional	#reduced sequence tokens is required
+		#transformerAttentionHeadPermutationsType = "independent"
+		mediumSequenceNumTokens = False	#optional	#reduced sequence tokens is required
+		if(mediumSequenceNumTokens):
+			numberOfAttentionHeads = 12
+		else:
+			if(transformerAttentionHeadPermutationsType=="dependent"):
+				numberOfAttentionHeads = 4
+				hiddenLayerSizeTransformer = hiddenLayerSizeTransformer//numberOfAttentionHeads	#eg 192
+			else:
+				numberOfAttentionHeads = 4	#or 8 (slow)
+	else:
+		numberOfAttentionHeads = 12	#default: 12
 	if(useGIAwordEmbeddings):
 		GIAsemanticRelationVectorSpaces = True
 	if(tokenMemoryBank):
@@ -351,12 +361,9 @@ if(GPUramLimit12to32GB):
 		batchSize = 2	#low batch size is required for high vocabularySize
 	if(transformerAttentionHeadPermutations):
 		if(transformerAttentionHeadPermutationsType=="independent"):
-			batchSize = 4	#8	
+			batchSize = 8
 		elif(transformerAttentionHeadPermutationsType=="dependent"):
-			if(mediumSequenceNumTokens):
-				batchSize = 8	#high batch size is allowed	as assume mediumSequenceNumTokens
-			else:
-				printe("GPUramLimit12to32GB error: transformerAttentionHeadPermutationsSoftmax+!mediumSequenceNumTokens requires >= 24GB GPU ram")
+			batchSize = 8
 if(useSmallBatchSizeDebug):
 	batchSize = 1	#use small batch size to enable simultaneous execution (GPU ram limited) 
 print("batchSize = ", batchSize)
@@ -418,8 +425,7 @@ def getModelPathNameFull(modelPathNameBase, modelName):
 	modelPathNameFull = modelPathNameBase + '/' + modelName + '.pt'
 	return modelPathNameFull
 	
-GIAmodelName = 'modelGIA'				
-hiddenLayerSizeTransformer = 768	#default: 768
+GIAmodelName = 'modelGIA'	
 if(useAlgorithmTransformer):
 	sharedLayerWeights = False	#initialise (dependent var)
 	sharedLayerWeightsOutput = False	#initialise (dependent var)
@@ -445,7 +451,6 @@ if(useAlgorithmTransformer):
 			hiddenLayerSize = 24
 		else:
 			hiddenLayerSize = hiddenLayerSizeTransformer
-		numberOfAttentionHeads = 12	#default: 12
 		intermediateSize = 3072	#default: 3072
 		if(recursiveLayers):
 			#same model size irrespective of useSingleHiddenLayerDebug
