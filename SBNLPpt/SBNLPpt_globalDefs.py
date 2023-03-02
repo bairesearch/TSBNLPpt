@@ -56,7 +56,7 @@ stateTestDataset = True	#requires reserveValidationSet
 trainStartEpoch = 0	#start epoch of training (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
 trainNumberOfEpochs = 1	#default: 10	#number of epochs to train (for production typically train x epochs at a time)
 trainStartDataFile = 0	#default: 0	#start data file to train (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
-trainNumberOfDataFiles = 15	#100	#number of data files to train (for production typically train x dataFiles at a time)	#< datasetNumberOfDataFiles (30424) * trainSplitFraction
+trainNumberOfDataFiles = 15	#15	#100	#number of data files to train (for production typically train x dataFiles at a time)	#< datasetNumberOfDataFiles (30424) * trainSplitFraction
 testNumberOfDataFiles = 1	#10
 
 LRPdatabaseName = 'NLTK'	#wordnet
@@ -121,6 +121,7 @@ GIAsemanticRelationVectorSpaces = False 	#initialise (dependent var)
 transformerAttentionHeadPermutations = False	#initialise (dependent var)
 transformerAttentionHeadPermutationsType = "none"	#initialise (dependent var)
 transformerAttentionHeadPermutationsIndependent = False	#initialise (dependent var)
+transformerAttentionHeadPermutationsIndependentOutput = False #initialise (dependent var)
 hiddenLayerSizeTransformer = 768	#default: 768
 if(useAlgorithmTransformer):
 	transformerAttentionHeadPermutations = True	#calculates KQ for all attention head permutations
@@ -129,6 +130,7 @@ if(useAlgorithmTransformer):
 	lowSequenceNumTokens = False
 	mediumSequenceNumTokens = False	#initialise (dependent var)
 	if(transformerAttentionHeadPermutations):
+		transformerAttentionHeadPermutationsIndependentOutput = True	#SelfOutput executes dense linear in groups of size numberOfAttentionHeads	#does not support sharedLayerWeightsOutput
 		transformerAttentionHeadPermutationsType = "dependent"	#perform softmax over all permutations (rather than over each permutation independently)
 		#transformerAttentionHeadPermutationsType = "independent"
 		mediumSequenceNumTokens = False	#optional	#reduced sequence tokens is required

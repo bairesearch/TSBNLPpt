@@ -325,7 +325,7 @@ class RobertaSelfAttention(nn.Module):
 		context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
 		new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
 		context_layer = context_layer.view(new_context_layer_shape)
-
+		
 		outputs = (context_layer, attention_probs) if output_attentions else (context_layer,)
 
 		if self.is_decoder:
@@ -408,15 +408,24 @@ class RobertaSelfAttention(nn.Module):
 class RobertaSelfOutput(nn.Module):
 	def __init__(self, config, robertaSharedLayerModules=None):
 		super().__init__()
-		if(sharedLayerWeightsOutput):
-			self.dense = robertaSharedLayerModules.RobertaSelfOutputSharedLayerOutput
+		if(transformerAttentionHeadPermutationsIndependentOutput):
+			self.config = config
+			self.dense = nn.Conv1d(in_channels=config.hidden_size, out_channels=config.hidden_size, kernel_size=1, groups=config.num_attention_heads)	#perform output computation for each head independently
 		else:
-			self.dense = nncustom.Linear(config.hidden_size, config.hidden_size)
+			if(sharedLayerWeightsOutput):
+				self.dense = robertaSharedLayerModules.RobertaSelfOutputSharedLayerOutput
+			else:
+				self.dense = nncustom.Linear(config.hidden_size, config.hidden_size)
 		self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 		self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
 	def forward(self, hidden_states: torch.Tensor, input_tensor: torch.Tensor) -> torch.Tensor:
+		if(transformerAttentionHeadPermutationsIndependentOutput):
+			(batchSize, sequenceLength) = (hidden_states.shape[0], hidden_states.shape[1])
+			hidden_states = hidden_states.view(batchSize*sequenceLength, self.config.hidden_size, 1)	#unsqueeze(-1) required to emulate parallel process independent nn.Linear
 		hidden_states = self.dense(hidden_states)
+		if(transformerAttentionHeadPermutationsIndependentOutput):
+			hidden_states = hidden_states.view(batchSize, sequenceLength, self.config.hidden_size)
 		hidden_states = self.dropout(hidden_states)
 		hidden_states = self.LayerNorm(hidden_states + input_tensor)
 		return hidden_states
