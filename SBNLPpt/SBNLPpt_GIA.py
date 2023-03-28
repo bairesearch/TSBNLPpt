@@ -24,7 +24,7 @@ from SBNLPpt_globalDefs import *
 import SBNLPpt_GIAmodel
 import torch.nn.functional as F
 
-import SBNLPpt_GIAdefinePOSwordLists
+import SBNLPpt_GIAvectorSpaces
 if(GIAuseVectorisedSemanticRelationIdentification):
 	import SBNLPpt_GIAsemanticRelationVectorised
 else:
@@ -36,8 +36,8 @@ device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cp
 def preparePOSdictionary():
 	if(GIAuseVectorisedSemanticRelationIdentification):
 		global posVectorList
-		posVectorList = SBNLPpt_GIAdefinePOSwordLists.loadPOSwordListVectors()
-		numberOfVectorSpaces = len(SBNLPpt_GIAdefinePOSwordLists.vectorSpaceList)
+		posVectorList = SBNLPpt_GIAvectorSpaces.loadPOSwordListVectors()
+		numberOfVectorSpaces = len(SBNLPpt_GIAvectorSpaces.vectorSpaceList)
 	else:
 		SBNLPpt_GIAsemanticRelationStandard.preparePOSdictionary()
 	

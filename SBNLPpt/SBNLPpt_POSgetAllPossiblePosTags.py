@@ -1,4 +1,4 @@
-"""SBNLPpt_getAllPossiblePosTags.py
+"""SBNLPpt_POSgetAllPossiblePosTags.py
 
 # Author:
 Richard Bruce Baxter - Copyright (c) 2022-2023 Baxter AI (baxterai.com)
@@ -13,7 +13,7 @@ see SBNLPpt_main.py
 see SBNLPpt_main.py
 
 # Description:
-SBNLPpt Get All Possible Pos Tags
+SBNLPpt POS Get All Possible Pos Tags
 
 """
 

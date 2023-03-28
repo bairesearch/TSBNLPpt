@@ -22,12 +22,12 @@ from torch import nn
 
 from SBNLPpt_globalDefs import *
 import SBNLPpt_GIA
-import SBNLPpt_GIAdefinePOSwordLists
+import SBNLPpt_GIAvectorSpaces
 
 class GIAwordEmbeddingEncoderClass(nn.Module):
 	def __init__(self, config):
 		super().__init__()
-		self.modelStoreList = SBNLPpt_GIAdefinePOSwordLists.vectorSpaceList
+		self.modelStoreList = SBNLPpt_GIAvectorSpaces.vectorSpaceList
 		for modelStoreIndex, modelStore in enumerate(self.modelStoreList):
 			modelStore.model = SBNLPpt_GIA.loadModelIndex(modelStoreIndex)
 			modelStore.model.input.requires_grad_(False)	#disable backprop for pretrained word embeddings
@@ -41,7 +41,7 @@ class GIAwordEmbeddingEncoderClass(nn.Module):
 				assert modelStore.model.embeddingEncoder.weight.shape[1] == config.vocab_size
 		if(GIAgenerateUniqueWordVectorsForRelationTypes):
 			trainableHiddenSize = config.hidden_size//trainableEmbeddingSpaceFraction
-			self.wordEmbeddingsNonRelationTypes = nn.Embedding(config.vocab_size, trainableHiddenSize, padding_idx=config.pad_token_id)	#trainable embedding layer (for non relation type tokens; e.g. nouns)
+			self.wordEmbeddingsTrainable = nn.Embedding(config.vocab_size, trainableHiddenSize, padding_idx=config.pad_token_id)	#trainable embedding layer (for non relation type tokens; e.g. nouns)	#wordEmbeddingsNonRelationTypes
 					
 	def forward(self, x):
 		with torch.no_grad(): 
@@ -57,7 +57,7 @@ class GIAwordEmbeddingEncoderClass(nn.Module):
 			outputPretrained = torch.flatten(outputPretrained, start_dim=-2, end_dim=-1)		#shape: batchSize * sequenceLength * pretrainedHiddenSize
 			#print("outputPretrained.shape = ", outputPretrained.shape)	
 		if(GIAgenerateUniqueWordVectorsForRelationTypes):
-			outputTrainable = self.wordEmbeddingsNonRelationTypes(x)	#shape: batchSize * sequenceLength * trainableHiddenSize
+			outputTrainable = self.wordEmbeddingsTrainable(x)	#shape: batchSize * sequenceLength * trainableHiddenSize
 		outputs = torch.cat([outputPretrained, outputTrainable], dim=-1)		#shape: batchSize * sequenceLength * hiddenLayerSizeTransformer
 		#print("outputs.shape = ", outputs.shape)
 		return outputs

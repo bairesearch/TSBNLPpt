@@ -27,7 +27,7 @@ import SBNLPpt_GIAmodel
 import torch.nn.functional as F
 import math
 
-import SBNLPpt_GIAdefinePOSwordLists
+import SBNLPpt_GIAvectorSpaces
 
 keypoint1offset = 1
 	
@@ -41,7 +41,7 @@ def calculateXYlabels(tokenizer, batch, vocabSize, posVectorList):
 
 def prepareBatchPOSflagsList(batchTokenIDs, posVectorList):
 	batchPOSflagsList = []
-	for POSindex, POSitem in enumerate(SBNLPpt_GIAdefinePOSwordLists.keypointsDict.items()):
+	for POSindex, POSitem in enumerate(SBNLPpt_GIAvectorSpaces.keypointsDict.items()):
 		posVector = posVectorList[POSindex]	
 		batchPOSflags = torch.zeros(batchTokenIDs.shape)	#dtype=torch.bool
 		for sampleIndex in range(batchSize):
@@ -56,7 +56,7 @@ def getModelSamples(batchTokenIDs, posVectorList, batchPOSflagsList, vocabSize):
 	semanticRelationIDinputKeypoint0List = []
 	semanticRelationIDinputKeypoint1List = []
 	semanticRelationIDinputKeypoint2List = []
-	for vectorSpaceIndex, vectorSpace in enumerate(SBNLPpt_GIAdefinePOSwordLists.vectorSpaceList):
+	for vectorSpaceIndex, vectorSpace in enumerate(SBNLPpt_GIAvectorSpaces.vectorSpaceList):
 		batchPOSflagsKeypoint0 = getBatchPOSflags(vectorSpace.keyPrior, batchPOSflagsList, vocabSize)
 		batchPOSflagsKeypoint1 = getBatchPOSflags(vectorSpace.keyIntermediate, batchPOSflagsList, vocabSize)
 		batchPOSflagsKeypoint2 = getBatchPOSflags(vectorSpace.keyAfter, batchPOSflagsList, vocabSize)
@@ -71,7 +71,7 @@ def getModelSamples(batchTokenIDs, posVectorList, batchPOSflagsList, vocabSize):
 
 	labelsList = []
 	labelsFoundList = []
-	for vectorSpaceIndex, vectorSpace in enumerate(SBNLPpt_GIAdefinePOSwordLists.vectorSpaceList):
+	for vectorSpaceIndex, vectorSpace in enumerate(SBNLPpt_GIAvectorSpaces.vectorSpaceList):
 		modelSamplesX = []
 		modelSamplesY = []
 		modelSamplesI = []
@@ -82,8 +82,8 @@ def getModelSamples(batchTokenIDs, posVectorList, batchPOSflagsList, vocabSize):
 					wordIndexKeypoint1 = batchTokenIDs[sampleIndex, tokenIndex+keypoint1offset]
 					keypoint2offset = result[sampleIndex, vectorSpaceIndex, tokenIndex]	#wordIndexKeypoint2sequenceIndexOffset
 					wordIndexKeypoint2 = batchTokenIDs[sampleIndex, tokenIndex+keypoint2offset]
-					SBNLPpt_GIAdefinePOSwordLists.addModelSampleToList(vectorSpace, modelSamplesX, modelSamplesY, modelSamplesI, wordIndexKeypoint0, wordIndexKeypoint1, wordIndexKeypoint2)
-		labels, labelsFound = SBNLPpt_GIAdefinePOSwordLists.createXYlabelsFromModelSampleList(vectorSpace, modelSamplesX, modelSamplesY, modelSamplesI, vocabSize)
+					SBNLPpt_GIAvectorSpaces.addModelSampleToList(vectorSpace, modelSamplesX, modelSamplesY, modelSamplesI, wordIndexKeypoint0, wordIndexKeypoint1, wordIndexKeypoint2)
+		labels, labelsFound = SBNLPpt_GIAvectorSpaces.createXYlabelsFromModelSampleList(vectorSpace, modelSamplesX, modelSamplesY, modelSamplesI, vocabSize)
 		labelsList.append(labels)
 		labelsFoundList.append(labelsFound)
 		
@@ -96,11 +96,11 @@ def semanticRelationIdentification(semanticRelationIDinputKeypoint0, semanticRel
 	keypoint1 = F.pad(keypoint1, pad=(0, keypoint1offset), value=0)	#pad last dim end by keypoint1offset with zeros
 	keypoint1 = keypoint1.bool()
 	keypoint2PartList = []
-	for x in range(SBNLPpt_GIAdefinePOSwordLists.keypointMaxDetectionDistance):
+	for x in range(SBNLPpt_GIAvectorSpaces.keypointMaxDetectionDistance):
 		keypoint2offset = keypoint1offset+x
 		keypoint2Part = semanticRelationIDinputKeypoint2[:, :, keypoint2offset:]
 		keypoint2Part = F.pad(keypoint2Part, pad=(0, keypoint2offset), value=0)	#pad last dim end by keypoint2offset with zeros
-		keypoint2Part = keypoint2Part * (SBNLPpt_GIAdefinePOSwordLists.keypointMaxDetectionDistance-x)	#keypoint2Part * 5, 4, 3, 2, 1
+		keypoint2Part = keypoint2Part * (SBNLPpt_GIAvectorSpaces.keypointMaxDetectionDistance-x)	#keypoint2Part * 5, 4, 3, 2, 1
 		keypoint2PartList.append(keypoint2Part)
 	keypoint2 = torch.stack(keypoint2PartList, dim=3)
 	keypoint2index = torch.argmax(keypoint2, dim=3)	#get relative sequence index of keypoint2 (if existent)
@@ -121,18 +121,18 @@ def semanticRelationIdentification(semanticRelationIDinputKeypoint0, semanticRel
 	return result
 
 def getBatchPOSflags(keypoint, batchPOSflagsList, vocabSize):
-	if(keypoint == SBNLPpt_GIAdefinePOSwordLists.keypointNone):
+	if(keypoint == SBNLPpt_GIAvectorSpaces.keypointNone):
 		batchPOSflags = torch.ones(batchPOSflagsList[0].shape, requires_grad=False)
 	else:
-		POSvectorIndex = list(SBNLPpt_GIAdefinePOSwordLists.keypointsDict.keys()).index(keypoint)
+		POSvectorIndex = list(SBNLPpt_GIAvectorSpaces.keypointsDict.keys()).index(keypoint)
 		batchPOSflags = batchPOSflagsList[POSvectorIndex]
 	return batchPOSflags
 	
 #NOTUSED;			
 def getPOSvectorList(keypoint, posVectorList, vocabSize):
-	if(keypoint == SBNLPpt_GIAdefinePOSwordLists.keypointNone):
+	if(keypoint == SBNLPpt_GIAvectorSpaces.keypointNone):
 		posVector = torch.ones([vocabSize])
 	else:
-		POSvectorIndex = list(SBNLPpt_GIAdefinePOSwordLists.keypointsDict.keys()).index(keypoint)
+		POSvectorIndex = list(SBNLPpt_GIAvectorSpaces.keypointsDict.keys()).index(keypoint)
 		posVector = posVectorList[POSvectorIndex]
 	return posVector

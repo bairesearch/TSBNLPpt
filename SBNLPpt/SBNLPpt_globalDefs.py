@@ -65,8 +65,11 @@ fixNLTKwordListAll = True	#add additional auxiliary having possessive words not 
 relativeFolderLocations = False
 userName = 'user'	#default: user
 tokenString = "INSERT_HUGGINGFACE_TOKEN_HERE"	#default: INSERT_HUGGINGFACE_TOKEN_HERE
-#storage location vars (requires 4TB harddrive);
+import os
+if(os.path.isdir('user')):
+	from user.user_globalDefs import *
 
+#storage location vars (requires 4TB harddrive);
 datasetName = 'OSCAR1900'
 #datasetName = 'OSCAR2201'
 
@@ -111,20 +114,23 @@ dataPreprocessedFileNameEnd = ".txt"
  
 sequenceMaxNumTokensDefault = 512
 
-useMultipleModels = False	#initialise (dependent var)
-createOrderedDataset = False	#initialise (dependent var)
-tokenMemoryBank = False	#initialise (dependent var)
-tokenMemoryBankStorageSelectionAlgorithmAuto = False	#initialise (dependent var)
-relativeTimeEmbeddings = False	#initialise (dependent var)
-useGIAwordEmbeddings = False	#initialise (dependent var)
-GIAsemanticRelationVectorSpaces = False 	#initialise (dependent var)
-transformerAttentionHeadPermutations = False	#initialise (dependent var)
-transformerAttentionHeadPermutationsType = "none"	#initialise (dependent var)
-transformerAttentionHeadPermutationsIndependent = False	#initialise (dependent var)
-transformerAttentionHeadPermutationsIndependentOutput = False #initialise (dependent var)
+#initialise (dependent vars);
+useMultipleModels = False	
+createOrderedDataset = False	
+tokenMemoryBank = False	
+tokenMemoryBankStorageSelectionAlgorithmAuto = False	
+relativeTimeEmbeddings = False	
+useGIAwordEmbeddings = False	
+GIAsemanticRelationVectorSpaces = False 	
+transformerPOSembeddings = False
+transformerAttentionHeadPermutations = False	
+transformerAttentionHeadPermutationsType = "none"	
+transformerAttentionHeadPermutationsIndependent = False	
+transformerAttentionHeadPermutationsIndependentOutput = False 
 hiddenLayerSizeTransformer = 768	#default: 768
 if(useAlgorithmTransformer):
-	transformerAttentionHeadPermutations = True	#calculates KQ for all attention head permutations
+	transformerPOSembeddings = True
+	transformerAttentionHeadPermutations = False	#calculates KQ for all attention head permutations
 	useGIAwordEmbeddings = False	#use pretrained GIA word embeddings instead of nn.Embedding exclusively (transformer supports multiple embedding vectors)
 	tokenMemoryBank = False	#apply attention to all tokens in sequenceRegister (standard contextualWindow + memoryBank), where memoryBank is updated based on recently attended tokens
 	lowSequenceNumTokens = False
@@ -133,7 +139,7 @@ if(useAlgorithmTransformer):
 		transformerAttentionHeadPermutationsIndependentOutput = True	#SelfOutput executes dense linear in groups of size numberOfAttentionHeads	#does not support sharedLayerWeightsOutput
 		transformerAttentionHeadPermutationsType = "dependent"	#perform softmax over all permutations (rather than over each permutation independently)
 		#transformerAttentionHeadPermutationsType = "independent"
-		mediumSequenceNumTokens = False	#optional	#reduced sequence tokens is required
+		mediumSequenceNumTokens = False	#optional
 		if(mediumSequenceNumTokens):
 			numberOfAttentionHeads = 12
 		else:
@@ -215,6 +221,9 @@ useFullwordTokenizerClass = True	#initialise (dependent var)
 tokeniserOnlyTrainOnDictionary = False	#initialise (dependent var)
 useEffectiveFullwordTokenizer = False	#initialise (dependent var)
 GIAmemoryTraceAtrophy = False	#initialise (dependent var)
+if(transformerPOSembeddings):
+	GIAuseVectorisedPOSidentification = True
+	useEffectiveFullwordTokenizer = True
 if(useAlgorithmGIA):
 	GIAsemanticRelationVectorSpaces = True
 	useGIAwordEmbeddings = True	#required to prepare for useAlgorithmTransformer with useGIAwordEmbeddings compatibility
@@ -224,6 +233,8 @@ if(GIAsemanticRelationVectorSpaces):
 		GIAuseOptimisedEmbeddingLayer1 = False	#use nn.Embedding instead of nn.Linear	#incomplete (results in incorrect embedding shape)
 		GIAuseOptimisedEmbeddingLayer2 = True	#generate n.Embedding posthoc from nn.Linear 
 	GIAuseVectorisedSemanticRelationIdentification = True	#optional
+	if(GIAuseVectorisedSemanticRelationIdentification):
+		GIAuseVectorisedPOSidentification = True
 	useEffectiveFullwordTokenizer = True	#required for useAlgorithmGIA
 	GIAsuppressWordEmbeddingsForInvalidPOStype = True  #suppress GIA word embeddings (to zero) if wrong pos type - atrophy word vector weights for dict inputs that are never used
 	if(GIAsuppressWordEmbeddingsForInvalidPOStype):
@@ -268,7 +279,7 @@ if(GIAsemanticRelationVectorSpaces):
 	if(not GIAgenerateUniqueWordVectorsForRelationTypes):
 		useIndependentReverseRelationsModels = False	#else take input linear layer as forward embeddings and output linear layer [inversed] as reverse embeddings
 		
-if(recursiveLayers or memoryTraceBias or simulatedDendriticBranches or GIAsemanticRelationVectorSpaces or tokenMemoryBank or transformerAttentionHeadPermutations):
+if(recursiveLayers or memoryTraceBias or simulatedDendriticBranches or GIAsemanticRelationVectorSpaces or tokenMemoryBank or transformerAttentionHeadPermutations or transformerPOSembeddings):
 	useSyntacticBiases = True
 else:
 	useSyntacticBiases = False
@@ -366,6 +377,8 @@ if(GPUramLimit12to32GB):
 			batchSize = 8
 		elif(transformerAttentionHeadPermutationsType=="dependent"):
 			batchSize = 8
+	if(transformerPOSembeddings):
+		batchSize = 2
 if(useSmallBatchSizeDebug):
 	batchSize = 1	#use small batch size to enable simultaneous execution (GPU ram limited) 
 print("batchSize = ", batchSize)
@@ -546,6 +559,10 @@ elif(useAlgorithmGIA):
 	modelName = GIAmodelName
 	#modelPathNameFull = getModelPathNameFull(modelPathName, modelName)
 
+if(transformerPOSembeddings):
+	POSembeddingSize = 24	#sync with len(wordListVectorsDictAll)
+	pretrainedHiddenSize = POSembeddingSize
+	trainableHiddenSize = hiddenLayerSizeTransformer - POSembeddingSize
 if(GIAsemanticRelationVectorSpaces):
 	#ensure vectorSpaceListLen is a factor of hiddenLayerSizeTransformer
 	if(GIAgenerateUniqueWordVectorsForRelationTypes):

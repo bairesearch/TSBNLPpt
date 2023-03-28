@@ -1,4 +1,4 @@
-"""SBNLPpt_GIAdefinePOSwordLists.py
+"""SBNLPpt_GIAvectorSpaces.py
 
 # Author:
 Richard Bruce Baxter - Copyright (c) 2022-2023 Baxter AI (baxterai.com)
@@ -13,11 +13,11 @@ see SBNLPpt_main.py
 see SBNLPpt_main.py
 
 # Description:
-SBNLPpt GIA define POS wordLists
+SBNLPpt GIA vector spaces
 
 # Usage (generateWordlists for LRPdata):
 source activate transformersenv
-python SBNLPpt_GIAdefinePOSwordLists.py
+python SBNLPpt_GIAvectorSpaces.py
 
 """
 
@@ -25,78 +25,18 @@ import torch as pt
 import torch
 
 from SBNLPpt_globalDefs import *
-import SBNLPpt_getAllPossiblePosTags
+import SBNLPpt_POSgetAllPossiblePosTags
 import torch.nn.functional as F
 
 import nltk
 from nltk.corpus import words as NLTKwords
 
-import SBNLPpt_getAllPossiblePosTags
+import SBNLPpt_POSgetAllPossiblePosTags
+import SBNLPpt_POSwordLists
+from SBNLPpt_POSwordLists import *
 
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
-
-#nltk pos tags
-nltkPOStagsConjunction = ["CC"]
-nltkPOStagsNumber = ["CD"]
-nltkPOStagsDeterminer = ["DT"]
-nltkPOStagsExistentialThere = ["EX"]
-nltkPOStagsForeignWord = ["FW"]
-nltkPOStagsPreposition = ["IN"]
-nltkPOStagsListMarker = ["LS"]
-nltkPOStagsModal = ["MD"]
-nltkPOStagsAdjective = ["JJ", "JJR", "JJS"]
-nltkPOStagsNoun = ["NN", "NNP", "NNS"]
-nltkPOStagsPredeterminer = ["PDT"]
-nltkPOStagsPossessiveEnding = ["POS"]
-nltkPOStagsPersonalPronoun = ["PRP"]
-nltkPOStagsAdverb = ["RB", "RBR", "RBS"]
-nltkPOStagsSymbol = ["SYM"]
-nltkPOStagsPrepositionTo = ["TO"]
-nltkPOStagsInterjection = ["UH"]
-nltkPOStagsVerb = ["VB", "VBD", "VBG", "VBN", "VBP", "VBZ"]
-nltkPOStagsWhDeterminer = ["WDT"]
-nltkPOStagsWhPossessivePronoun = ["WP$"]
-nltkPOStagsWhAdverb = ["WRB"]
-
-#auxiliary relation words
-wordAuxiliaryHavingPossessive = ["have", "has", "had", "'s"]
-if(GIAuseVectorisedSemanticRelationIdentification):
-	wordAuxiliaryBeingDefinition = ["is", "are"]	#GIAuseVectorisedSemanticRelationIdentification does not currently support multiword relations
-else:
-	wordAuxiliaryBeingDefinition = [["is", "a"], ["is", "the"], "are"]
-wordAuxiliaryBeingQuality = ["am", "is", "are", "was", "were", "being", "been", "be"]	#will be
-
-nltkPOStagsDict = {
-"Conjunction": nltkPOStagsConjunction,
-"Number":  nltkPOStagsNumber,
-"Determiner":  nltkPOStagsDeterminer,
-"ExistentialThere":  nltkPOStagsExistentialThere,
-"ForeignWord": nltkPOStagsForeignWord,
-"Preposition": nltkPOStagsPreposition,
-"ListMarker": nltkPOStagsListMarker,
-"Modal": nltkPOStagsModal,
-"Adjective": nltkPOStagsAdjective,
-"Noun": nltkPOStagsNoun,
-"Predeterminer": nltkPOStagsPredeterminer,
-"PossessiveEnding": nltkPOStagsPossessiveEnding,
-"PersonalPronoun": nltkPOStagsPersonalPronoun,
-"Adverb": nltkPOStagsAdverb,
-"Symbol": nltkPOStagsSymbol,
-"PrepositionTo": nltkPOStagsPrepositionTo,
-"Interjection": nltkPOStagsInterjection,
-"Verb": nltkPOStagsVerb,
-"WhDeterminer": nltkPOStagsWhDeterminer,
-"WhPossessivePronoun": nltkPOStagsWhPossessivePronoun,
-"WhAdverb": nltkPOStagsWhAdverb
-}
-wordListAllname = "All"
-
-wordAuxiliaryRelationDict = {
-"AuxiliaryHavingPossessive": wordAuxiliaryHavingPossessive,
-"AuxiliaryBeingDefinition": wordAuxiliaryBeingDefinition,
-"AuxiliaryBeingQuality": wordAuxiliaryBeingQuality
-}
 
 #semantic relation detection keypointPos/keypointWords
 keypointPosNoun = "Noun" #+ PersonalPronoun
@@ -112,9 +52,9 @@ keypointNone = None
 keypointsDict = {
 keypointPosNoun: nltkPOStagsNoun,
 keypointPosVerb: nltkPOStagsVerb,
-keypointPosAdjective: nltkPOStagsWhDeterminer,
-keypointPosAdverb: nltkPOStagsWhPossessivePronoun,
-keypointPosPreposition: nltkPOStagsWhAdverb,
+keypointPosAdjective: nltkPOStagsAdjective,
+keypointPosAdverb: nltkPOStagsAdverb,
+keypointPosPreposition: nltkPOStagsPreposition,
 keypointWordAuxiliaryPossessive: wordAuxiliaryHavingPossessive,
 keypointWordAuxiliaryBeingDefinition: wordAuxiliaryBeingDefinition,
 keypointWordAuxiliaryBeingQuality: wordAuxiliaryBeingQuality
@@ -221,108 +161,13 @@ else:
 	assert(len(vectorSpaceList) == vectorSpaceListLen)
 		
 
-def generateWordlists():
-	SBNLPpt_getAllPossiblePosTags.constructPOSdictionary()	#required for SBNLPpt_getAllPossiblePosTags.getAllPossiblePosTags(word)
-	generatePOSwordLists()
-	generatePOSwordListVectors(vocabularySize)
-	
-def generatePOSwordLists():	
-	numberOfPOSwordLists = len(nltkPOStagsDict)
-	posWordLists = [[] for x in range(numberOfPOSwordLists)]
-	for word in NLTKwords.words():
-		wordPosValues = SBNLPpt_getAllPossiblePosTags.getAllPossiblePosTags(word)
-		for POSindex, POSitem in enumerate(nltkPOStagsDict.items()):
-			POSname = POSitem[0]
-			POStags = POSitem[1]
-			if(isAnyPosListValueInPosList(wordPosValues, POStags)):
-				posWordLists[POSindex].append(word)
-				#print("word = ", word)
-				#print("wordPosValues = ", wordPosValues)
-				#print("POSname = ", POSname)
-				#print("POStags = ", POStags)
-	for posWordIndex, posWordList in enumerate(posWordLists):
-		POSname = list(nltkPOStagsDict)[posWordIndex]
-		posWordList = posWordLists[posWordIndex]
-		posWordList = list(set(posWordList))	#CHECKTHIS: remove duplicates
-		writeWordList(POSname, posWordList)
-	
-	posWordListAll = getAllNLTKwords()
-	writeWordList(wordListAllname, posWordListAll)
-
-def getAllNLTKwords():
-	posWordListAll = []
-	for word in NLTKwords.words():
-		posWordListAll.append(word)
-	if(fixNLTKwordListAll):
-		posWordListAll.extend(["has", "having", "'s"])
-	#print("getAllNLTKwords: len(posWordListAll) = ", len(posWordListAll))
-	return posWordListAll
-					
-def isAnyPosListValueInPosList(posList, posValues):
-	POSfound = False
-	posListSet = set(posList)
-	posValuesSet = set(posValues)
-	if(posListSet & posValuesSet):
-		POSfound = True
-	return POSfound
-			
-def writeWordList(POSname, wordList):
-	wordlistFileName = generateWordlistFileName("wordlist" + POSname)
-	with open(wordlistFileName, 'w') as f:
-		f.write("\n".join(wordList))
-		
-def readWordList(POSname):
-	wordList = []
-	wordlistFileName = generateWordlistFileName("wordlist" + POSname)
-	with open(wordlistFileName, 'r') as f:
-		wordList = f.read().splitlines()	#or eval(f.read())
-		#wordList = eval(f.read())
-	return wordList
-
-def generateWordlistFileName(fileName):
-	print("fileName = ", fileName)
-	wordlistFileName = LRPpathName + "/" + fileName + ".txt"
-	return wordlistFileName
-	
-def createDictionaryItemsFromList(lst, startIndex):
-	list1 = lst
-	list2 = range(startIndex, len(lst)+startIndex)
-	dictionaryItems = zip(list1, list2)
-	return dictionaryItems
-
-POSwordListVectorValueFalse = "0"
-POSwordListVectorValueTrue = "1"
-def generatePOSwordListVectors(vocabSize):
-	#posVectorListList = []
-	POSwordListAll = readWordList(wordListAllname)
-	POSwordDictAllItems = createDictionaryItemsFromList(POSwordListAll, 0)
-	POSwordDictAll = dict(POSwordDictAllItems)
-	for POSindex, POSitem in enumerate(keypointsDict.items()):
-		posList = [POSwordListVectorValueFalse]*vocabSize
-		POSname = POSitem[0]
-		POSwordList = readWordList(POSname)
-		for POSword in POSwordList:
-			POSwordIndex = POSwordDictAll[POSword]
-			posList[POSwordIndex] = POSwordListVectorValueTrue
-		#posVectorListList.append(posVector)
-		posVectorFileName = "Vector" + POSname
-		writeWordList(posVectorFileName, posList)
 
 if(__name__ == '__main__'):
-	generateWordlists()
+	SBNLPpt_POSwordLists.generateWordlists(keypointsDict)
 
 
 def loadPOSwordListVectors():
-	posVectorList = []
-	for POSindex, POSitem in enumerate(keypointsDict.items()):
-		POSname = POSitem[0]
-		posVectorFileName = "Vector" + POSname
-		posList = readWordList(posVectorFileName)
-		posList = [int(i) for i in posList]	#convert list to ints
-		#print("len(posList) = ", len(posList))
-		posVector = torch.tensor(posList, requires_grad=False)	#.bool()
-		posVectorList.append(posVector)
-	return posVectorList
+	return SBNLPpt_POSwordLists.loadPOSwordListVectors(keypointsDict)
 
 
 def addModelSampleToList(vectorSpace, modelSamplesX, modelSamplesY, modelSamplesI, wordIndexKeypoint0, wordIndexKeypoint1, wordIndexKeypoint2):

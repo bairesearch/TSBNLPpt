@@ -50,6 +50,10 @@ from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 import nncustom
 
 from SBNLPpt_globalDefs import *
+if(transformerPOSembeddings):
+	import SBNLPpt_POSembedding
+	def preparePOSdictionary():
+		SBNLPpt_POSembedding.preparePOSdictionary()
 if(useGIAwordEmbeddings):
 	import SBNLPpt_GIAembedding
 if(sharedLayerWeights):
@@ -133,7 +137,9 @@ class RobertaEmbeddings(nn.Module):
 	# Copied from transformers.models.bert.modeling_bert.BertEmbeddings.__init__
 	def __init__(self, config):
 		super().__init__()
-		if(useGIAwordEmbeddings):
+		if(transformerPOSembeddings):
+			self.word_embeddings = SBNLPpt_POSembedding.POSwordEmbeddingEncoderClass(config)
+		elif(useGIAwordEmbeddings):
 			self.word_embeddings = SBNLPpt_GIAembedding.GIAwordEmbeddingEncoderClass(config)
 		else:
 			self.word_embeddings = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=config.pad_token_id)
@@ -1230,7 +1236,7 @@ class RobertaForMaskedLM(RobertaPreTrainedModel):
 		self.update_keys_to_ignore(config, ["lm_head.decoder.weight"])
 
 		if(not simulatedDendriticBranches):	#post_init corrupts weight initialisation sizes (if they are nonstandard)
-			if(not useGIAwordEmbeddings):	#post_init is not compatible with GIAwordEmbeddingEncoderClass; object has no attribute 'weight'
+			if(not useGIAwordEmbeddings and not transformerPOSembeddings):	#post_init is not compatible with GIAwordEmbeddingEncoderClass; object has no attribute 'weight'
 				# Initialize weights and apply final processing
 				if(not debugIndependentTestDisablePostInit):
 					self.post_init()

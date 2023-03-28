@@ -21,19 +21,19 @@ import torch as pt
 import torch
 
 from SBNLPpt_globalDefs import *
-import SBNLPpt_getAllPossiblePosTags
+import SBNLPpt_POSgetAllPossiblePosTags
 import torch.nn.functional as F
-import SBNLPpt_GIAdefinePOSwordLists
+import SBNLPpt_GIAvectorSpaces
 
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
 def preparePOSdictionary():
-	SBNLPpt_getAllPossiblePosTags.constructPOSdictionary()	#required for SBNLPpt_getAllPossiblePosTags.getAllPossiblePosTags(word)
+	SBNLPpt_POSgetAllPossiblePosTags.constructPOSdictionary()	#required for SBNLPpt_POSgetAllPossiblePosTags.getAllPossiblePosTags(word)
 
 def calculateXYlabels(tokenizer, vectorSpace, vectorSpaceIndex, batch, vocabSize):
 	batchTokenIDs = batch['labels']
 	modelSamplesX, modelSamplesY, modelSamplesI = getModelSamplesStart(tokenizer, batchTokenIDs, vectorSpace)
-	labels, labelsFound = SBNLPpt_GIAdefinePOSwordLists.createXYlabelsFromModelSampleList(vectorSpace, modelSamplesX, modelSamplesY, modelSamplesI, vocabSize)
+	labels, labelsFound = SBNLPpt_GIAvectorSpaces.createXYlabelsFromModelSampleList(vectorSpace, modelSamplesX, modelSamplesY, modelSamplesI, vocabSize)
 	return labels, labelsFound
 	
 def getKeypoint(vectorSpace, keypointIndex):
@@ -49,12 +49,12 @@ def getKeypoint(vectorSpace, keypointIndex):
 	return keypoint
 
 def getKeypointType(keypoint):
-	if((keypoint == SBNLPpt_GIAdefinePOSwordLists.keypointPosNoun) or (keypoint == SBNLPpt_GIAdefinePOSwordLists.keypointPosVerb) or (keypoint == SBNLPpt_GIAdefinePOSwordLists.keypointPosAdjective) or (keypoint == SBNLPpt_GIAdefinePOSwordLists.keypointPosAdverb) or (keypoint == SBNLPpt_GIAdefinePOSwordLists.keypointPosPreposition)):
-		keypointType = SBNLPpt_GIAdefinePOSwordLists.keypointTypePOS
-	elif((keypoint == SBNLPpt_GIAdefinePOSwordLists.keypointWordAuxiliaryPossessive) or (keypoint == SBNLPpt_GIAdefinePOSwordLists.keypointWordAuxiliaryBeingDefinition) or (keypoint == SBNLPpt_GIAdefinePOSwordLists.keypointWordAuxiliaryBeingQuality)):
-		keypointType = SBNLPpt_GIAdefinePOSwordLists.keypointTypeWord
-	elif((keypoint == SBNLPpt_GIAdefinePOSwordLists.keypointNone)):
-		keypointType = SBNLPpt_GIAdefinePOSwordLists.keypointTypeNone
+	if((keypoint == SBNLPpt_GIAvectorSpaces.keypointPosNoun) or (keypoint == SBNLPpt_GIAvectorSpaces.keypointPosVerb) or (keypoint == SBNLPpt_GIAvectorSpaces.keypointPosAdjective) or (keypoint == SBNLPpt_GIAvectorSpaces.keypointPosAdverb) or (keypoint == SBNLPpt_GIAvectorSpaces.keypointPosPreposition)):
+		keypointType = SBNLPpt_GIAvectorSpaces.keypointTypePOS
+	elif((keypoint == SBNLPpt_GIAvectorSpaces.keypointWordAuxiliaryPossessive) or (keypoint == SBNLPpt_GIAvectorSpaces.keypointWordAuxiliaryBeingDefinition) or (keypoint == SBNLPpt_GIAvectorSpaces.keypointWordAuxiliaryBeingQuality)):
+		keypointType = SBNLPpt_GIAvectorSpaces.keypointTypeWord
+	elif((keypoint == SBNLPpt_GIAvectorSpaces.keypointNone)):
+		keypointType = SBNLPpt_GIAvectorSpaces.keypointTypeNone
 	else:
 		print("getKeypointType error: keypointType unknown, keypoint = ", keypoint)
 		exit()
@@ -100,7 +100,7 @@ def getModelSamples(modelSamplesX, modelSamplesY, modelSamplesI, textWordList, v
 					print("found keypoint, keypointIndex = ", keypointIndex, ", wordIndex = ", wordIndex)
 			findNextKeypoint = False
 			if(keypointIndex == 0):
-				if(getKeypointType(getKeypoint(vectorSpace, 1)) == SBNLPpt_GIAdefinePOSwordLists.keypointTypeNone):
+				if(getKeypointType(getKeypoint(vectorSpace, 1)) == SBNLPpt_GIAvectorSpaces.keypointTypeNone):
 					keypointIndexN=2
 				else:
 					keypointIndexN=1
@@ -111,28 +111,28 @@ def getModelSamples(modelSamplesX, modelSamplesY, modelSamplesI, textWordList, v
 				
 			if(findNextKeypoint):
 				startSearchIndexN = keypointIndexLast+1
-				if(vectorSpace.detectionType==SBNLPpt_GIAdefinePOSwordLists.detectionTypeNearest):
-					endSearchIndexN = max([startSearchIndexN+SBNLPpt_GIAdefinePOSwordLists.keypointMaxDetectionDistance, len(textWordList)])
-				elif(vectorSpace.detectionType==SBNLPpt_GIAdefinePOSwordLists.detectionTypeAdjacent):
+				if(vectorSpace.detectionType==SBNLPpt_GIAvectorSpaces.detectionTypeNearest):
+					endSearchIndexN = max([startSearchIndexN+SBNLPpt_GIAvectorSpaces.keypointMaxDetectionDistance, len(textWordList)])
+				elif(vectorSpace.detectionType==SBNLPpt_GIAvectorSpaces.detectionTypeAdjacent):
 					endSearchIndexN = startSearchIndexN+1
 					
 				getModelSamples(modelSamplesX, modelSamplesY, modelSamplesI, textWordList, vectorSpace, keypointIndexN, startSearchIndexN, endSearchIndexN, wordIndexKeypoint0, wordIndexKeypoint1)
 			else:
 				wordIndexKeypoint2 = wordIndex
-				SBNLPpt_GIAdefinePOSwordLists.addModelSampleToList(vectorSpace, modelSamplesX, modelSamplesY, modelSamplesI, wordIndexKeypoint0, wordIndexKeypoint1, wordIndexKeypoint2)
+				SBNLPpt_GIAvectorSpaces.addModelSampleToList(vectorSpace, modelSamplesX, modelSamplesY, modelSamplesI, wordIndexKeypoint0, wordIndexKeypoint1, wordIndexKeypoint2)
 					
 def isKeypointFound(textWordList, keypointIndex, keypoint, keypointType, word, wordIndex):
-	keypointObject = SBNLPpt_GIAdefinePOSwordLists.keypointsDict[keypoint]
+	keypointObject = SBNLPpt_GIAvectorSpaces.keypointsDict[keypoint]
 	keypointFound = False
 	keypointIndexLast = wordIndex
-	if(keypointType == SBNLPpt_GIAdefinePOSwordLists.keypointTypePOS):
+	if(keypointType == SBNLPpt_GIAvectorSpaces.keypointTypePOS):
 		#keypointType POS
-		posValues = SBNLPpt_getAllPossiblePosTags.getAllPossiblePosTags(word)
+		posValues = SBNLPpt_POSgetAllPossiblePosTags.getAllPossiblePosTags(word)
 		#print("keypointType POS: posValues = ", posValues)
-		if(SBNLPpt_GIAdefinePOSwordLists.isAnyPosListValueInPosList(keypointObject, posValues)):
+		if(SBNLPpt_GIAvectorSpaces.isAnyPosListValueInPosList(keypointObject, posValues)):
 			keypointFound = True
 			#print("keypointFound, keypointType POS: posValues = ", posValues)
-	elif(keypointType == SBNLPpt_GIAdefinePOSwordLists.keypointTypeWord):
+	elif(keypointType == SBNLPpt_GIAvectorSpaces.keypointTypeWord):
 		#print("keypointType word: keypointType = ", keypointType)
 		#keypointType word
 		for keypointWordIndex, keypointWord in enumerate(keypointObject):

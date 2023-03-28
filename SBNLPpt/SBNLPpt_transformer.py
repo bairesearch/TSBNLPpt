@@ -34,7 +34,14 @@ else:
 	from SBNLPpt_transformerModel import RobertaForMaskedLM
 import SBNLPpt_transformerModel
 import SBNLPpt_transformerTokenMemoryBank
+if(transformerPOSembeddings):
+	import SBNLPpt_POSwordLists
 
+
+if(transformerPOSembeddings):
+	def preparePOSdictionary():
+		SBNLPpt_transformerModel.preparePOSdictionary()
+		
 if(not usePretrainedModelDebug):
 	from SBNLPpt_transformerModel import getMaxPositionEmbedding
 	if(relativeTimeEmbeddings):
@@ -185,4 +192,12 @@ if(tokenMemoryBankStorageSelectionAlgorithmAuto):
 		hiddenLayerSize=tokenMemoryBankStorageSelectionModelHiddenLayerSize,
 		outputLayerSize=tokenMemoryBankStorageSelectionModelOutputLayerSize,
 	)
+		
+
+#if(transformerPOSembeddings):
+#	if(GIAuseVectorisedPOSidentification):
+#		def calculateXYlabels(tokenizer, batch, vocabSize):
+#			return SBNLPpt_POSembedding.calculateXYlabels(tokenizer, batch, vocabSize, posVectorList)
+#	else:
+#		printe("!GIAuseVectorisedPOSidentification not coded")
 		

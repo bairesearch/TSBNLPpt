@@ -24,7 +24,7 @@ python SBNLPpt_main.py
 
 # Description:
 SBNLPpt main - Syntactic Bias natural language processing (SBNLP): neural architectures with various syntactic inductive biases 
-(recursiveLayers, simulatedDendriticBranches, memoryTraceBias, GIAsemanticRelationVectorSpaces, tokenMemoryBank, transformerAttentionHeadPermutations)
+(recursiveLayers, simulatedDendriticBranches, memoryTraceBias, GIAsemanticRelationVectorSpaces, tokenMemoryBank, transformerAttentionHeadPermutations, transformerPOSembeddings)
 
 """
 
@@ -52,14 +52,14 @@ elif(useAlgorithmSANI):
 elif(useAlgorithmGIA):
 	from SBNLPpt_GIA import createModel, loadModel, saveModel, propagate
 	import SBNLPpt_GIA
-	import SBNLPpt_GIAdefinePOSwordLists
+	import SBNLPpt_GIAvectorSpaces
 	if(useMultipleModels):
 		from SBNLPpt_GIA import loadModelIndex, createModelIndex, saveModelIndex, propagateIndex
 
 
 if(useMultipleModels):
 	if(useAlgorithmGIA):
-		modelStoreList = SBNLPpt_GIAdefinePOSwordLists.vectorSpaceList
+		modelStoreList = SBNLPpt_GIAvectorSpaces.vectorSpaceList
 	elif(useAlgorithmTransformer):
 		modelStoreList = SBNLPpt_transformer.modelStoreList
 			
@@ -101,9 +101,9 @@ def trainDataset(tokenizer, dataElements):
 		useMLM = True
 	else:
 		useMLM = False
-	loader = SBNLPpt_data.createDataLoader(useMLM, tokenizer, dataElements, trainNumberOfDataFiles, pathIndexMin, pathIndexMax)
 	
 	for epoch in range(trainStartEpoch, trainStartEpoch+trainNumberOfEpochs):
+		loader = SBNLPpt_data.createDataLoader(useMLM, tokenizer, dataElements, trainNumberOfDataFiles, pathIndexMin, pathIndexMax)	#required to reset dataloader and still support tqdm modification
 		loop = tqdm(loader, leave=True)
 		
 		if(printAccuracyRunningAverage):
@@ -143,10 +143,9 @@ def testDataset(tokenizer, dataElements):
 		useMLM = True
 	else:
 		useMLM = False
-		
-	loader = SBNLPpt_data.createDataLoader(useMLM, tokenizer, dataElements, testNumberOfDataFiles, pathIndexMin, pathIndexMax)
-		
+				
 	for epoch in range(trainStartEpoch, trainStartEpoch+trainNumberOfEpochs):
+		loader = SBNLPpt_data.createDataLoader(useMLM, tokenizer, dataElements, testNumberOfDataFiles, pathIndexMin, pathIndexMax)	#required to reset dataloader and still support tqdm modification
 		loop = tqdm(loader, leave=True)
 		
 		if(printAccuracyRunningAverage):
@@ -170,14 +169,16 @@ def testDataset(tokenizer, dataElements):
 		print("averageLoss = ", averageLoss)
 
 def prepareModelTrainOrTestWrapper(trainOrTest):
+	if(transformerPOSembeddings):
+		SBNLPpt_transformer.preparePOSdictionary()
 	if(useAlgorithmGIA):
-		SBNLPpt_GIA.preparePOSdictionary()	#required for SBNLPpt_getAllPossiblePosTags.getAllPossiblePosTags(word)
+		SBNLPpt_GIA.preparePOSdictionary()	#required for SBNLPpt_POSgetAllPossiblePosTags.getAllPossiblePosTags(word)
 	if(useMultipleModels):
 		for modelStoreIndex, modelStore in enumerate(modelStoreList):
 			vocabSize = vocabularySize
 			if(useAlgorithmGIA):
 				if(encode3tuples):
-					if(modelStore.intermediateType == SBNLPpt_GIAdefinePOSwordLists.intermediateTypePOS):
+					if(modelStore.intermediateType == SBNLPpt_GIAvectorSpaces.intermediateTypePOS):
 						vocabSize = vocabularySize + vocabularySize	#size = referenceSetSuj/Obj (entity) + referenceSetDelimiter (semanticRelation)
 			model, optim = prepareModelTrainOrTest(trainOrTest, vocabSize, modelStoreIndex)
 			if(useAlgorithmGIA):
