@@ -6,7 +6,7 @@ Richard Bruce Baxter - Copyright (c) 2022-2023 Baxter AI (baxterai.com)
 
 ### Description
 
-Syntactic Bias natural language processing (SBNLP) for PyTorch - neural architectures with various syntactic inductive biases (recursiveLayers, simulatedDendriticBranches, memoryTraceBias, semanticRelationVectorSpaces, tokenMemoryBank, transformerAttentionHeadPermutations, transformerPOSembeddings) - experimental
+Syntactic Bias natural language processing (SBNLP) for PyTorch - neural architectures with various syntactic inductive biases (recursiveLayers, simulatedDendriticBranches, memoryTraceBias, semanticRelationVectorSpaces, tokenMemoryBank, transformerAttentionHeadPermutations, transformerPOSembeddings, transformerSegregatedLayers) - experimental
 
 ### License
 

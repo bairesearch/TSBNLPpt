@@ -24,7 +24,7 @@ python SBNLPpt_main.py
 
 # Description:
 SBNLPpt main - Syntactic Bias natural language processing (SBNLP): neural architectures with various syntactic inductive biases 
-(recursiveLayers, simulatedDendriticBranches, memoryTraceBias, GIAsemanticRelationVectorSpaces, tokenMemoryBank, transformerAttentionHeadPermutations, transformerPOSembeddings)
+(recursiveLayers, simulatedDendriticBranches, memoryTraceBias, GIAsemanticRelationVectorSpaces, tokenMemoryBank, transformerAttentionHeadPermutations, transformerPOSembeddings, transformerSegregatedLayers)
 
 """
 

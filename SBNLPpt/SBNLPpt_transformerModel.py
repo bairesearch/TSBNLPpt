@@ -637,15 +637,25 @@ class RobertaEncoder(nn.Module):
 	def __init__(self, config):
 		super().__init__()
 		self.config = config
-		if(recursiveLayers):
-			if(sharedLayerWeights):
-				robertaSharedLayerModules = SBNLPpt_transformerSharedLayers.RobertaSharedLayerModules(config)
-				self.layer = nn.ModuleList([RobertaLayer(config, robertaSharedLayerModules) for layerIndex in range(config.num_hidden_layers)])
+		
+		self.superblocksList = nn.ModuleList()
+		numberOfSuperBlocks = 1
+		if(transformerSegregatedLayers):
+			numberOfSuperBlocks = transformerSegregatedLayersNumberSuperblocks
+			if(transformerSegregatedLayersLayerNorm):
+				self.superblockLayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+		for superblockIndex in range(numberOfSuperBlocks):
+			if(recursiveLayers):
+				if(sharedLayerWeights):
+					robertaSharedLayerModules = SBNLPpt_transformerSharedLayers.RobertaSharedLayerModules(config)
+					layerList = nn.ModuleList([RobertaLayer(config, robertaSharedLayerModules) for layerIndex in range(config.num_hidden_layers)])
+				else:
+					recursiveLayer = RobertaLayer(config)
+					layerList = nn.ModuleList([recursiveLayer for layerIndex in range(config.num_hidden_layers)])
 			else:
-				self.recursiveLayer = RobertaLayer(config)
-				self.layer = nn.ModuleList([self.recursiveLayer for layerIndex in range(config.num_hidden_layers)])
-		else:
-			self.layer = nn.ModuleList([RobertaLayer(config) for layerIndex in range(config.num_hidden_layers)])			
+				layerList = nn.ModuleList([RobertaLayer(config) for layerIndex in range(config.num_hidden_layers)])	
+			self.superblocksList.append(layerList)
+		
 		self.gradient_checkpointing = False
 
 	def forward(
@@ -666,57 +676,64 @@ class RobertaEncoder(nn.Module):
 		all_cross_attentions = () if output_attentions and self.config.add_cross_attention else None
 		
 		next_decoder_cache = () if use_cache else None
-		for i, layer_module in enumerate(self.layer):
 		
-			if output_hidden_states:
-				all_hidden_states = all_hidden_states + (hidden_states,)
+		for superblockIndex, superblock in enumerate(self.superblocksList):
+			superblockInput = hidden_states
+			for i, layer_module in enumerate(superblock):
 
-			layer_head_mask = head_mask[i] if head_mask is not None else None
-			past_key_value = past_key_values[i] if past_key_values is not None else None
+				if output_hidden_states:
+					all_hidden_states = all_hidden_states + (hidden_states,)
 
-			if self.gradient_checkpointing and self.training:
+				layer_head_mask = head_mask[i] if head_mask is not None else None
+				past_key_value = past_key_values[i] if past_key_values is not None else None
+
+				if self.gradient_checkpointing and self.training:
+					if use_cache:
+						logger.warning(
+							"`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`..."
+						)
+						use_cache = False
+
+					def create_custom_forward(module):
+						def custom_forward(*inputs):
+							return module(*inputs, past_key_value, output_attentions)
+
+						return custom_forward
+
+					layer_outputs = torch.utils.checkpoint.checkpoint(
+						create_custom_forward(layer_module),
+						hidden_states,
+						attention_mask,
+						layer_head_mask,
+						encoder_hidden_states,
+						encoder_attention_mask,
+						#i,
+					)
+				else:
+					layer_outputs = layer_module(
+						hidden_states,
+						attention_mask,
+						layer_head_mask,
+						encoder_hidden_states,
+						encoder_attention_mask,
+						past_key_value,
+						output_attentions,
+						i,
+					)
+
+				hidden_states = layer_outputs[0]
 
 				if use_cache:
-					logger.warning(
-						"`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`..."
-					)
-					use_cache = False
-
-				def create_custom_forward(module):
-					def custom_forward(*inputs):
-						return module(*inputs, past_key_value, output_attentions)
-
-					return custom_forward
-
-				layer_outputs = torch.utils.checkpoint.checkpoint(
-					create_custom_forward(layer_module),
-					hidden_states,
-					attention_mask,
-					layer_head_mask,
-					encoder_hidden_states,
-					encoder_attention_mask,
-					#i,
-				)
-			else:
-				layer_outputs = layer_module(
-					hidden_states,
-					attention_mask,
-					layer_head_mask,
-					encoder_hidden_states,
-					encoder_attention_mask,
-					past_key_value,
-					output_attentions,
-					i,
-				)
-
-			hidden_states = layer_outputs[0]
-			
-			if use_cache:
-				next_decoder_cache += (layer_outputs[-1],)
-			if output_attentions:
-				all_self_attentions = all_self_attentions + (layer_outputs[1],)
-				if self.config.add_cross_attention:
-					all_cross_attentions = all_cross_attentions + (layer_outputs[2],)
+					next_decoder_cache += (layer_outputs[-1],)
+				if output_attentions:
+					all_self_attentions = all_self_attentions + (layer_outputs[1],)
+					if self.config.add_cross_attention:
+						all_cross_attentions = all_cross_attentions + (layer_outputs[2],)
+						
+			if(transformerSegregatedLayers):
+				hidden_states = hidden_states + superblockInput
+				if(transformerSegregatedLayersLayerNorm):
+					hidden_states = self.superblockLayerNorm(hidden_states)
 
 		if output_hidden_states:
 			all_hidden_states = all_hidden_states + (hidden_states,)

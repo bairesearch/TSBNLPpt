@@ -43,9 +43,11 @@ useAlgorithmGIA = False
 
 sortDataFilesByName = True	#orig; False
 
+#syntactic bias selection (part 1):
 recursiveLayers = True	#optional
 memoryTraceBias = False	 #optional	#nncustom.Linear adjusts training/inference based on network prior activations
 simulatedDendriticBranches = False	#optional #nncustom.Linear simulates multiple independent fully connected weights per neuron
+
 memoryTraceAtrophy = False	#initialise (dependent var)
 
 statePreprocessDataset = False	#only required once
@@ -113,6 +115,7 @@ dataPreprocessedFileNameStart = "/text_"
 dataPreprocessedFileNameEnd = ".txt"
  
 sequenceMaxNumTokensDefault = 512
+hiddenLayerSizeTransformer = 768	#default: 768 (can be overridden)
 
 #initialise (dependent vars);
 useMultipleModels = False	
@@ -127,14 +130,23 @@ transformerAttentionHeadPermutations = False
 transformerAttentionHeadPermutationsType = "none"	
 transformerAttentionHeadPermutationsIndependent = False	
 transformerAttentionHeadPermutationsIndependentOutput = False 
-hiddenLayerSizeTransformer = 768	#default: 768
+transformerSegregatedLayers = False
+
 if(useAlgorithmTransformer):
-	transformerPOSembeddings = True
+
+	#syntactic bias selection (part 2):
+	transformerPOSembeddings = False
 	transformerAttentionHeadPermutations = False	#calculates KQ for all attention head permutations
-	useGIAwordEmbeddings = False	#use pretrained GIA word embeddings instead of nn.Embedding exclusively (transformer supports multiple embedding vectors)
+	GIAsemanticRelationVectorSpaces = False	#use pretrained GIA word embeddings instead of nn.Embedding exclusively (transformer supports multiple embedding vectors)
 	tokenMemoryBank = False	#apply attention to all tokens in sequenceRegister (standard contextualWindow + memoryBank), where memoryBank is updated based on recently attended tokens
+	transformerSegregatedLayers = True	# super transformer blocks that wrap transfomer blocks
+	
 	lowSequenceNumTokens = False
 	mediumSequenceNumTokens = False	#initialise (dependent var)
+	
+	if(transformerSegregatedLayers):
+		transformerSegregatedLayersNumberSuperblocks = 2	#segregate nlp and logic layers
+		transformerSegregatedLayersLayerNorm = True
 	if(transformerAttentionHeadPermutations):
 		transformerAttentionHeadPermutationsIndependentOutput = True	#SelfOutput executes dense linear in groups of size numberOfAttentionHeads	#does not support sharedLayerWeightsOutput
 		transformerAttentionHeadPermutationsType = "dependent"	#perform softmax over all permutations (rather than over each permutation independently)
@@ -150,8 +162,8 @@ if(useAlgorithmTransformer):
 				numberOfAttentionHeads = 4	#or 8 (slow)
 	else:
 		numberOfAttentionHeads = 12	#default: 12
-	if(useGIAwordEmbeddings):
-		GIAsemanticRelationVectorSpaces = True
+	if(GIAsemanticRelationVectorSpaces):
+		useGIAwordEmbeddings = True
 	if(tokenMemoryBank):
 		mediumSequenceNumTokens = True
 		tokenMemoryBankStorageSelectionAlgorithmAuto = True	#automatically learn tokenMemoryBank storage selection algorithm
@@ -279,7 +291,7 @@ if(GIAsemanticRelationVectorSpaces):
 	if(not GIAgenerateUniqueWordVectorsForRelationTypes):
 		useIndependentReverseRelationsModels = False	#else take input linear layer as forward embeddings and output linear layer [inversed] as reverse embeddings
 		
-if(recursiveLayers or memoryTraceBias or simulatedDendriticBranches or GIAsemanticRelationVectorSpaces or tokenMemoryBank or transformerAttentionHeadPermutations or transformerPOSembeddings):
+if(recursiveLayers or memoryTraceBias or simulatedDendriticBranches or GIAsemanticRelationVectorSpaces or tokenMemoryBank or transformerAttentionHeadPermutations or transformerPOSembeddings or transformerSegregatedLayers):
 	useSyntacticBiases = True
 else:
 	useSyntacticBiases = False
