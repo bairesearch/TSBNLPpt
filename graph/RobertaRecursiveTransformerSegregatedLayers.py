@@ -10,7 +10,7 @@ y5 = np.array([0, 0.4117909865605831, np.nan, np.nan, np.nan])
 y6 = np.array([0, 0.4195622387599945, 0.45833434972524645, 0.477471009747982, 0.4880324535870552])
 y7 = np.array([0, 0.4107974250018597, 0.44753125154256823, 0.46352191767930984, 0.4760648959302902])
 y8 = np.array([0, 0.39083645319104193, np.nan, np.nan, np.nan])
-y9 = np.array([0, 0.45005820715427397, np.nan, np.nan, np.nan])
+y9 = np.array([0, 0.4066971323907375, np.nan, np.nan, np.nan])
 
 l1, = plt.plot(x, y1, color='green', label='# layers = 1 (120MB)')
 l2, = plt.plot(x, y2, color='orange', label='# layers = 2 (147MB)')

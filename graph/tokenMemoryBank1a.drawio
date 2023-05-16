@@ -1,0 +1,49 @@
+<mxfile host="app.diagrams.net" modified="2023-05-16T14:16:29.245Z" agent="Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/112.0" etag="q7sVmH918Am5bA0vzysu" version="21.3.2" type="device">
+  <diagram name="Page-1" id="4yjzHj2SE0-TjJ2sycw2">
+    <mxGraphModel dx="1434" dy="779" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="LtXX7sZA0pKfpfq3-jS--3" value="sequenceRegister (l1)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="80" y="420" width="440" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="LtXX7sZA0pKfpfq3-jS--2" value="contextualWindow" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="360" y="440" width="160" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="LtXX7sZA0pKfpfq3-jS--1" value="tokenMemoryBank" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="440" width="280" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="LtXX7sZA0pKfpfq3-jS--5" value="sequenceRegister (l2)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="80" y="340" width="440" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="LtXX7sZA0pKfpfq3-jS--6" value="contextualWindow" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="360" y="360" width="160" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="LtXX7sZA0pKfpfq3-jS--7" value="tokenMemoryBank" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="360" width="280" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="LtXX7sZA0pKfpfq3-jS--8" value="sequenceRegister (l3)" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="80" y="260" width="440" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="LtXX7sZA0pKfpfq3-jS--9" value="contextualWindow" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="360" y="280" width="160" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="LtXX7sZA0pKfpfq3-jS--10" value="tokenMemoryBank" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="280" width="280" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="LtXX7sZA0pKfpfq3-jS--11" value="transformer head" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="360" y="200" width="160" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="LtXX7sZA0pKfpfq3-jS--12" value="transformer input" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="360" y="520" width="160" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="LtXX7sZA0pKfpfq3-jS--13" value="&lt;div align=&quot;left&quot;&gt;&lt;br&gt;&lt;/div&gt;&lt;div align=&quot;left&quot;&gt;- Each layer of Transformer has access to both contextualWindow and tokenMemoryBank tokens.&lt;/div&gt;&lt;div align=&quot;left&quot;&gt;- After each layer propagation, selected tokens are added to memory bank. tokenMemoryBankStorageSelectionAlgorithms:&lt;br&gt;&amp;nbsp;&amp;nbsp; 1. store trainable neural net selected tokens (Auto)&lt;br&gt;&lt;/div&gt;&lt;div align=&quot;left&quot;&gt;&amp;nbsp;&amp;nbsp; 2. store softmax topk selected tokens (Default)&lt;br&gt;&lt;/div&gt;&lt;div align=&quot;left&quot;&gt;- Each memory bank token has an age (sequenceRegisterMaxTokenTime)&lt;br&gt;&lt;/div&gt;&lt;div align=&quot;left&quot;&gt;- Every time a memory bank token is accessed its age is renewed (sequenceRegisterRenewTime = 0)&lt;br&gt;&lt;/div&gt;&lt;div align=&quot;left&quot;&gt;- If a memory bank token age reaches limit it is deleted&lt;br&gt;&lt;/div&gt;&lt;div align=&quot;left&quot;&gt;&lt;br&gt;&lt;/div&gt;&lt;div align=&quot;left&quot;&gt;&lt;br&gt;&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;align=left;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="95" y="580" width="410" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="LtXX7sZA0pKfpfq3-jS--18" value="Token Memory Bank" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=36;" vertex="1" parent="1">
+          <mxGeometry x="90" y="120" width="390" height="30" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

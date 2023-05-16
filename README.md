@@ -31,3 +31,23 @@ pip install pynvml
 source activate transformersenv
 python SBNLPpt_main.py
 ```
+
+## recursiveLayers
+
+![recursiveLayers1a.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers1a.drawio.png?raw=true)
+
+![RobertaRecursiveTransformer.png](https://github.com/bairesearch/TSBpt/blob/master/graph/RobertaRecursiveTransformer.png?raw=true)
+
+![RobertaRecursiveTransformerLayers.png](https://github.com/bairesearch/TSBpt/blob/master/graph/RobertaRecursiveTransformerLayers.png?raw=true)
+
+## transformerSegregatedLayers
+
+![transformerSegregatedLayers1a.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/transformerSegregatedLayers1a.drawio.png?raw=true)
+
+![RobertaRecursiveTransformerSegregatedLayers.png](https://github.com/bairesearch/TSBpt/blob/master/graph/RobertaRecursiveTransformerSegregatedLayers.png?raw=true)
+
+## tokenMemoryBank
+
+![tokenMemoryBank1a.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/tokenMemoryBank1a.drawio.png?raw=true)
+
+
