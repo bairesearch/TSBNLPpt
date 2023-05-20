@@ -57,8 +57,8 @@ stateTestDataset = True	#requires reserveValidationSet
 
 trainStartEpoch = 0	#start epoch of training (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
 trainNumberOfEpochs = 1	#default: 10	#number of epochs to train (for production typically train x epochs at a time)
-trainStartDataFile = 0	#default: 0	#start data file to train (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
-trainNumberOfDataFiles = 15	#15	#100	#number of data files to train (for production typically train x dataFiles at a time)	#< datasetNumberOfDataFiles (30424) * trainSplitFraction
+trainStartDataFile = 100	#default: 0	#start data file to train (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
+trainNumberOfDataFiles = 100	#15	#100	#number of data files to train (for production typically train x dataFiles at a time)	#< datasetNumberOfDataFiles (30424) * trainSplitFraction
 testNumberOfDataFiles = 1	#10
 
 LRPdatabaseName = 'NLTK'	#wordnet
@@ -147,6 +147,8 @@ if(useAlgorithmTransformer):
 	if(transformerSegregatedLayers):
 		transformerSegregatedLayersNumberSuperblocks = 2	#segregate nlp and logic layers
 		transformerSegregatedLayersLayerNorm = True
+		if(transformerSegregatedLayersLayerNorm):
+			transformerSegregatedLayersLayerNormList = True	#separate norm function per layer
 	if(transformerAttentionHeadPermutations):
 		transformerAttentionHeadPermutationsIndependentOutput = True	#SelfOutput executes dense linear in groups of size numberOfAttentionHeads	#does not support sharedLayerWeightsOutput
 		transformerAttentionHeadPermutationsType = "dependent"	#perform softmax over all permutations (rather than over each permutation independently)
@@ -473,7 +475,7 @@ if(useAlgorithmTransformer):
 			if(useSingleHiddenLayerDebug):
 				numberOfHiddenLayers = 1
 			else:
-				numberOfHiddenLayers = 6	#default: 6
+				numberOfHiddenLayers = 6	#6	#default: 6
 		if(debugPrintLowHiddenSize):
 			hiddenLayerSize = 24
 		else:

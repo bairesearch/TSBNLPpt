@@ -643,7 +643,11 @@ class RobertaEncoder(nn.Module):
 		if(transformerSegregatedLayers):
 			numberOfSuperBlocks = transformerSegregatedLayersNumberSuperblocks
 			if(transformerSegregatedLayersLayerNorm):
-				self.superblockLayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+				if(transformerSegregatedLayersLayerNormList):
+					self.superblockLayerNormList = nn.ModuleList()
+				else:
+					self.superblockLayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+	
 		for superblockIndex in range(numberOfSuperBlocks):
 			if(recursiveLayers):
 				if(sharedLayerWeights):
@@ -654,7 +658,13 @@ class RobertaEncoder(nn.Module):
 					layerList = nn.ModuleList([recursiveLayer for layerIndex in range(config.num_hidden_layers)])
 			else:
 				layerList = nn.ModuleList([RobertaLayer(config) for layerIndex in range(config.num_hidden_layers)])	
+			
 			self.superblocksList.append(layerList)
+			if(transformerSegregatedLayers):
+				if(transformerSegregatedLayersLayerNorm):
+					if(transformerSegregatedLayersLayerNormList):
+						superblockLayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+						self.superblockLayerNormList.append(superblockLayerNorm)
 		
 		self.gradient_checkpointing = False
 
@@ -733,7 +743,11 @@ class RobertaEncoder(nn.Module):
 			if(transformerSegregatedLayers):
 				hidden_states = hidden_states + superblockInput
 				if(transformerSegregatedLayersLayerNorm):
-					hidden_states = self.superblockLayerNorm(hidden_states)
+					if(transformerSegregatedLayersLayerNormList):
+						hidden_states = self.superblockLayerNormList[superblockIndex](hidden_states)
+					else:
+						hidden_states = self.superblockLayerNorm(hidden_states)	#nn.functional.layer_norm(hidden_states, self.config.hidden_size)
+					
 
 		if output_hidden_states:
 			all_hidden_states = all_hidden_states + (hidden_states,)

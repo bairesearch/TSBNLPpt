@@ -44,6 +44,8 @@ python SBNLPpt_main.py
 
 ![transformerSegregatedLayers1a.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/transformerSegregatedLayers1a.drawio.png?raw=true)
 
+![RobertaRecursiveTransformerSegregatedLayersCodebase2022.png](https://github.com/bairesearch/TSBpt/blob/master/graph/RobertaRecursiveTransformerSegregatedLayersCodebase2022.png?raw=true)
+
 ![RobertaRecursiveTransformerSegregatedLayers.png](https://github.com/bairesearch/TSBpt/blob/master/graph/RobertaRecursiveTransformerSegregatedLayers.png?raw=true)
 
 ## tokenMemoryBank
