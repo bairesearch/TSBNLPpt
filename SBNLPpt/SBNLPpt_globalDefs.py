@@ -57,7 +57,7 @@ stateTestDataset = True	#requires reserveValidationSet
 
 trainStartEpoch = 0	#start epoch of training (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
 trainNumberOfEpochs = 1	#default: 10	#number of epochs to train (for production typically train x epochs at a time)
-trainStartDataFile = 100	#default: 0	#start data file to train (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
+trainStartDataFile = 0	#default: 0	#start data file to train (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
 trainNumberOfDataFiles = 100	#15	#100	#number of data files to train (for production typically train x dataFiles at a time)	#< datasetNumberOfDataFiles (30424) * trainSplitFraction
 testNumberOfDataFiles = 1	#10
 
@@ -115,7 +115,6 @@ dataPreprocessedFileNameStart = "/text_"
 dataPreprocessedFileNameEnd = ".txt"
  
 sequenceMaxNumTokensDefault = 512
-hiddenLayerSizeTransformer = 768	#default: 768 (can be overridden)
 
 #initialise (dependent vars);
 useMultipleModels = False	
@@ -130,7 +129,7 @@ transformerAttentionHeadPermutations = False
 transformerAttentionHeadPermutationsType = "none"	
 transformerAttentionHeadPermutationsIndependent = False	
 transformerAttentionHeadPermutationsIndependentOutput = False 
-transformerSegregatedLayers = False
+transformerSuperblocks = False
 
 if(useAlgorithmTransformer):
 
@@ -139,16 +138,44 @@ if(useAlgorithmTransformer):
 	transformerAttentionHeadPermutations = False	#calculates KQ for all attention head permutations
 	GIAsemanticRelationVectorSpaces = False	#use pretrained GIA word embeddings instead of nn.Embedding exclusively (transformer supports multiple embedding vectors)
 	tokenMemoryBank = False	#apply attention to all tokens in sequenceRegister (standard contextualWindow + memoryBank), where memoryBank is updated based on recently attended tokens
-	transformerSegregatedLayers = True	# super transformer blocks that wrap transfomer blocks
+	transformerSuperblocks = False	# super transformer blocks that wrap transfomer blocks (segregatedLayers)
 	
 	lowSequenceNumTokens = False
 	mediumSequenceNumTokens = False	#initialise (dependent var)
 	
-	if(transformerSegregatedLayers):
-		transformerSegregatedLayersNumberSuperblocks = 2	#segregate nlp and logic layers
-		transformerSegregatedLayersLayerNorm = True
-		if(transformerSegregatedLayersLayerNorm):
-			transformerSegregatedLayersLayerNormList = True	#separate norm function per layer
+	#initialise (dependent vars);
+	transformerSuperblocksNumber = 1
+	transformerSuperblocksRecursiveNumberIterations = 1
+	recursiveLayersNumberIterations = 1
+	recursiveLayersEmulateOrigImplementation = False
+	
+	#initialise (default vars);
+	numberOfHiddenLayers = 6	#6	#default: 6
+	numberOfAttentionHeads = 12	#default: 12	#numberOfAttentionHeadsDefault
+	hiddenLayerSizeTransformer = 768	#default: 768 (can be overridden)
+
+	if(transformerSuperblocks):
+		transformerSuperblocksNumber = 2	#segregate nlp and logic layers
+		transformerSuperblocksLayerNorm = True
+		if(transformerSuperblocksLayerNorm):
+			transformerSuperblocksLayerNormList = True	#separate norm function per layer
+		transformerSuperblocksRecursive = False	#every super block is iterated multiple times
+		if(transformerSuperblocksRecursive):
+			transformerSuperblocksRecursiveNumberIterations = 2	#configure
+			transformerSmall = True	#reduce GPU RAM
+			if(transformerSmall):
+				hiddenLayerSizeTransformer = 256
+				numberOfHiddenLayers = 2
+				numberOfAttentionHeads = 1	#prevents recursion across different attention heads, nullifying precise recursion
+	if(recursiveLayers):
+		recursiveLayersEmulateOrigImplementation = True	#emulate orig implementation so that archived models can be reloaded
+		if(recursiveLayersEmulateOrigImplementation):
+			recursiveLayersNumberIterations = numberOfHiddenLayers	#numberOfHiddenLayers is interpreted as recursiveLayersNumberIterations
+		else:
+			recursiveLayersNumberIterations = 2
+			numberOfAttentionHeads = 1	#prevents recursion across different attention heads, nullifying precise recursion
+
+
 	if(transformerAttentionHeadPermutations):
 		transformerAttentionHeadPermutationsIndependentOutput = True	#SelfOutput executes dense linear in groups of size numberOfAttentionHeads	#does not support sharedLayerWeightsOutput
 		transformerAttentionHeadPermutationsType = "dependent"	#perform softmax over all permutations (rather than over each permutation independently)
@@ -162,8 +189,7 @@ if(useAlgorithmTransformer):
 				hiddenLayerSizeTransformer = hiddenLayerSizeTransformer//numberOfAttentionHeads	#eg 192
 			else:
 				numberOfAttentionHeads = 4	#or 8 (slow)
-	else:
-		numberOfAttentionHeads = 12	#default: 12
+			
 	if(GIAsemanticRelationVectorSpaces):
 		useGIAwordEmbeddings = True
 	if(tokenMemoryBank):
@@ -293,7 +319,7 @@ if(GIAsemanticRelationVectorSpaces):
 	if(not GIAgenerateUniqueWordVectorsForRelationTypes):
 		useIndependentReverseRelationsModels = False	#else take input linear layer as forward embeddings and output linear layer [inversed] as reverse embeddings
 		
-if(recursiveLayers or memoryTraceBias or simulatedDendriticBranches or GIAsemanticRelationVectorSpaces or tokenMemoryBank or transformerAttentionHeadPermutations or transformerPOSembeddings or transformerSegregatedLayers):
+if(recursiveLayers or memoryTraceBias or simulatedDendriticBranches or GIAsemanticRelationVectorSpaces or tokenMemoryBank or transformerAttentionHeadPermutations or transformerPOSembeddings or transformerSuperblocks):
 	useSyntacticBiases = True
 else:
 	useSyntacticBiases = False
@@ -474,8 +500,7 @@ if(useAlgorithmTransformer):
 		else:
 			if(useSingleHiddenLayerDebug):
 				numberOfHiddenLayers = 1
-			else:
-				numberOfHiddenLayers = 6	#6	#default: 6
+
 		if(debugPrintLowHiddenSize):
 			hiddenLayerSize = 24
 		else:

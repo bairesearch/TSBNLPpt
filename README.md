@@ -6,7 +6,7 @@ Richard Bruce Baxter - Copyright (c) 2022-2023 Baxter AI (baxterai.com)
 
 ### Description
 
-Syntactic Bias natural language processing (SBNLP) for PyTorch - neural architectures with various syntactic inductive biases (recursiveLayers, simulatedDendriticBranches, memoryTraceBias, semanticRelationVectorSpaces, tokenMemoryBank, transformerAttentionHeadPermutations, transformerPOSembeddings, transformerSegregatedLayers) - experimental
+Syntactic Bias natural language processing (SBNLP) for PyTorch - neural architectures with various syntactic inductive biases (recursiveLayers, simulatedDendriticBranches, memoryTraceBias, semanticRelationVectorSpaces, tokenMemoryBank, transformerAttentionHeadPermutations, transformerPOSembeddings, transformerSuperblocks) - experimental
 
 ### License
 
@@ -34,19 +34,19 @@ python SBNLPpt_main.py
 
 ## recursiveLayers
 
-![recursiveLayers1a.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers1a.drawio.png?raw=true)
+![recursiveLayers1b.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers1b.drawio.png?raw=true)
 
 ![RobertaRecursiveTransformer.png](https://github.com/bairesearch/TSBpt/blob/master/graph/RobertaRecursiveTransformer.png?raw=true)
 
 ![RobertaRecursiveTransformerLayers.png](https://github.com/bairesearch/TSBpt/blob/master/graph/RobertaRecursiveTransformerLayers.png?raw=true)
 
-## transformerSegregatedLayers
+## transformerSuperblocks
 
-![transformerSegregatedLayers1a.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/transformerSegregatedLayers1a.drawio.png?raw=true)
+![transformerSuperblocks1b.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/transformerSuperblocks1b.drawio.png?raw=true)
 
-![RobertaRecursiveTransformerSegregatedLayersCodebase2022.png](https://github.com/bairesearch/TSBpt/blob/master/graph/RobertaRecursiveTransformerSegregatedLayersCodebase2022.png?raw=true)
+![RobertaRecursiveTransformerSuperblocks-Nov2022.png](https://github.com/bairesearch/TSBpt/blob/master/graph/RobertaRecursiveTransformerSuperblocks-Nov2022.png?raw=true)
 
-![RobertaRecursiveTransformerSegregatedLayers.png](https://github.com/bairesearch/TSBpt/blob/master/graph/RobertaRecursiveTransformerSegregatedLayers.png?raw=true)
+![RobertaRecursiveTransformerSuperblocks.png](https://github.com/bairesearch/TSBpt/blob/master/graph/RobertaRecursiveTransformerSuperblocks.png?raw=true)
 
 ## tokenMemoryBank
 
