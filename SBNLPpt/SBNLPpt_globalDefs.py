@@ -43,12 +43,11 @@ useAlgorithmGIA = False
 
 sortDataFilesByName = True	#orig; False
 
-#syntactic bias selection (part 1):
-recursiveLayers = True	#optional
-memoryTraceBias = False	 #optional	#nncustom.Linear adjusts training/inference based on network prior activations
-simulatedDendriticBranches = False	#optional #nncustom.Linear simulates multiple independent fully connected weights per neuron
-
-memoryTraceAtrophy = False	#initialise (dependent var)
+#initialise (dependent vars);
+recursiveLayers = False
+memoryTraceBias = False
+simulatedDendriticBranches = False
+memoryTraceAtrophy = False
 
 statePreprocessDataset = False	#only required once
 stateTrainTokeniser = False	#only required once
@@ -133,6 +132,11 @@ transformerSuperblocks = False
 
 if(useAlgorithmTransformer):
 
+	#syntactic bias selection (part 1):
+	recursiveLayers = True	#optional
+	memoryTraceBias = False	 #optional	#nncustom.Linear adjusts training/inference based on network prior activations
+	simulatedDendriticBranches = False	#optional #nncustom.Linear simulates multiple independent fully connected weights per neuron
+
 	#syntactic bias selection (part 2):
 	transformerPOSembeddings = False
 	transformerAttentionHeadPermutations = False	#calculates KQ for all attention head permutations
@@ -148,33 +152,38 @@ if(useAlgorithmTransformer):
 	transformerSuperblocksRecursiveNumberIterations = 1
 	recursiveLayersNumberIterations = 1
 	recursiveLayersEmulateOrigImplementation = False
+	transformerSuperblocksRecursive = False
+	
 	
 	#initialise (default vars);
-	numberOfHiddenLayers = 6	#6	#default: 6
+	numberOfHiddenLayers = 1	#6	#default: 6
 	numberOfAttentionHeads = 12	#default: 12	#numberOfAttentionHeadsDefault
 	hiddenLayerSizeTransformer = 768	#default: 768 (can be overridden)
 
 	if(transformerSuperblocks):
-		transformerSuperblocksNumber = 2	#segregate nlp and logic layers
+		transformerSuperblocksNumber = 1	#segregate nlp and logic layers
 		transformerSuperblocksLayerNorm = True
 		if(transformerSuperblocksLayerNorm):
 			transformerSuperblocksLayerNormList = True	#separate norm function per layer
-		transformerSuperblocksRecursive = False	#every super block is iterated multiple times
+		transformerSuperblocksRecursive = True	#every super block is iterated multiple times
 		if(transformerSuperblocksRecursive):
 			transformerSuperblocksRecursiveNumberIterations = 2	#configure
-			transformerSmall = True	#reduce GPU RAM
+			transformerSmall = False	#reduce GPU RAM
 			if(transformerSmall):
 				hiddenLayerSizeTransformer = 256
 				numberOfHiddenLayers = 2
-				numberOfAttentionHeads = 1	#prevents recursion across different attention heads, nullifying precise recursion
 	if(recursiveLayers):
-		recursiveLayersEmulateOrigImplementation = True	#emulate orig implementation so that archived models can be reloaded
+		recursiveLayersNormaliseNumParameters2 = False	#optional
+		if(recursiveLayersNormaliseNumParameters2):
+			numberOfAttentionHeads = 24
+			hiddenLayerSizeTransformer = 1536
+		recursiveLayersEmulateOrigImplementation = False	#emulate orig implementation so that archived models can be reloaded
 		if(recursiveLayersEmulateOrigImplementation):
 			recursiveLayersNumberIterations = numberOfHiddenLayers	#numberOfHiddenLayers is interpreted as recursiveLayersNumberIterations
 		else:
-			recursiveLayersNumberIterations = 2
-			numberOfAttentionHeads = 1	#prevents recursion across different attention heads, nullifying precise recursion
-
+			recursiveLayersNumberIterations = 6
+	#if(recursiveLayers or transformerSuperblocksRecursive):
+	#	numberOfAttentionHeads = 1	#prevents recursion across different attention heads, nullifying precise recursion
 
 	if(transformerAttentionHeadPermutations):
 		transformerAttentionHeadPermutationsIndependentOutput = True	#SelfOutput executes dense linear in groups of size numberOfAttentionHeads	#does not support sharedLayerWeightsOutput
@@ -319,10 +328,6 @@ if(GIAsemanticRelationVectorSpaces):
 	if(not GIAgenerateUniqueWordVectorsForRelationTypes):
 		useIndependentReverseRelationsModels = False	#else take input linear layer as forward embeddings and output linear layer [inversed] as reverse embeddings
 		
-if(recursiveLayers or memoryTraceBias or simulatedDendriticBranches or GIAsemanticRelationVectorSpaces or tokenMemoryBank or transformerAttentionHeadPermutations or transformerPOSembeddings or transformerSuperblocks):
-	useSyntacticBiases = True
-else:
-	useSyntacticBiases = False
 if(memoryTraceBias or simulatedDendriticBranches):
 	useLinearCustom = True
 else:
@@ -363,8 +368,12 @@ if(simulatedDendriticBranches):
 	normaliseActivationSparsity = True
 else:
 	numberOfIndependentDendriticBranches = 1
-	
+
 if(useAlgorithmTransformer):
+	if(recursiveLayers or memoryTraceBias or simulatedDendriticBranches or GIAsemanticRelationVectorSpaces or tokenMemoryBank or transformerAttentionHeadPermutations or transformerPOSembeddings or transformerSuperblocks):
+		useSyntacticBiases = True
+	else:
+		useSyntacticBiases = False
 	if(not useSyntacticBiases):
 		officialRobertaBaseModel = False	#optional	#loads official huggingface model with default parameters - https://huggingface.co/roberta-base/tree/main
 	else:
@@ -489,7 +498,7 @@ if(useAlgorithmTransformer):
 			sharedLayerWeights = False	#orig recursiveLayers implementation
 			if(sharedLayerWeights):
 				sharedLayerWeightsOutput = True	#share RobertaOutputSharedLayerOutput/RobertaSelfOutputSharedLayerOutput parameters also
-			recursiveLayersNormaliseNumParameters = False	#default: True	#optional	#if use recursiveLayers normalise/equalise num of parameters with respect to !recursiveLayers
+			recursiveLayersNormaliseNumParameters = False	#default: False	#optional	#if use recursiveLayers normalise/equalise num of parameters with respect to !recursiveLayers	#legacy
 			if(recursiveLayersNormaliseNumParameters):
 				recursiveLayersNormaliseNumParametersIntermediate = True	#normalise intermediateSize parameters also
 		else:
@@ -563,6 +572,9 @@ if(useAlgorithmTransformer):
 			else:
 				numberOfHiddenLayersTokenMemoryBankParameters = numberOfHiddenLayers
 elif(useAlgorithmRNN):
+	#syntactic bias selection (part 1):
+	recursiveLayers = True
+	
 	hiddenLayerSize = 1024	#65536	#2^16 - large hidden size is required for recursive RNN as parameters are shared across a) sequence length and b) number of layers
 	if(SBNLPpt_RNNmodel.applyIOconversionLayers):
 		embeddingLayerSize = 768
@@ -580,6 +592,9 @@ elif(useAlgorithmRNN):
 	else:
 		bidirectional = 1
 elif(useAlgorithmSANI):
+	#syntactic bias selection (part 1):
+	recursiveLayers = True
+	
 	hiddenLayerSize = 1024	#1024	#8192	#1024	#depends on GPU memory	#2^16 = 65536 - large hidden size is required for recursive SANI as parameters are shared across a) sequence length and b) number of layers
 	if(SBNLPpt_SANImodel.applyIOconversionLayers):
 		embeddingLayerSize = 768
