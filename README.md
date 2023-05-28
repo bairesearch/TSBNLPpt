@@ -35,28 +35,27 @@ python SBNLPpt_main.py
 ## recursiveLayers
 
 ![recursiveLayers1b.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers1b.drawio.png?raw=true)
+- [recursiveLayers1a.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/archive/recursiveLayers1a.drawio.png?raw=true)
 
 ![RobertaRecursiveTransformer.png](https://github.com/bairesearch/TSBpt/blob/master/graph/RobertaRecursiveTransformer.png?raw=true)
 
 - [RobertaRecursiveTransformerHeads.png](https://github.com/bairesearch/TSBpt/blob/master/graph/RobertaRecursiveTransformerHeads.png?raw=true)
 
-### archive
+#### Archive - Nov 2022 (positionEmbeddingType absolute)
 
-![RobertaRecursiveTransformerLayers-Nov2022.png](https://github.com/bairesearch/TSBpt/blob/master/graph/archive/Nov2022/RobertaRecursiveTransformerLayers-Nov2022.png?raw=true)
-
-- [recursiveLayers1a.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/archive/recursiveLayers1a.drawio.png?raw=true)
-- [RobertaRecursiveTransformer-Nov2022.png](https://github.com/bairesearch/TSBpt/blob/master/graph/archive/Nov2022/RobertaRecursiveTransformer-Nov2022.png?raw=true)
+![RobertaRecursiveTransformerLayers-Nov2022.png](https://github.com/bairesearch/TSBpt/blob/master/graph/archive/positionEmbeddingTypeAbsolute-Nov2022/RobertaRecursiveTransformerLayers-Nov2022.png?raw=true)
+- [RobertaRecursiveTransformer-Nov2022.png](https://github.com/bairesearch/TSBpt/blob/master/graph/archive/positionEmbeddingTypeAbsolute-Nov2022/RobertaRecursiveTransformer-Nov2022.png?raw=true)
 
 ## transformerSuperblocks
 
 ![transformerSuperblocks1b.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/transformerSuperblocks1b.drawio.png?raw=true)
+- [transformerSuperblocks1a.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/archive/transformerSuperblocks1a.drawio.png?raw=true)
 
 ![RobertaRecursiveTransformerSuperblocks.png](https://github.com/bairesearch/TSBpt/blob/master/graph/RobertaRecursiveTransformerSuperblocks.png?raw=true)
 
-### archive
+#### Archive - Nov 2022 (positionEmbeddingType absolute)
 
-- [transformerSuperblocks1a.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/archive/transformerSuperblocks1a.drawio.png?raw=true)
-- [RobertaRecursiveTransformerSuperblocks-Nov2022.png](https://github.com/bairesearch/TSBpt/blob/master/graph/archive/Nov2022/RobertaRecursiveTransformerSuperblocks-Nov2022.png?raw=true)
+- [RobertaRecursiveTransformerSuperblocks-Nov2022.png](https://github.com/bairesearch/TSBpt/blob/master/graph/archive/positionEmbeddingTypeAbsolute-Nov2022/RobertaRecursiveTransformerSuperblocks-Nov2022.png?raw=true)
 
 ## tokenMemoryBank
 

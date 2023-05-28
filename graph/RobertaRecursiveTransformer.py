@@ -10,7 +10,7 @@ y4 = np.array([0, 0.4473719531536102, np.nan, np.nan, np.nan])
 l1, = plt.plot(x, y1, color='green', label='lay=1, hid=768, head=12 (120MB)')
 l2, = plt.plot(x, y2, color='blue', label='lay=6, hid=768, head=12 (256MB)')
 l3, = plt.plot(x, y3, color='red', label='lay=1r6, hid=768, head=12 (120MB)')
-l4, = plt.plot(x, y4, color='turquoise', label='lay=1r6, hid=1536, head=24 (norm:263MB)')
+l4, = plt.plot(x, y4, color='pink', label='lay=1r6, hid=1536, head=24 (norm:263MB)')
 
 plt.xticks(np.arange(min(x), max(x)+1, 1.0))
 plt.yticks(np.arange(0, 0.5+0.1, 0.1))

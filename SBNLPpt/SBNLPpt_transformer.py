@@ -45,10 +45,8 @@ if(transformerPOSembeddings):
 if(not usePretrainedModelDebug):
 	from SBNLPpt_transformerModel import getMaxPositionEmbedding
 	if(relativeTimeEmbeddings):
-		positionEmbeddingType = "relative_time"	#calculates relative time between layer tokens
 		maxPositionEmbeddings = getMaxPositionEmbedding(sequenceRegisterMaxTokenTime)
 	else:
-		positionEmbeddingType = "relative_key"	#"absolute"	#default
 		maxPositionEmbeddings = getMaxPositionEmbedding(sequenceMaxNumTokens)
 
 if(useMultipleModels):

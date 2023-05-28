@@ -343,8 +343,10 @@ class RobertaSelfAttention(nn.Module):
 		# Take the dot product between "query" and "key" to get the raw attention scores.
 		attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
 		
-		relative_position_scores = self.calculateRelativePositionScores(hidden_states, query_layer, key_layer)
-		attention_scores = attention_scores + relative_position_scores
+		if(self.position_embedding_type != "absolute"):
+			relative_position_scores = self.calculateRelativePositionScores(hidden_states, query_layer, key_layer)
+			attention_scores = attention_scores + relative_position_scores
+
 		attention_scores = attention_scores / math.sqrt(self.attention_head_size)
 
 		if attention_mask is not None:
@@ -408,6 +410,8 @@ class RobertaSelfAttention(nn.Module):
 					relative_position_scores_query = torch.einsum("bhld,lrd->bhlr", query_layer, positional_embedding)
 					relative_position_scores_key = torch.einsum("bhrd,lrd->bhlr", key_layer, positional_embedding)
 					relative_position_scores = relative_position_scores_query + relative_position_scores_key
+			else:
+				relative_position_scores = None
 		return relative_position_scores
 
 # Copied from transformers.models.bert.modeling_bert.BertSelfOutput

@@ -154,11 +154,11 @@ if(useAlgorithmTransformer):
 	recursiveLayersEmulateOrigImplementation = False
 	transformerSuperblocksRecursive = False
 	
-	
 	#initialise (default vars);
-	numberOfHiddenLayers = 1	#6	#default: 6
+	numberOfHiddenLayers = 1	#default: 1 (with recursiveLayers) or 6
 	numberOfAttentionHeads = 12	#default: 12	#numberOfAttentionHeadsDefault
 	hiddenLayerSizeTransformer = 768	#default: 768 (can be overridden)
+	positionEmbeddingType = "relative_key"	#default:"relative_key"	#orig (Nov 2022):"absolute"
 
 	if(transformerSuperblocks):
 		transformerSuperblocksNumber = 1	#segregate nlp and logic layers
@@ -173,18 +173,19 @@ if(useAlgorithmTransformer):
 				hiddenLayerSizeTransformer = 256
 				numberOfHiddenLayers = 2
 	if(recursiveLayers):
-		recursiveLayersNormaliseNumParameters2 = False	#optional
-		if(recursiveLayersNormaliseNumParameters2):
-			numberOfAttentionHeads = 24
-			hiddenLayerSizeTransformer = 1536
 		recursiveLayersEmulateOrigImplementation = False	#emulate orig implementation so that archived models can be reloaded
 		if(recursiveLayersEmulateOrigImplementation):
 			recursiveLayersNumberIterations = numberOfHiddenLayers	#numberOfHiddenLayers is interpreted as recursiveLayersNumberIterations
 		else:
 			recursiveLayersNumberIterations = 6
+	
 	#if(recursiveLayers or transformerSuperblocksRecursive):
 	#	numberOfAttentionHeads = 1	#prevents recursion across different attention heads, nullifying precise recursion
-
+	recursiveLayersNormaliseNumParameters2 = False	#optional
+	if(recursiveLayersNormaliseNumParameters2):
+		numberOfAttentionHeads = 24
+		hiddenLayerSizeTransformer = 1536
+			
 	if(transformerAttentionHeadPermutations):
 		transformerAttentionHeadPermutationsIndependentOutput = True	#SelfOutput executes dense linear in groups of size numberOfAttentionHeads	#does not support sharedLayerWeightsOutput
 		transformerAttentionHeadPermutationsType = "dependent"	#perform softmax over all permutations (rather than over each permutation independently)
@@ -221,6 +222,7 @@ if(useAlgorithmTransformer):
 		createOrderedDataset = True
 		#tokenMemoryBank algorithm requires continuous/contiguous textual input	#batchSize > 0, will need to feed contiguous input for each sample in batch
 		relativeTimeEmbeddings = True	#attention scores are weighted based on a (learnable) function of the relative age between queried/keyed tokens
+		positionEmbeddingType = "relative_time"	#calculates relative time between layer tokens
 		if(lowSequenceNumTokens):
 			memoryBankSizeMultiplier = 4
 		else:
