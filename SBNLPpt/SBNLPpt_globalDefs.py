@@ -27,6 +27,29 @@ else:
 import math
 import pynvml
 
+
+#recursive algorithm selection:
+useAlgorithmTransformer = True
+useAlgorithmRNN = False
+useAlgorithmSANI = False
+useAlgorithmGIA = False
+
+#state selection;
+statePreprocessDataset = False	#only required once
+stateTrainTokeniser = False	#only required once
+stateTrainDataset = True
+stateTestDataset = True	#requires reserveValidationSet
+
+#training data selection;
+trainStartEpoch = 0	#start epoch of training (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
+trainNumberOfEpochs = 1	#default: 10	#number of epochs to train (for production typically train x epochs at a time)
+trainStartDataFile = 0	#default: 0	#start data file to train (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
+trainNumberOfDataFiles = 100	#15	#100	#number of data files to train (for production typically train x dataFiles at a time)	#< datasetNumberOfDataFiles (30424) * trainSplitFraction
+testNumberOfDataFiles = 1	#10
+
+
+sortDataFilesByName = True	#orig; False
+
 debugCompareTokenMemoryBankPerformance = False
 debugCreateOrderedDatasetFiles = False	#create data files comprising documents of sufficient length for createOrderedDataset
 debugPrintPaths = False
@@ -35,30 +58,11 @@ debugDoNotTrainModel = False
 debugPrintLowHiddenSize = False
 debugPrintMultipleModelAccuracy = False
 
-#recursive algorithm selection:
-useAlgorithmTransformer = True
-useAlgorithmRNN = False
-useAlgorithmSANI = False
-useAlgorithmGIA = False
-
-sortDataFilesByName = True	#orig; False
-
 #initialise (dependent vars);
 recursiveLayers = False
 memoryTraceBias = False
 simulatedDendriticBranches = False
 memoryTraceAtrophy = False
-
-statePreprocessDataset = False	#only required once
-stateTrainTokeniser = False	#only required once
-stateTrainDataset = True
-stateTestDataset = True	#requires reserveValidationSet
-
-trainStartEpoch = 0	#start epoch of training (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
-trainNumberOfEpochs = 1	#default: 10	#number of epochs to train (for production typically train x epochs at a time)
-trainStartDataFile = 0	#default: 0	#start data file to train (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
-trainNumberOfDataFiles = 100	#15	#100	#number of data files to train (for production typically train x dataFiles at a time)	#< datasetNumberOfDataFiles (30424) * trainSplitFraction
-testNumberOfDataFiles = 1	#10
 
 LRPdatabaseName = 'NLTK'	#wordnet
 fixNLTKwordListAll = True	#add additional auxiliary having possessive words not found in NLTK word lists; ["has", "having", "'s"]
@@ -398,7 +402,7 @@ trainSplitFraction = 0.9	#90% train data, 10% test data
 
 if(useAlgorithmTransformer):
 	batchSize = 8	#default: 8	#8 and 16 train at approx same rate (16 uses more GPU ram)	#depends on GPU RAM	#with 12GB GPU RAM, batchSize max = 16
-	learningRate = 1e-4
+	learningRate = 1e-4	#0.0001
 elif(useAlgorithmRNN):
 	batchSize = 8
 	learningRate = 1e-4

@@ -3,8 +3,8 @@ import numpy as np
 
 x = np.array([0, 1, 2, 3, 4])
 y1 = np.array([0, 0.3200524007320404, np.nan, np.nan, np.nan])
-y2 = np.array([0, 0.42890446846485136, np.nan, np.nan, np.nan])
-y3 = np.array([0, 0.44220867459774016, np.nan, np.nan, np.nan])
+y2 = np.array([0, 0.42890446846485136, 0.4656440287351608, 0.48165937175750734, 0.4940115956068039])
+y3 = np.array([0, 0.44220867459774016, 0.4677618439912796, 0.4787390529155731, 0.49010481104850767])
 y4 = np.array([0, 0.4473719531536102, np.nan, np.nan, np.nan])
 
 l1, = plt.plot(x, y1, color='green', label='lay=1, hid=768, head=12 (120MB)')
