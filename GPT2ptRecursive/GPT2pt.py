@@ -51,23 +51,28 @@ from accelerate import Accelerator
 from transformers import get_scheduler
 
 #debug options;
-trainPartialDataset = True
+trainPartialDataset = False
 trainWithTrainer = False	#also trains using Trainer API: no eval performance output
 trainLoadFromCheckpoint = False
 
 #configuration options;
+shuffleTrainDataset = True	#default: True (consider False for comparative tests)
 evaluatePretrainedModel = False	#evaluate an existing model (do not train)
 saveTrainedModel = True	#save final model after completing 100% train
 batchSize = 16	#orig: 32
 numberOfHiddenLayers = 12	#default = 12	#12	#1
 recursiveLayersNormaliseNumParameters2 = False	#optional
 if(recursiveLayersNormaliseNumParameters2):
-	numberOfAttentionHeads = 24
-	hiddenLayerSizeTransformer = 1536
+	numberOfAttentionHeads = 28	#orig:24	#32
+	hiddenLayerSizeTransformer = 1792	#orig:1536	#2048
 else:
 	numberOfAttentionHeads = 12
 	hiddenLayerSizeTransformer = 768
 
+printAccuracy = True
+if(printAccuracy):
+	import math 
+	accuracyTopN = 1	#default: 1	#>= 1	#calculates batch accuracy based on top n dictionary predictions
 	
 def any_keyword_in_string(string, keywords):
 	for keyword in keywords:
@@ -75,13 +80,6 @@ def any_keyword_in_string(string, keywords):
 			return True
 	return False
 
-filters = ["pandas", "sklearn", "matplotlib", "seaborn"]
-example_1 = "import numpy as np"
-example_2 = "import pandas as pd"
-
-print(
-	any_keyword_in_string(example_1, filters), any_keyword_in_string(example_2, filters)
-)
 
 def filter_streaming_dataset(dataset, filters):
 	filtered_dict = defaultdict(list)
@@ -94,17 +92,17 @@ def filter_streaming_dataset(dataset, filters):
 	print(f"{len(filtered_dict['content'])/total:.2%} of data after filtering.")
 	return Dataset.from_dict(filtered_dict)
 
-# This cell will take a very long time to execute, so you should skip it and go to
-# the next one!
-
 split = "train"  # "valid"
 filters = ["pandas", "sklearn", "matplotlib", "seaborn"]
 
+'''
 #recreate huggingface-course/codeparrot-ds-*:
-#print("start load dataset")
-#data = load_dataset(f"transformersbook/codeparrot-{split}", split=split, streaming=True)
-#filtered_data = filter_streaming_dataset(data, filters)
-#print("end load dataset")
+# This cell will take a very long time to execute
+print("start load dataset")
+data = load_dataset(f"transformersbook/codeparrot-{split}", split=split, streaming=True)
+filtered_data = filter_streaming_dataset(data, filters)
+print("end load dataset")
+'''
 
 print("start load dataset")
 ds_train = load_dataset("huggingface-course/codeparrot-ds-train", split="train")
@@ -115,7 +113,7 @@ if(trainPartialDataset):
 	raw_datasets = DatasetDict(
 		{
 			"train": ds_train.shuffle().select(range(50000)),
-			"valid": ds_valid.shuffle().select(range(500))
+			"valid": ds_valid.shuffle().select(range(500))	#50
 		}
 	)
 else:
@@ -126,13 +124,20 @@ else:
 		}
 	)
 
-raw_datasets
+context_length = 128
+tokenizer = AutoTokenizer.from_pretrained("huggingface-course/code-search-net-tokenizer")
+
+
+'''
+filters = ["pandas", "sklearn", "matplotlib", "seaborn"]
+example_1 = "import numpy as np"
+example_2 = "import pandas as pd"
+print(any_keyword_in_string(example_1, filters), any_keyword_in_string(example_2, filters))
+
+#raw_datasets
 
 for key in raw_datasets["train"][0]:
 	print(f"{key.upper()}: {raw_datasets['train'][0][key][:200]}")
-
-context_length = 128
-tokenizer = AutoTokenizer.from_pretrained("huggingface-course/code-search-net-tokenizer")
 
 outputs = tokenizer(
 	raw_datasets["train"][:2]["content"],
@@ -141,10 +146,11 @@ outputs = tokenizer(
 	return_overflowing_tokens=True,
 	return_length=True,
 )
-
 print(f"Input IDs length: {len(outputs['input_ids'])}")
 print(f"Input chunk lengths: {(outputs['length'])}")
 print(f"Chunk mapping: {outputs['overflow_to_sample_mapping']}")
+'''
+
 
 def tokenize(element):
 	outputs = tokenizer(
@@ -156,15 +162,14 @@ def tokenize(element):
 	)
 	input_batch = []
 	for length, input_ids in zip(outputs["length"], outputs["input_ids"]):
-		if length == context_length:
+		#print("length = ", length)
+		if length == context_length:	#only perform prediction for sufficient context_length (no padding)
 			input_batch.append(input_ids)
 	return {"input_ids": input_batch}
 
 
-tokenized_datasets = raw_datasets.map(
-	tokenize, batched=True, remove_columns=raw_datasets["train"].column_names
-)
-tokenized_datasets
+tokenized_datasets = raw_datasets.map(tokenize, batched=True, remove_columns=raw_datasets["train"].column_names)
+#tokenized_datasets
 	
 config = AutoConfig.from_pretrained(
 	"gpt2",
@@ -177,50 +182,53 @@ config = AutoConfig.from_pretrained(
 	hidden_size=hiddenLayerSizeTransformer,
 )
 
-if(trainLoadFromCheckpoint):
-	model = GPT2LMHeadModel.from_pretrained("./codeparrot-ds/checkpoint-5000")
-else:
-	model = GPT2LMHeadModel(config)
-model_size = sum(t.numel() for t in model.parameters())
-print(f"GPT-2 size: {model_size/1000**2:.1f}M parameters")
-
 tokenizer.pad_token = tokenizer.eos_token
-data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 
-out = data_collator([tokenized_datasets["train"][i] for i in range(5)])
-for key in out:
-	print(f"{key} shape: {out[key].shape}")
-
-
-
-args = TrainingArguments(
-	output_dir="codeparrot-ds",
-	per_device_train_batch_size=batchSize,
-	per_device_eval_batch_size=batchSize,
-	evaluation_strategy="steps",
-	eval_steps=5_000,
-	logging_steps=5_000,
-	gradient_accumulation_steps=8,
-	num_train_epochs=1,
-	weight_decay=0.1,
-	warmup_steps=1_000,
-	lr_scheduler_type="cosine",
-	learning_rate=5e-4,
-	save_steps=5_000,
-	fp16=True,
-	push_to_hub=False,
-)
-
-trainer = Trainer(
-	model=model,
-	tokenizer=tokenizer,
-	args=args,
-	data_collator=data_collator,
-	train_dataset=tokenized_datasets["train"],
-	eval_dataset=tokenized_datasets["valid"],
-)
 
 if(trainWithTrainer):
+	if(trainLoadFromCheckpoint):
+		model = GPT2LMHeadModel.from_pretrained("./codeparrot-ds/checkpoint-5000")
+	else:
+		model = GPT2LMHeadModel(config)
+	model_size = sum(t.numel() for t in model.parameters())
+	print(f"GPT-2 size: {model_size/1000**2:.1f}M parameters")
+
+	data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
+
+	'''
+	out = data_collator([tokenized_datasets["train"][i] for i in range(5)])
+	for key in out:
+		print(f"{key} shape: {out[key].shape}")
+	'''
+	
+	args = TrainingArguments(
+		output_dir="codeparrot-ds",
+		per_device_train_batch_size=batchSize,
+		per_device_eval_batch_size=batchSize,
+		evaluation_strategy="steps",
+		eval_steps=5_000,
+		logging_steps=5_000,
+		gradient_accumulation_steps=8,
+		num_train_epochs=1,
+		weight_decay=0.1,
+		warmup_steps=1_000,
+		lr_scheduler_type="cosine",
+		learning_rate=5e-4,
+		save_steps=5_000,
+		fp16=True,
+		push_to_hub=False,
+	)
+
+	trainer = Trainer(
+		model=model,
+		tokenizer=tokenizer,
+		args=args,
+		data_collator=data_collator,
+		train_dataset=tokenized_datasets["train"],
+		eval_dataset=tokenized_datasets["valid"],
+	)
+
+
 	print("start train")
 	trainer.train()
 	print("end train")
@@ -303,16 +311,33 @@ def keytoken_weighted_loss(inputs, logits, keytoken_ids, alpha=1.0):
 	# Resize and average loss per sample
 	loss_per_sample = loss.view(shift_logits.size(0), shift_logits.size(1)).mean(axis=1)
 	# Calculate and scale weighting
-	weights = torch.stack([(inputs == kt).float() for kt in keytoken_ids]).sum(
-		axis=[0, 2]
-	)
+	weights = torch.stack([(inputs == kt).float() for kt in keytoken_ids]).sum(axis=[0, 2])
 	weights = alpha * (1.0 + weights)
 	# Calculate weighted average
 	weighted_loss = (loss_per_sample * weights).mean()
 	return weighted_loss
 
+def getAccuracy(inputs, logits):	
+	#based on SBNLPpt_data:getAccuracy
+	logits = logits.detach()
+	# Shift so that tokens < n predict n
+	shift_labels = inputs[..., 1:].contiguous()
+	shift_logits = logits[..., :-1, :].contiguous()
+	tokenLogitsTopIndex = torch.topk(shift_logits, accuracyTopN).indices	#get highest n scored entries from dictionary	#tokenLogitsTopIndex.shape = batchSize, sequenceMaxNumTokens, accuracyTopN
+	if(accuracyTopN == 1):
+		tokenLogitsTopIndex = torch.squeeze(tokenLogitsTopIndex)	#tokenLogitsTopIndex[:, :, 1] -> #tokenLogitsTopIndex[:, :] 	
+		comparison = (tokenLogitsTopIndex == shift_labels).float()
+		accuracy = torch.mean(comparison)
+	else:
+		labelsExpanded = torch.unsqueeze(shift_labels, dim=2)
+		labelsExpanded = labelsExpanded.expand(-1, -1, tokenLogitsTopIndex.shape[2])	#labels broadcasted to [batchSize, sequenceMaxNumTokens, accuracyTopN]
+		comparison = (tokenLogitsTopIndex == labelsExpanded).float()
+		accuracy = torch.mean(comparison)
+	#print("accuracy = ", accuracy)
+	return accuracy
+	
 tokenized_datasets.set_format("torch")
-train_dataloader = DataLoader(tokenized_datasets["train"], batch_size=batchSize, shuffle=True)
+train_dataloader = DataLoader(tokenized_datasets["train"], batch_size=batchSize, shuffle=shuffleTrainDataset)
 eval_dataloader = DataLoader(tokenized_datasets["valid"], batch_size=batchSize)
 
 weight_decay = 0.1
@@ -332,6 +357,9 @@ def get_grouped_params(model, no_decay=["bias", "LayerNorm.weight"]):
 
 model = GPT2LMHeadModel(config)
 
+model_size = sum(t.numel() for t in model.parameters())
+print(f"GPT-2 size: {model_size/1000**2:.1f}M parameters")
+
 optimizer = AdamW(get_grouped_params(model), lr=5e-4)
 
 
@@ -347,15 +375,21 @@ def evaluateAndSave(model, accelerator, output_dir, eval_dataloader):
 	if accelerator.is_main_process:
 		tokenizer.save_pretrained(output_dir)
 		
-def evaluate(model, eval_dataloader):
+def evaluate(model, eval_dataloader):	
 	model.eval()
 	losses = []
+	if(printAccuracy):
+		accuracies = []
 	for step, batch in enumerate(eval_dataloader):
 		with torch.no_grad():
 			outputs = model(batch["input_ids"], labels=batch["input_ids"])
-
 		losses.append(accelerator.gather(outputs.loss.reshape(1)))		#OLD outputs.loss
-	#print("losses = ", losses)
+		if(printAccuracy):
+			inputs = batch["input_ids"]
+			logits = outputs.logits
+			accuracy = getAccuracy(inputs, logits)
+			if(not math.isnan(accuracy)):
+				accuracies.append(accuracy.reshape(1))
 	loss = torch.mean(torch.cat(losses))
 	try:
 		perplexity = torch.exp(loss)
@@ -363,7 +397,12 @@ def evaluate(model, eval_dataloader):
 		perplexity = float("inf")
 	eval_loss = loss.item()
 	eval_perplexity = perplexity.item()
-	print({"loss/eval": eval_loss, "perplexity": eval_perplexity})
+	if(printAccuracy):
+		accuracy = torch.mean(torch.cat(accuracies))
+		eval_accuracy = accuracy.item()
+		print({"loss/eval": eval_loss, "perplexity": eval_perplexity, "accuracy/eval":eval_accuracy})
+	else:
+		print({"loss/eval": eval_loss, "perplexity": eval_perplexity})
 	return eval_loss, eval_perplexity
 
 if(evaluatePretrainedModel):
@@ -392,20 +431,16 @@ lr_scheduler = get_scheduler(
 model_name = "codeparrot-ds-accelerate"
 output_dir = "codeparrot-ds-accelerate"
 
-evaluate(model, eval_dataloader)
+#evaluate(model, eval_dataloader)
 
-#from tqdm.notebook import tqdm
-
-samples_per_step = accelerator.state.num_processes * args.per_device_train_batch_size
+samples_per_step = accelerator.state.num_processes * batchSize
 gradient_accumulation_steps = 8
-eval_steps = 5_000
+eval_steps = 5_000	#10
 
 model.train()
 completed_steps = 0
 for epoch in range(num_train_epochs):
-	for step, batch in tqdm(
-		enumerate(train_dataloader, start=1), total=num_training_steps
-	):
+	for step, batch in tqdm(enumerate(train_dataloader, start=1), total=num_training_steps):
 		logits = model(batch["input_ids"]).logits
 		loss = keytoken_weighted_loss(batch["input_ids"], logits, keytoken_ids)
 		if step % 100 == 0:

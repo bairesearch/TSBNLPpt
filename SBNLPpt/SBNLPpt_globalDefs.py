@@ -157,15 +157,17 @@ if(useAlgorithmTransformer):
 	recursiveLayersNumberIterations = 1
 	recursiveLayersEmulateOrigImplementation = False
 	transformerSuperblocksRecursive = False
+	numberOfHiddenLayers = 1	#dynamically assigned: 1 (with recursiveLayers) or 6 (with !recursiveLayers, recursiveLayersOrigImplementation, or recursiveLayersEmulateOrigImplementation)
 	
 	#initialise (default vars);
-	numberOfHiddenLayers = 1	#default: 1 (with recursiveLayers) or 6
+	numberOfHiddenLayersDefault = 6
 	numberOfAttentionHeads = 12	#default: 12	#numberOfAttentionHeadsDefault
 	hiddenLayerSizeTransformer = 768	#default: 768 (can be overridden)
 	positionEmbeddingType = "relative_key"	#default:"relative_key"	#orig (Nov 2022):"absolute"
+	recursiveLayersOrigImplementation = False	#execute orig codebase with orig implementation so that archived models can be reloaded
 
 	if(transformerSuperblocks):
-		transformerSuperblocksNumber = 1	#segregate nlp and logic layers
+		transformerSuperblocksNumber = 2	#segregate nlp and logic layers
 		transformerSuperblocksLayerNorm = True
 		if(transformerSuperblocksLayerNorm):
 			transformerSuperblocksLayerNormList = True	#separate norm function per layer
@@ -174,14 +176,26 @@ if(useAlgorithmTransformer):
 			transformerSuperblocksRecursiveNumberIterations = 2	#configure
 			transformerSmall = False	#reduce GPU RAM
 			if(transformerSmall):
-				hiddenLayerSizeTransformer = 256
-				numberOfHiddenLayers = 2
+				hiddenLayerSizeTransformer = 256	#384
+				numberOfHiddenLayersDefault = 2
 	if(recursiveLayers):
-		recursiveLayersEmulateOrigImplementation = False	#emulate orig implementation so that archived models can be reloaded
-		if(recursiveLayersEmulateOrigImplementation):
-			recursiveLayersNumberIterations = numberOfHiddenLayers	#numberOfHiddenLayers is interpreted as recursiveLayersNumberIterations
+		recursiveLayersEmulateOrigImplementation = False	#execute new codebase but emulate orig implementation so that archived models can be reloaded	#depreciated (use recursiveLayersOrigImplementation instead)
+		if(recursiveLayersOrigImplementation):
+			numberOfHiddenLayers = numberOfHiddenLayersDefault
+			recursiveLayersNumberIterations = 1	#numberOfHiddenLayers is interpreted as number of repetitive (duplicate) layers in layerList
 		else:
-			recursiveLayersNumberIterations = 6
+			if(recursiveLayersEmulateOrigImplementation):
+				numberOfHiddenLayers = numberOfHiddenLayersDefault
+				recursiveLayersNumberIterations = numberOfHiddenLayers	#numberOfHiddenLayers is interpreted as recursiveLayersNumberIterations
+			else:
+				numberOfHiddenLayers = 1
+				recursiveLayersNumberIterations = numberOfHiddenLayersDefault
+	else:
+		numberOfHiddenLayers = numberOfHiddenLayersDefault
+				
+	useTransformerRecursive = False	
+	if(recursiveLayers or transformerSuperblocks):
+		useTransformerRecursive = True
 	
 	#if(recursiveLayers or transformerSuperblocksRecursive):
 	#	numberOfAttentionHeads = 1	#prevents recursion across different attention heads, nullifying precise recursion
@@ -385,7 +399,7 @@ if(useAlgorithmTransformer):
 	else:
 		officialRobertaBaseModel = False	#mandatory
 	
-useSmallDatasetDebug = False
+useSmallDatasetDebug = True
 useSingleHiddenLayerDebug = False
 usePretrainedModelDebug = False	#executes stateTestDataset only	#useAlgorithmTransformer only
 useSmallBatchSizeDebug = False
@@ -416,6 +430,9 @@ elif(useAlgorithmGIA):
 		batchSize = 8	#low batch size is not required for high vocabularySize (since useAlgorithmGIA model does not propagate every token in sequence contextual window simulataneously)
 	learningRate = 1e-4
 
+if(useSmallDatasetDebug):
+	batchSize = 1
+	
 GPUramLimit12to32GB = True
 if(GPUramLimit12to32GB):
 	if(simulatedDendriticBranches):

@@ -56,8 +56,8 @@ if(transformerPOSembeddings):
 		SBNLPpt_POSembedding.preparePOSdictionary()
 if(useGIAwordEmbeddings):
 	import SBNLPpt_GIAembedding
-if(sharedLayerWeights):
-	import SBNLPpt_transformerSharedLayers
+if(useTransformerRecursive):
+	import SBNLPpt_transformerRecursiveLayers
 if(tokenMemoryBank):
 	import SBNLPpt_transformerTokenMemoryBank
 if(transformerAttentionHeadPermutations):
@@ -641,33 +641,10 @@ class RobertaEncoder(nn.Module):
 	def __init__(self, config):
 		super().__init__()
 		self.config = config
-		
-		self.superblocksList = nn.ModuleList()
-		if(transformerSuperblocks):
-			if(transformerSuperblocksLayerNorm):
-				if(transformerSuperblocksLayerNormList):
-					self.superblockLayerNormList = nn.ModuleList()
-				else:
-					self.superblockLayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
-		if(recursiveLayersEmulateOrigImplementation):
-			numberUniqueLayers = 1
+		if(useTransformerRecursive):
+			SBNLPpt_transformerRecursiveLayers.declareRecursiveLayers(self, config, RobertaLayer)
 		else:
-			numberUniqueLayers = config.num_hidden_layers
-			
-		for superblockIndex in range(transformerSuperblocksNumber):
-			if(sharedLayerWeights):
-				robertaSharedLayerModules = SBNLPpt_transformerSharedLayers.RobertaSharedLayerModules(config)
-				layerList = nn.ModuleList([RobertaLayer(config, robertaSharedLayerModules) for layerIndex in range(numberUniqueLayers)])
-			else:
-				layerList = nn.ModuleList([RobertaLayer(config) for layerIndex in range(numberUniqueLayers)])	
-			
-			self.superblocksList.append(layerList)
-			if(transformerSuperblocks):
-				if(transformerSuperblocksLayerNorm):
-					if(transformerSuperblocksLayerNormList):
-						superblockLayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
-						self.superblockLayerNormList.append(superblockLayerNorm)
-		
+			self.layer = nn.ModuleList([RobertaLayer(config) for _ in range(config.num_hidden_layers)])
 		self.gradient_checkpointing = False
 
 	def forward(
@@ -689,13 +666,16 @@ class RobertaEncoder(nn.Module):
 		
 		next_decoder_cache = () if use_cache else None
 		
-		for superblockIndex, superblock in enumerate(self.superblocksList):
+		for superblockIndex in range(transformerSuperblocksNumber):
 			if(transformerSuperblocks):
+				superblock = self.superblocksList[superblockIndex]
 				superblockInput = hidden_states
-			for superblockRecursiveIndex, superblockRecursive in enumerate(range(transformerSuperblocksRecursiveNumberIterations)):
-				for blockRecursiveIndex, blockRecursive in enumerate(range(recursiveLayersNumberIterations)):
-					for i, layer_module in enumerate(superblock):
-
+			else:
+				superblock = self.layer
+			for superblockRecursiveIndex in range(transformerSuperblocksRecursiveNumberIterations):
+				for i, layer_module in enumerate(superblock):
+					for blockRecursiveIndex in range(recursiveLayersNumberIterations):
+					
 						if output_hidden_states:
 							all_hidden_states = all_hidden_states + (hidden_states,)
 

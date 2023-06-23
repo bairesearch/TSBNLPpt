@@ -1,10 +1,13 @@
 ## recursiveLayers
 
-![recursiveLayers1a.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/archive/recursiveLayers1a.drawio.png?raw=true)
+![recursiveLayers1a.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/archive/recursiveLayersOrigImplementation/recursiveLayers1a.drawio.png?raw=true)
+
+### ROBERTApt (Masked LM)
 
 #### positionEmbeddingType relative
 
 ![RobertaRecursiveTransformer.png](https://github.com/bairesearch/TSBpt/blob/master/graph/RobertaRecursiveTransformer.png?raw=true)
+- [RobertaRecursiveTransformerHeads.png](https://github.com/bairesearch/TSBpt/blob/master/graph/RobertaRecursiveTransformerHeads.png?raw=true)
 
 #### positionEmbeddingType absolute
 
