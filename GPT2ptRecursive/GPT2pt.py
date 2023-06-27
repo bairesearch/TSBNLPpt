@@ -56,7 +56,7 @@ trainWithTrainer = False	#also trains using Trainer API: no eval performance out
 trainLoadFromCheckpoint = False
 
 #configuration options;
-shuffleTrainDataset = True	#default: True (consider False for comparative tests)
+shuffleTrainDataset = False	#default: False #orig (< 24 June 2023): True  #False is used comparative tests
 evaluatePretrainedModel = False	#evaluate an existing model (do not train)
 saveTrainedModel = True	#save final model after completing 100% train
 batchSize = 16	#orig: 32

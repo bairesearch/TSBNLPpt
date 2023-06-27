@@ -34,38 +34,48 @@ python SBNLPpt_main.py
 
 ## recursiveLayers
 
-![recursiveLayers1a.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/archive/recursiveLayersOrigImplementation/recursiveLayers1a.drawio.png?raw=true)
-- [recursiveLayers1b.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers1b.drawio.png?raw=true)
+![recursiveLayers1a.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers/implementations/recursiveLayersOrigImplementation/recursiveLayers1a.drawio.png?raw=true)
+- [recursiveLayers1b.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers/implementations/recursiveLayersNewImplementation/recursiveLayers1b.drawio.png?raw=true)
 
 ### ROBERTApt (Masked LM)
 
-#### positionEmbeddingType relative
+#### positionEmbeddingType relative_key
 
-![RobertaRecursiveTransformer.png](https://github.com/bairesearch/TSBpt/blob/master/graph/RobertaRecursiveTransformer.png?raw=true)
-- [RobertaRecursiveTransformerHeads.png](https://github.com/bairesearch/TSBpt/blob/master/graph/RobertaRecursiveTransformerHeads.png?raw=true)
+![RobertaRecursiveTransformer.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers/trainingResults/positionEmbeddingTypeRelative/RobertaRecursiveTransformer.png?raw=true)
+- [RobertaRecursiveTransformer-loss.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers/trainingResults/positionEmbeddingTypeRelative/RobertaRecursiveTransformer-loss.png?raw=true)
+- [RobertaRecursiveTransformerHeads.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers/trainingResults/positionEmbeddingTypeRelative/RobertaRecursiveTransformerHeads.png?raw=true)
 
 #### positionEmbeddingType absolute
 
-![RobertaRecursiveTransformer-Nov2022.png](https://github.com/bairesearch/TSBpt/blob/master/graph/archive/positionEmbeddingTypeAbsolute-Nov2022/RobertaRecursiveTransformer-Nov2022.png?raw=true)
-- [RobertaRecursiveTransformerLayers-Nov2022.png](https://github.com/bairesearch/TSBpt/blob/master/graph/archive/positionEmbeddingTypeAbsolute-Nov2022/RobertaRecursiveTransformerLayers-Nov2022.png?raw=true)
+![RobertaRecursiveTransformer.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers/trainingResults/positionEmbeddingTypeAbsolute/RobertaRecursiveTransformer.png?raw=true)
+- [RobertaRecursiveTransformer-loss.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers/trainingResults/positionEmbeddingTypeAbsolute/RobertaRecursiveTransformer-loss.png?raw=true)
+- [RobertaRecursiveTransformerLayers.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers/trainingResults/positionEmbeddingTypeAbsolute/RobertaRecursiveTransformerLayers.png?raw=true)
+
 
 ### GPT2pt (Causal LM)
 
-![GPT2RecursiveTransformer.png](https://github.com/bairesearch/TSBpt/blob/master/graph/GPT2RecursiveTransformer.png?raw=true)
-- [GPT2RecursiveTransformer-loss.png](https://github.com/bairesearch/TSBpt/blob/master/graph/GPT2RecursiveTransformer-loss.png?raw=true)
+#### positionEmbeddingType relative_key
+
+![GPT2RecursiveTransformer.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers/trainingResults/positionEmbeddingTypeRelative/GPT2RecursiveTransformer.png?raw=true)
+- [GPT2RecursiveTransformer-loss.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers/trainingResults/positionEmbeddingTypeRelative/GPT2RecursiveTransformer-loss.png?raw=true)
+
+#### positionEmbeddingType absolute
+
+![GPT2RecursiveTransformer.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers/trainingResults/positionEmbeddingTypeAbsolute/GPT2RecursiveTransformer.png?raw=true)
+- [GPT2RecursiveTransformer-loss.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers/trainingResults/positionEmbeddingTypeAbsolute/GPT2RecursiveTransformer-loss.png?raw=true)
 
 ## transformerSuperblocks
 
-#### recursiveLayers
-![recursiveLayers1b.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers1b.drawio.png?raw=true)
-![transformerSuperblocks1b.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/transformerSuperblocks1b.drawio.png?raw=true)
+#### implementations/recursiveLayersNewImplementation
+![recursiveLayers1b.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers/implementations/recursiveLayersNewImplementation/recursiveLayers1b.drawio.png?raw=true)
+![transformerSuperblocks1b.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers/implementations/recursiveLayersNewImplementation/transformerSuperblocks1b.drawio.png?raw=true)
 
-#### recursiveLayersOrigImplementation
-- [recursiveLayers1a.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/archive/recursiveLayersOrigImplementation/recursiveLayers1a.drawio.png?raw=true)
-- [transformerSuperblocks1a.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/archive/recursiveLayersOrigImplementation/transformerSuperblocks1a.drawio.png?raw=true)
+#### implementations/recursiveLayersOrigImplementation
+- [recursiveLayers1a.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers/implementations/recursiveLayersOrigImplementation/recursiveLayers1a.drawio.png?raw=true)
+- [transformerSuperblocks1a.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers/implementations/recursiveLayersOrigImplementation/transformerSuperblocks1a.drawio.png?raw=true)
 
 ## tokenMemoryBank
 
-![tokenMemoryBank1a.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/tokenMemoryBank1a.drawio.png?raw=true)
+![tokenMemoryBank1a.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/tokenMemoryBank/tokenMemoryBank1a.drawio.png?raw=true)
 
 

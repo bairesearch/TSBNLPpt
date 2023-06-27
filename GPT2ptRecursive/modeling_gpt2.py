@@ -29,6 +29,9 @@ from torch.cuda.amp import autocast
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 
 recursiveLayers = True
+positionEmbeddingType = "relative_key"	#default:"relative_key"	#orig (May 2023):"absolute"	#relative is required for recursive transformer performance
+transformerAttentionHeadPermutationsType = "none"	#mandatory (transformerAttentionHeadPermutations not currently supported)
+relativeTimeEmbeddings = False	#mandatory (relativeTimeEmbeddings not currently supported)
 integratedPythonModule = False	#custom/modeling_roberta_sharedLayerWeights.py code has been integrated into transformers python module
 
 if(not integratedPythonModule):
@@ -150,7 +153,7 @@ def load_tf_weights_in_gpt2(model, config, gpt2_checkpoint_path):
 class GPT2Attention(nn.Module):
 	def __init__(self, config, is_cross_attention=False, layer_idx=None):
 		super().__init__()
-
+		
 		max_positions = config.max_position_embeddings
 		self.register_buffer(
 			"bias",
@@ -190,6 +193,15 @@ class GPT2Attention(nn.Module):
 		self.resid_dropout = nn.Dropout(config.resid_pdrop)
 
 		self.pruned_heads = set()
+		
+		if(relativeTimeEmbeddings):
+			if positionEmbeddingType == "relative_time":
+				self.max_position_embeddings = config.max_position_embeddings
+				self.time_embedding = nn.Embedding(2 * config.max_position_embeddings - 1, self.head_dim)		
+		else:
+			if positionEmbeddingType == "relative_key" or positionEmbeddingType == "relative_key_query":
+				self.max_position_embeddings = config.max_position_embeddings
+				self.distance_embedding = nn.Embedding(2 * config.max_position_embeddings - 1, self.head_dim)
 
 	def prune_heads(self, heads):
 		if len(heads) == 0:
@@ -206,9 +218,61 @@ class GPT2Attention(nn.Module):
 		self.num_heads = self.num_heads - len(heads)
 		self.pruned_heads = self.pruned_heads.union(heads)
 
+	#from SBNLPpt_transformerModel;
+	def calculateRelativePositionScores(self, seq_length, query_layer, key_layer):
+		if(relativeTimeEmbeddings):
+			if positionEmbeddingType == "relative_time":
+				print("GPT2Attention:calculateRelativePositionScores error: positionEmbeddingType:relative_time is not currently supported by GPT2pt")
+				exit()
+				sequenceRegisterTokenTimes = self.tokenMemoryBankClass.getSequenceRegisterTokenTimes(self.tokenMemoryBankClass.sequenceRegisterMemoryBankTokenTimes, self.tokenMemoryBankClass.sequenceRegisterMemoryBankAccessTimes)
+				relativePositionScoresList = []
+				for sampleIndex in range(batchSize):	#do not parallel process samples as their token times are different
+					position_ids_l = sequenceRegisterTokenTimes[sampleIndex].view(-1, 1)
+					position_ids_r = sequenceRegisterTokenTimes[sampleIndex].view(1, -1)
+					distance = position_ids_l - position_ids_r
+					distance = distance.long()
+					distancePositive = distance + self.max_position_embeddings - 1
+					positional_embedding = self.time_embedding(distancePositive)
+					positional_embedding = positional_embedding.to(dtype=query_layer.dtype)  # fp16 compatibility
+					queryLayerSample = torch.unsqueeze(query_layer[sampleIndex], dim=0)
+					if(transformerAttentionHeadPermutationsType=="dependent"):
+						positional_embedding = positional_embedding.repeat(self.num_heads, self.num_heads, 1)	#CHECKTHIS
+					relative_position_scores = torch.einsum("bhld,lrd->bhlr", queryLayerSample, positional_embedding)
+					relativePositionScoresList.append(relative_position_scores[0])
+				relative_position_scores = torch.stack(relativePositionScoresList, dim=0)
+		else:
+			if positionEmbeddingType == "relative_key" or positionEmbeddingType == "relative_key_query":
+				position_ids_l = torch.arange(seq_length, dtype=torch.long, device=query_layer.device).view(-1, 1)
+				position_ids_r = torch.arange(seq_length, dtype=torch.long, device=query_layer.device).view(1, -1)
+				distance = position_ids_l - position_ids_r
+				positional_embedding = self.distance_embedding(distance + self.max_position_embeddings - 1)
+				positional_embedding = positional_embedding.to(dtype=query_layer.dtype)  # fp16 compatibility
+				if positionEmbeddingType == "relative_key":
+					#print("query_layer.shape = ", query_layer.shape)
+					#print("positional_embedding.shape = ", positional_embedding.shape)
+					if(transformerAttentionHeadPermutationsType=="dependent"):
+						positional_embedding = positional_embedding.repeat(self.num_heads, self.num_heads, 1)	#CHECKTHIS
+					relative_position_scores = torch.einsum("bhld,lrd->bhlr", query_layer, positional_embedding)
+				elif positionEmbeddingType == "relative_key_query":
+					if(transformerAttentionHeadPermutationsType=="dependent"):
+						positional_embedding = positional_embedding.repeat(self.num_heads, self.num_heads, 1)	#CHECKTHIS
+					relative_position_scores_query = torch.einsum("bhld,lrd->bhlr", query_layer, positional_embedding)
+					relative_position_scores_key = torch.einsum("bhrd,lrd->bhlr", key_layer, positional_embedding)
+					relative_position_scores = relative_position_scores_query + relative_position_scores_key
+			else:
+				relative_position_scores = None
+				print("GPT2Attention:calculateRelativePositionScores error: positionEmbeddingType:absolute is not supported by calculateRelativePositionScores")
+				exit()
+		return relative_position_scores
+		
 	def _attn(self, query, key, value, attention_mask=None, head_mask=None):
 		attn_weights = torch.matmul(query, key.transpose(-1, -2))
 
+		if(positionEmbeddingType != "absolute"):
+			seq_length = query.shape[2]
+			relative_position_scores = self.calculateRelativePositionScores(seq_length, query, key)
+			attn_weights = attn_weights + relative_position_scores
+			
 		if self.scale_attn_weights:
 			attn_weights = attn_weights / torch.full(
 				[], value.size(-1) ** 0.5, dtype=attn_weights.dtype, device=attn_weights.device
@@ -702,7 +766,8 @@ class GPT2Model(GPT2PreTrainedModel):
 		self.embed_dim = config.hidden_size
 
 		self.wte = nn.Embedding(config.vocab_size, self.embed_dim)
-		self.wpe = nn.Embedding(config.max_position_embeddings, self.embed_dim)
+		if(positionEmbeddingType == "absolute"):
+			self.wpe = nn.Embedding(config.max_position_embeddings, self.embed_dim)
 
 		self.drop = nn.Dropout(config.embd_pdrop)
 		
@@ -741,7 +806,8 @@ class GPT2Model(GPT2PreTrainedModel):
 		self.first_device = "cpu" if "cpu" in self.device_map.keys() else "cuda:" + str(min(self.device_map.keys()))
 		self.last_device = "cuda:" + str(max(self.device_map.keys()))
 		self.wte = self.wte.to(self.first_device)
-		self.wpe = self.wpe.to(self.first_device)
+		if(positionEmbeddingType == "absolute"):
+			self.wpe = self.wpe.to(self.first_device)
 		# Load onto devices
 		for k, v in self.device_map.items():
 			for block in v:
@@ -761,7 +827,8 @@ class GPT2Model(GPT2PreTrainedModel):
 		self.first_device = "cpu"
 		self.last_device = "cpu"
 		self.wte = self.wte.to("cpu")
-		self.wpe = self.wpe.to("cpu")
+		if(positionEmbeddingType == "absolute"):
+			self.wpe = self.wpe.to("cpu")
 		for index in range(len(self.h)):
 			self.h[index] = self.h[index].to("cpu")
 		self.ln_f = self.ln_f.to("cpu")
@@ -876,8 +943,11 @@ class GPT2Model(GPT2PreTrainedModel):
 
 		if inputs_embeds is None:
 			inputs_embeds = self.wte(input_ids)
-		position_embeds = self.wpe(position_ids)
-		hidden_states = inputs_embeds + position_embeds
+		if(positionEmbeddingType == "absolute"):
+			position_embeds = self.wpe(position_ids)
+			hidden_states = inputs_embeds + position_embeds
+		else:
+			hidden_states = inputs_embeds
 
 		if token_type_ids is not None:
 			token_type_embeds = self.wte(token_type_ids)

@@ -1,15 +1,17 @@
 ## recursiveLayers
 
-![recursiveLayers1a.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/archive/recursiveLayersOrigImplementation/recursiveLayers1a.drawio.png?raw=true)
+![recursiveLayers1a.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers/implementations/recursiveLayersOrigImplementation/recursiveLayers1a.drawio.png?raw=true)
 
 ### ROBERTApt (Masked LM)
 
-#### positionEmbeddingType relative
+#### positionEmbeddingType relative_key
 
-![RobertaRecursiveTransformer.png](https://github.com/bairesearch/TSBpt/blob/master/graph/RobertaRecursiveTransformer.png?raw=true)
-- [RobertaRecursiveTransformerHeads.png](https://github.com/bairesearch/TSBpt/blob/master/graph/RobertaRecursiveTransformerHeads.png?raw=true)
+![RobertaRecursiveTransformer.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers/trainingResults/positionEmbeddingTypeRelative/RobertaRecursiveTransformer.png?raw=true)
+- [RobertaRecursiveTransformer-loss.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers/trainingResults/positionEmbeddingTypeRelative/RobertaRecursiveTransformer-loss.png?raw=true)
+- [RobertaRecursiveTransformerHeads.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers/trainingResults/positionEmbeddingTypeRelative/RobertaRecursiveTransformerHeads.png?raw=true)
 
 #### positionEmbeddingType absolute
 
-![RobertaRecursiveTransformer-Nov2022.png](https://github.com/bairesearch/TSBpt/blob/master/graph/archive/positionEmbeddingTypeAbsolute-Nov2022/RobertaRecursiveTransformer-Nov2022.png?raw=true)
-- [RobertaRecursiveTransformerLayers-Nov2022.png](https://github.com/bairesearch/TSBpt/blob/master/graph/archive/positionEmbeddingTypeAbsolute-Nov2022/RobertaRecursiveTransformerLayers-Nov2022.png?raw=true)
+![RobertaRecursiveTransformer.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers/trainingResults/positionEmbeddingTypeAbsolute/RobertaRecursiveTransformer.png?raw=true)
+- [RobertaRecursiveTransformer-loss.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers/trainingResults/positionEmbeddingTypeAbsolute/RobertaRecursiveTransformer-loss.png?raw=true)
+- [RobertaRecursiveTransformerLayers.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers/trainingResults/positionEmbeddingTypeAbsolute/RobertaRecursiveTransformerLayers.png?raw=true)
