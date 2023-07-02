@@ -25,7 +25,12 @@ from torch import nn
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 
 recursiveLayers = True
-
+transformerBlockMLPlayer = True	#default: True
+transformerBlockMLPlayerLast = False
+recursiveLayersEvalOverride = False
+if(recursiveLayersEvalOverride):
+	recursiveLayersNumberIterationsEvalOverride = 6
+	
 sharedLayerWeights = False
 sharedLayerWeightsOutput = False
 if(recursiveLayers):
@@ -453,8 +458,10 @@ class RobertaLayer(nn.Module):
 			if not self.is_decoder:
 				raise ValueError(f"{self} should be used as a decoder model if cross attention is added")
 			self.crossattention = RobertaAttention(config, robertaSharedLayerModules, position_embedding_type="absolute")
-		self.intermediate = RobertaIntermediate(config, robertaSharedLayerModules)
-		self.output = RobertaOutput(config, robertaSharedLayerModules)
+		if(transformerBlockMLPlayer or transformerBlockMLPlayerLast):
+			self.intermediate = RobertaIntermediate(config, robertaSharedLayerModules)
+			self.output = RobertaOutput(config, robertaSharedLayerModules)
+			self.num_hidden_layers = config.num_hidden_layers
 
 	def forward(
 		self,
@@ -465,6 +472,7 @@ class RobertaLayer(nn.Module):
 		encoder_attention_mask: Optional[torch.FloatTensor] = None,
 		past_key_value: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
 		output_attentions: Optional[bool] = False,
+		layerIndex=None,
 	) -> Tuple[torch.Tensor]:
 		# decoder uni-directional self-attention cached key/values tuple is at positions 1,2
 		self_attn_past_key_value = past_key_value[:2] if past_key_value is not None else None
@@ -510,9 +518,12 @@ class RobertaLayer(nn.Module):
 			cross_attn_present_key_value = cross_attention_outputs[-1]
 			present_key_value = present_key_value + cross_attn_present_key_value
 
-		layer_output = apply_chunking_to_forward(
-			self.feed_forward_chunk, self.chunk_size_feed_forward, self.seq_len_dim, attention_output
-		)
+		if(transformerBlockMLPlayer or (transformerBlockMLPlayerLast and (layerIndex==self.num_hidden_layers))):
+			layer_output = apply_chunking_to_forward(
+				self.feed_forward_chunk, self.chunk_size_feed_forward, self.seq_len_dim, attention_output
+			)
+		else:
+			layer_output = attention_output
 		outputs = (layer_output,) + outputs
 
 		# if decoder, return the attn key/values as the last output
@@ -537,8 +548,12 @@ class RobertaEncoder(nn.Module):
 				robertaSharedLayerModules = RobertaSharedLayerModules(config)
 				self.layer = nn.ModuleList([RobertaLayer(config, robertaSharedLayerModules) for _ in range(config.num_hidden_layers)])
 			else:
+				if(recursiveLayersEvalOverride):
+					numberUniqueLayers = recursiveLayersNumberIterationsEvalOverride
+				else:
+					numberUniqueLayers = config.num_hidden_layers
 				self.recursiveLayer = RobertaLayer(config)
-				self.layer = nn.ModuleList([self.recursiveLayer for _ in range(config.num_hidden_layers)]) 
+				self.layer = nn.ModuleList([self.recursiveLayer for _ in range(numberUniqueLayers)]) 
 		else:
 			self.layer = nn.ModuleList([RobertaLayer(config) for _ in range(config.num_hidden_layers)])			
 		self.gradient_checkpointing = False
@@ -589,6 +604,7 @@ class RobertaEncoder(nn.Module):
 					layer_head_mask,
 					encoder_hidden_states,
 					encoder_attention_mask,
+					#i,
 				)
 			else:
 				layer_outputs = layer_module(
@@ -599,6 +615,7 @@ class RobertaEncoder(nn.Module):
 					encoder_attention_mask,
 					past_key_value,
 					output_attentions,
+					i,
 				)
 
 			hidden_states = layer_outputs[0]

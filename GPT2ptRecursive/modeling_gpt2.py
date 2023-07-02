@@ -29,10 +29,15 @@ from torch.cuda.amp import autocast
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 
 recursiveLayers = True
-positionEmbeddingType = "relative_key"	#default:"relative_key"	#orig (May 2023):"absolute"	#relative is required for recursive transformer performance
+transformerBlockMLPlayer = True	#default: True
+transformerBlockMLPlayerLast = False
+positionEmbeddingType = "relative_key"	#"absolute"	#default:"relative_key"	#orig (May 2023):"absolute"	#relative is required for recursive transformer performance
 transformerAttentionHeadPermutationsType = "none"	#mandatory (transformerAttentionHeadPermutations not currently supported)
 relativeTimeEmbeddings = False	#mandatory (relativeTimeEmbeddings not currently supported)
 integratedPythonModule = False	#custom/modeling_roberta_sharedLayerWeights.py code has been integrated into transformers python module
+recursiveLayersEvalOverride = False
+if(recursiveLayersEvalOverride):
+	recursiveLayersNumberIterationsEvalOverride = 12	#12
 
 if(not integratedPythonModule):
 	from transformers.activations import ACT2FN
@@ -463,8 +468,10 @@ class GPT2Block(nn.Module):
 			self.crossattention = GPT2Attention(config, is_cross_attention=True, layer_idx=layer_idx)
 			self.ln_cross_attn = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
 
-		self.mlp = GPT2MLP(inner_dim, config)
-
+		if(transformerBlockMLPlayer or transformerBlockMLPlayerLast):
+			self.mlp = GPT2MLP(inner_dim, config)
+			self.num_hidden_layers = config.num_hidden_layers
+			
 	def forward(
 		self,
 		hidden_states: Optional[Tuple[torch.FloatTensor]],
@@ -475,6 +482,7 @@ class GPT2Block(nn.Module):
 		encoder_attention_mask: Optional[torch.FloatTensor] = None,
 		use_cache: Optional[bool] = False,
 		output_attentions: Optional[bool] = False,
+		layerIndex=None,
 	) -> Union[Tuple[torch.Tensor], Optional[Tuple[torch.Tensor, Tuple[torch.FloatTensor, ...]]]]:
 		residual = hidden_states
 		hidden_states = self.ln_1(hidden_states)
@@ -515,7 +523,10 @@ class GPT2Block(nn.Module):
 
 		residual = hidden_states
 		hidden_states = self.ln_2(hidden_states)
-		feed_forward_hidden_states = self.mlp(hidden_states)
+		if(transformerBlockMLPlayer or (transformerBlockMLPlayerLast and (layerIndex==self.num_hidden_layers))):
+			feed_forward_hidden_states = self.mlp(hidden_states)
+		else:
+			feed_forward_hidden_states = hidden_states
 		# residual connection
 		hidden_states = residual + feed_forward_hidden_states
 
@@ -772,9 +783,13 @@ class GPT2Model(GPT2PreTrainedModel):
 		self.drop = nn.Dropout(config.embd_pdrop)
 		
 		if(recursiveLayers):
+			if(recursiveLayersEvalOverride):
+				numberUniqueLayers = recursiveLayersNumberIterationsEvalOverride
+			else:
+				numberUniqueLayers = config.num_hidden_layers
 			self.recursiveLayer = GPT2Block(config, layer_idx=0)
 			#does not support scale_attn_by_inverse_layer_idx (requires correct layer_idx)
-			self.h = nn.ModuleList([self.recursiveLayer for i in range(config.num_hidden_layers)])
+			self.h = nn.ModuleList([self.recursiveLayer for i in range(numberUniqueLayers)])
 		else:
 			self.h = nn.ModuleList([GPT2Block(config, layer_idx=i) for i in range(config.num_hidden_layers)])
 		
@@ -939,7 +954,12 @@ class GPT2Model(GPT2PreTrainedModel):
 		# 1.0 in head_mask indicate we keep the head
 		# attention_probs has shape bsz x n_heads x N x N
 		# head_mask has shape n_layer x batch x n_heads x N x N
-		head_mask = self.get_head_mask(head_mask, self.config.n_layer)
+		
+		if(recursiveLayersEvalOverride):
+			numberUniqueLayers = recursiveLayersNumberIterationsEvalOverride
+		else:
+			numberUniqueLayers = self.config.n_layer
+		head_mask = self.get_head_mask(head_mask, numberUniqueLayers)
 
 		if inputs_embeds is None:
 			inputs_embeds = self.wte(input_ids)
@@ -1000,6 +1020,7 @@ class GPT2Model(GPT2PreTrainedModel):
 					head_mask[i],
 					encoder_hidden_states,
 					encoder_attention_mask,
+					#i,
 				)
 			else:
 				outputs = block(
@@ -1011,6 +1032,7 @@ class GPT2Model(GPT2PreTrainedModel):
 					encoder_attention_mask=encoder_attention_mask,
 					use_cache=use_cache,
 					output_attentions=output_attentions,
+					layerIndex=i,
 				)
 
 			hidden_states = outputs[0]

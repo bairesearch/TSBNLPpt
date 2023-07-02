@@ -149,8 +149,8 @@ numberOfSamplesPerDataFileLast = 423
 dataFileLastSampleIndex = 30423
 
 #storage location vars (requires 4TB harddrive);
-downloadCacheFolder = '/media/user/datasets/cache'
-dataFolder = '/media/user/datasets/data'
+downloadCacheFolder = '/media/rich/datasets/cache'
+dataFolder = '/media/rich/datasets/data'
 modelFolderName = 'model'
 
 modelSaveNumberOfBatches = 1000	#resave model after x training batches
@@ -178,7 +178,7 @@ import math
 torch.set_printoptions(profile="full")
 
 #store models to large datasets partition cache folder (not required)
-#os.environ['TRANSFORMERS_CACHE'] = '/media/user/datasets/models/'	#select partition with 3TB+ disk space
+#os.environ['TRANSFORMERS_CACHE'] = '/media/rich/datasets/models/'	#select partition with 3TB+ disk space
 
 transformerMaxNumTokens = 512
 customMaskTokenID = 4	#3
@@ -241,7 +241,6 @@ def dataFileIndexListContainsLastFile(dataFileIndexList, paths):
 	containsDataFileLastSample = False
 	for dataFileIndex in dataFileIndexList:
 		path = paths[dataFileIndex]
-		#print("path = ", path)
 		if(str(dataFileLastSampleIndex) in path):
 			containsDataFileLastSample = True
 	return containsDataFileLastSample

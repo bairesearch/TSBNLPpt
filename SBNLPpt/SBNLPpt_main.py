@@ -155,11 +155,11 @@ def testDataset(tokenizer, dataElements):
 		for batchIndex, batch in enumerate(loop):
 			loss, accuracy = trainOrTestBatchWrapper(False, batchIndex, batch, tokenizer, model)
 			
-			if(not usePretrainedModelDebug or not math.isnan(accuracy)):
+			if(not usePretrainedModelDebug and not math.isnan(accuracy)):
 				(averageAccuracy, averageLoss, batchCount) = (averageAccuracy+accuracy, averageLoss+loss, batchCount+1)
-			
-			if(printAccuracyRunningAverage):
-				(loss, accuracy) = (runningLoss, runningAccuracy) = (runningLoss/runningAverageBatches*(runningAverageBatches-1)+(loss/runningAverageBatches), runningAccuracy/runningAverageBatches*(runningAverageBatches-1)+(accuracy/runningAverageBatches))
+				
+				if(printAccuracyRunningAverage):
+					(loss, accuracy) = (runningLoss, runningAccuracy) = (runningLoss/runningAverageBatches*(runningAverageBatches-1)+(loss/runningAverageBatches), runningAccuracy/runningAverageBatches*(runningAverageBatches-1)+(accuracy/runningAverageBatches))
 				
 			loop.set_description(f'Epoch {epoch}')
 			loop.set_postfix(batchIndex=batchIndex, loss=loss, accuracy=accuracy)

@@ -37,7 +37,7 @@ useAlgorithmGIA = False
 #state selection;
 statePreprocessDataset = False	#only required once
 stateTrainTokeniser = False	#only required once
-stateTrainDataset = True
+stateTrainDataset = False
 stateTestDataset = True	#requires reserveValidationSet
 
 #training data selection;
@@ -158,6 +158,9 @@ if(useAlgorithmTransformer):
 	recursiveLayersEmulateOrigImplementation = False
 	transformerSuperblocksRecursive = False
 	numberOfHiddenLayers = 1	#dynamically assigned: 1 (with recursiveLayers) or 6 (with !recursiveLayers, recursiveLayersOrigImplementation, or recursiveLayersEmulateOrigImplementation)
+	transformerBlockMLPlayer = True
+	transformerBlockMLPlayerLast = False
+	transformerSuperblocksLayerNorm = False
 	
 	#initialise (default vars);
 	numberOfHiddenLayersDefault = 6
@@ -165,7 +168,7 @@ if(useAlgorithmTransformer):
 	hiddenLayerSizeTransformer = 768	#default: 768 (can be overridden)
 	positionEmbeddingType = "relative_key"	#default:"relative_key"	#orig (Nov 2022):"absolute"
 	recursiveLayersOrigImplementation = False	#execute orig codebase with orig implementation so that archived models can be reloaded
-
+	
 	if(transformerSuperblocks):
 		transformerSuperblocksNumber = 2	#segregate nlp and logic layers
 		transformerSuperblocksLayerNorm = True
@@ -179,7 +182,11 @@ if(useAlgorithmTransformer):
 				hiddenLayerSizeTransformer = 256	#384
 				numberOfHiddenLayersDefault = 2
 	if(recursiveLayers):
-		recursiveLayersEmulateOrigImplementation = False	#execute new codebase but emulate orig implementation so that archived models can be reloaded	#depreciated (use recursiveLayersOrigImplementation instead)
+		recursiveLayersEvalOverride = False	#currently only supported by recursiveLayersOrigImplementation; if !recursiveLayersOrigImplementation then just change numberOfHiddenLayersDefault:recursiveLayersNumberIterations
+		if(recursiveLayersEvalOverride):
+			recursiveLayersNumberIterationsEvalOverride = 6
+		recursiveLayersEmulateOrigImplementation = True	#execute new codebase but emulate implementation #1 (Nov 2022) so that archived models can be reloaded	#depreciated (use recursiveLayersOrigImplementation instead)
+		recursiveLayersEmulateOrigImplementation2 = True	#emulate implementation #2 (May 2023); always iterate over transformerSuperblocks
 		if(recursiveLayersOrigImplementation):
 			numberOfHiddenLayers = numberOfHiddenLayersDefault
 			recursiveLayersNumberIterations = 1	#numberOfHiddenLayers is interpreted as number of repetitive (duplicate) layers in layerList
@@ -190,6 +197,8 @@ if(useAlgorithmTransformer):
 			else:
 				numberOfHiddenLayers = 1
 				recursiveLayersNumberIterations = numberOfHiddenLayersDefault
+			if(recursiveLayersEvalOverride):
+				recursiveLayersNumberIterations = recursiveLayersNumberIterationsEvalOverride
 	else:
 		numberOfHiddenLayers = numberOfHiddenLayersDefault
 				

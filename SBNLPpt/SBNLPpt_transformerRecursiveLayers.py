@@ -24,7 +24,8 @@ import nncustom
 from SBNLPpt_globalDefs import *
 
 def declareRecursiveLayers(self, config, RobertaLayer):
-	if(transformerSuperblocks):
+	
+	if(transformerSuperblocks or recursiveLayersEmulateOrigImplementation2):
 		self.superblocksList = nn.ModuleList()
 		if(transformerSuperblocksLayerNorm):
 			if(transformerSuperblocksLayerNormList):
@@ -39,8 +40,12 @@ def declareRecursiveLayers(self, config, RobertaLayer):
 					robertaSharedLayerModules = RobertaSharedLayerModules(config)
 					layerList = nn.ModuleList([RobertaLayer(config, robertaSharedLayerModules) for _ in range(config.num_hidden_layers)])
 				else:
+					if(recursiveLayersEvalOverride):
+						numberUniqueLayers = recursiveLayersNumberIterationsEvalOverride
+					else:
+						numberUniqueLayers = config.num_hidden_layers
 					self.recursiveLayer = RobertaLayer(config)
-					layerList = nn.ModuleList([self.recursiveLayer for _ in range(config.num_hidden_layers)])
+					layerList = nn.ModuleList([self.recursiveLayer for _ in range(numberUniqueLayers)])
 			else:
 				layerList = nn.ModuleList([RobertaLayer(config) for _ in range(config.num_hidden_layers)])
 		else:
@@ -56,7 +61,7 @@ def declareRecursiveLayers(self, config, RobertaLayer):
 			else:
 				layerList = nn.ModuleList([RobertaLayer(config) for layerIndex in range(numberUniqueLayers)])
 
-		if(transformerSuperblocks):
+		if(transformerSuperblocks or recursiveLayersEmulateOrigImplementation2):
 			self.superblocksList.append(layerList)
 			if(transformerSuperblocksLayerNorm):
 				if(transformerSuperblocksLayerNormList):

@@ -558,8 +558,10 @@ class RobertaLayer(nn.Module):
 			if not self.is_decoder:
 				raise ValueError(f"{self} should be used as a decoder model if cross attention is added")
 			self.crossattention = RobertaAttention(config, robertaSharedLayerModules, position_embedding_type="absolute")
-		self.intermediate = RobertaIntermediate(config, robertaSharedLayerModules)
-		self.output = RobertaOutput(config, robertaSharedLayerModules)
+		if(transformerBlockMLPlayer or transformerBlockMLPlayerLast):
+			self.intermediate = RobertaIntermediate(config, robertaSharedLayerModules)
+			self.output = RobertaOutput(config, robertaSharedLayerModules)
+			self.num_hidden_layers = config.num_hidden_layers
 
 	def forward(
 		self,
@@ -619,9 +621,12 @@ class RobertaLayer(nn.Module):
 			cross_attn_present_key_value = cross_attention_outputs[-1]
 			present_key_value = present_key_value + cross_attn_present_key_value
 
-		layer_output = apply_chunking_to_forward(
-			self.feed_forward_chunk, self.chunk_size_feed_forward, self.seq_len_dim, attention_output
-		)
+		if(transformerBlockMLPlayer or (transformerBlockMLPlayerLast and (layerIndex==self.num_hidden_layers))):
+			layer_output = apply_chunking_to_forward(
+				self.feed_forward_chunk, self.chunk_size_feed_forward, self.seq_len_dim, attention_output
+			)
+		else:
+			layer_output = attention_output
 		outputs = (layer_output,) + outputs
 
 		# if decoder, return the attn key/values as the last output
@@ -667,7 +672,7 @@ class RobertaEncoder(nn.Module):
 		next_decoder_cache = () if use_cache else None
 		
 		for superblockIndex in range(transformerSuperblocksNumber):
-			if(transformerSuperblocks):
+			if(transformerSuperblocks or recursiveLayersEmulateOrigImplementation2):
 				superblock = self.superblocksList[superblockIndex]
 				superblockInput = hidden_states
 			else:

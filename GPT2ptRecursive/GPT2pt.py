@@ -53,14 +53,17 @@ from transformers import get_scheduler
 #debug options;
 trainPartialDataset = False
 trainWithTrainer = False	#also trains using Trainer API: no eval performance output
-trainLoadFromCheckpoint = False
+if(trainWithTrainer):
+	trainLoadFromCheckpoint = False
+
+stateTrainDataset = False
+stateTestDataset = True	#evaluate an existing model (do not train)
 
 #configuration options;
 shuffleTrainDataset = False	#default: False #orig (< 24 June 2023): True  #False is used comparative tests
-evaluatePretrainedModel = False	#evaluate an existing model (do not train)
 saveTrainedModel = True	#save final model after completing 100% train
 batchSize = 16	#orig: 32
-numberOfHiddenLayers = 12	#default = 12	#12	#1
+numberOfHiddenLayers = 18	#default = 12	#12	#1
 recursiveLayersNormaliseNumParameters2 = False	#optional
 if(recursiveLayersNormaliseNumParameters2):
 	numberOfAttentionHeads = 28	#orig:24	#32
@@ -381,6 +384,7 @@ def evaluate(model, eval_dataloader):
 	if(printAccuracy):
 		accuracies = []
 	for step, batch in enumerate(eval_dataloader):
+		#print("step = ", step)
 		with torch.no_grad():
 			outputs = model(batch["input_ids"], labels=batch["input_ids"])
 		losses.append(accelerator.gather(outputs.loss.reshape(1)))		#OLD outputs.loss
@@ -388,6 +392,7 @@ def evaluate(model, eval_dataloader):
 			inputs = batch["input_ids"]
 			logits = outputs.logits
 			accuracy = getAccuracy(inputs, logits)
+			#print("accuracy = ", accuracy)
 			if(not math.isnan(accuracy)):
 				accuracies.append(accuracy.reshape(1))
 	loss = torch.mean(torch.cat(losses))
@@ -405,67 +410,59 @@ def evaluate(model, eval_dataloader):
 		print({"loss/eval": eval_loss, "perplexity": eval_perplexity})
 	return eval_loss, eval_perplexity
 
-if(evaluatePretrainedModel):
-	tokenized_datasets.set_format("torch")
-	eval_dataloader = DataLoader(tokenized_datasets["valid"], batch_size=batchSize)
+
+if(stateTrainDataset):
+	model, optimizer, train_dataloader, eval_dataloader = accelerator.prepare(model, optimizer, train_dataloader, eval_dataloader)
+
+	num_train_epochs = 1
+	num_update_steps_per_epoch = len(train_dataloader)
+	num_training_steps = num_train_epochs * num_update_steps_per_epoch
+
+	lr_scheduler = get_scheduler(
+		name="linear",
+		optimizer=optimizer,
+		num_warmup_steps=1_000,
+		num_training_steps=num_training_steps,
+	)
+
+	model_name = "codeparrot-ds-accelerate"
+	output_dir = "codeparrot-ds-accelerate"
+
+	samples_per_step = accelerator.state.num_processes * batchSize
+	gradient_accumulation_steps = 8
+	eval_steps = 5_000	#5_000	#10
+
+	model.train()
+	completed_steps = 0
+	for epoch in range(num_train_epochs):
+		for step, batch in tqdm(enumerate(train_dataloader, start=1), total=num_training_steps):
+			logits = model(batch["input_ids"]).logits
+			loss = keytoken_weighted_loss(batch["input_ids"], logits, keytoken_ids)
+			if step % 100 == 0:
+				accelerator.print(
+					{
+						"lr": lr_scheduler.get_lr(),
+						"samples": step * samples_per_step,
+						"steps": completed_steps,
+						"loss/train": loss.item() * gradient_accumulation_steps,
+					}
+				)
+			loss = loss / gradient_accumulation_steps
+			accelerator.backward(loss)
+			if step % gradient_accumulation_steps == 0:
+				accelerator.clip_grad_norm_(model.parameters(), 1.0)
+				optimizer.step()
+				lr_scheduler.step()
+				optimizer.zero_grad()
+				completed_steps += 1
+			if (step % (eval_steps * gradient_accumulation_steps)) == 0:
+				evaluateAndSave(model, accelerator, output_dir, eval_dataloader)
+
+	if(saveTrainedModel):
+		#output_dir = "codeparrot-ds-accelerate-final"	#temp: separate final stage save from intermittent save
+		 evaluateAndSave(model, accelerator, output_dir, eval_dataloader)
+
+if(stateTestDataset):
 	model = GPT2LMHeadModel.from_pretrained("./codeparrot-ds-accelerate")	#local_files_only=True
+	model, optimizer, train_dataloader, eval_dataloader = accelerator.prepare(model, optimizer, train_dataloader, eval_dataloader)
 	evaluate(model, eval_dataloader)
-	exit()
-	
-
-model, optimizer, train_dataloader, eval_dataloader = accelerator.prepare(
-	model, optimizer, train_dataloader, eval_dataloader
-)
-
-num_train_epochs = 1
-num_update_steps_per_epoch = len(train_dataloader)
-num_training_steps = num_train_epochs * num_update_steps_per_epoch
-
-lr_scheduler = get_scheduler(
-	name="linear",
-	optimizer=optimizer,
-	num_warmup_steps=1_000,
-	num_training_steps=num_training_steps,
-)
-
-model_name = "codeparrot-ds-accelerate"
-output_dir = "codeparrot-ds-accelerate"
-
-#evaluate(model, eval_dataloader)
-
-samples_per_step = accelerator.state.num_processes * batchSize
-gradient_accumulation_steps = 8
-eval_steps = 5_000	#10
-
-model.train()
-completed_steps = 0
-for epoch in range(num_train_epochs):
-	for step, batch in tqdm(enumerate(train_dataloader, start=1), total=num_training_steps):
-		logits = model(batch["input_ids"]).logits
-		loss = keytoken_weighted_loss(batch["input_ids"], logits, keytoken_ids)
-		if step % 100 == 0:
-			accelerator.print(
-				{
-					"lr": lr_scheduler.get_lr(),
-					"samples": step * samples_per_step,
-					"steps": completed_steps,
-					"loss/train": loss.item() * gradient_accumulation_steps,
-				}
-			)
-		loss = loss / gradient_accumulation_steps
-		accelerator.backward(loss)
-		if step % gradient_accumulation_steps == 0:
-			accelerator.clip_grad_norm_(model.parameters(), 1.0)
-			optimizer.step()
-			lr_scheduler.step()
-			optimizer.zero_grad()
-			completed_steps += 1
-		if (step % (eval_steps * gradient_accumulation_steps)) == 0:
-			evaluateAndSave(model, accelerator, output_dir, eval_dataloader)
-
-if(saveTrainedModel):
-	#output_dir = "codeparrot-ds-accelerate-final"	#temp: separate final stage save from intermittent save
-	 evaluateAndSave(model, accelerator, output_dir, eval_dataloader)
-
-
-
