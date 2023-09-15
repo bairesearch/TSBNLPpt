@@ -243,7 +243,7 @@ class RobertaSelfAttention(nn.Module):
 		self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
 		self.all_head_size = self.num_attention_heads * self.attention_head_size
 
-		if(sharedLayerWeights):
+		if(sharedLayerWeightsSelfAttention):
 			self.query = robertaSharedLayerModules.robertaSelfAttentionSharedLayerQuery
 			self.key = robertaSharedLayerModules.robertaSelfAttentionSharedLayerKey
 			self.value = robertaSharedLayerModules.robertaSelfAttentionSharedLayerValue
@@ -422,8 +422,8 @@ class RobertaSelfOutput(nn.Module):
 			self.config = config
 			self.dense = nn.Conv1d(in_channels=config.hidden_size, out_channels=config.hidden_size, kernel_size=1, groups=config.num_attention_heads)	#perform output computation for each head independently
 		else:
-			if(sharedLayerWeightsOutput):
-				self.dense = robertaSharedLayerModules.RobertaSelfOutputSharedLayerOutput
+			if(sharedLayerWeightsSelfOutput):
+				self.dense = robertaSharedLayerModules.robertaSelfOutputSharedLayerDense
 			else:
 				self.dense = nncustom.Linear(config.hidden_size, config.hidden_size)
 		self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
@@ -512,7 +512,7 @@ class RobertaAttention(nn.Module):
 class RobertaIntermediate(nn.Module):
 	def __init__(self, config, robertaSharedLayerModules=None):
 		super().__init__()
-		if(sharedLayerWeights):
+		if(sharedLayerWeightsIntermediate):
 			self.dense = robertaSharedLayerModules.robertaIntermediateSharedLayerDense
 		else:
 			self.dense = nncustom.Linear(config.hidden_size, config.intermediate_size)
@@ -532,7 +532,7 @@ class RobertaOutput(nn.Module):
 	def __init__(self, config, robertaSharedLayerModules=None):
 		super().__init__()
 		if(sharedLayerWeightsOutput):
-			self.dense = robertaSharedLayerModules.RobertaOutputSharedLayerOutput
+			self.dense = robertaSharedLayerModules.robertaOutputSharedLayerDense
 		else:
 			self.dense = nncustom.Linear(config.intermediate_size, config.hidden_size)
 		self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)

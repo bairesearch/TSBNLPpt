@@ -37,8 +37,8 @@ useAlgorithmGIA = False
 #state selection;
 statePreprocessDataset = False	#only required once
 stateTrainTokeniser = False	#only required once
-stateTrainDataset = False
-stateTestDataset = True	#requires reserveValidationSet
+stateTrainDataset = True
+stateTestDataset = False	#requires reserveValidationSet
 
 #training data selection;
 trainStartEpoch = 0	#start epoch of training (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
@@ -158,11 +158,11 @@ if(useAlgorithmTransformer):
 	recursiveLayersEmulateOrigImplementation = False
 	transformerSuperblocksRecursive = False
 	numberOfHiddenLayers = 1	#dynamically assigned: 1 (with recursiveLayers) or 6 (with !recursiveLayers, recursiveLayersOrigImplementation, or recursiveLayersEmulateOrigImplementation)
-	transformerBlockMLPlayer = True
-	transformerBlockMLPlayerLast = False
 	transformerSuperblocksLayerNorm = False
 	
 	#initialise (default vars);
+	transformerBlockMLPlayer = True	#default: True	#apply all MLP layers
+	transformerBlockMLPlayerLast = False	#default: False	#only apply last MLP layer (requires !transformerBlockMLPlayer)
 	numberOfHiddenLayersDefault = 6
 	numberOfAttentionHeads = 12	#default: 12	#numberOfAttentionHeadsDefault
 	hiddenLayerSizeTransformer = 768	#default: 768 (can be overridden)
@@ -523,13 +523,34 @@ def getModelPathNameFull(modelPathNameBase, modelName):
 	
 GIAmodelName = 'modelGIA'	
 if(useAlgorithmTransformer):
-	sharedLayerWeights = False	#initialise (dependent var)
-	sharedLayerWeightsOutput = False	#initialise (dependent var)
+	#initialise (dependent vars);
+	sharedLayerWeights = False
+	sharedLayerWeightsAttention = False
+	sharedLayerWeightsMLP = False
+	sharedLayerWeightsSelfAttention = False
+	sharedLayerWeightsSelfOutput = False
+	sharedLayerWeightsIntermediate = False
+	sharedLayerWeightsOutput = False
 	if(not usePretrainedModelDebug):
 		if(recursiveLayers):
 			sharedLayerWeights = False	#orig recursiveLayers implementation
 			if(sharedLayerWeights):
-				sharedLayerWeightsOutput = True	#share RobertaOutputSharedLayerOutput/RobertaSelfOutputSharedLayerOutput parameters also
+				sharedLayerWeightsAttention = True	#default: true
+				sharedLayerWeightsMLP = True	#default: true
+				if(sharedLayerWeightsAttention):
+					sharedLayerWeightsSelfAttention = True	#default: true
+					sharedLayerWeightsSelfOutput = True	#default: true
+				if(sharedLayerWeightsMLP):
+					sharedLayerWeightsIntermediate = True	#default: true
+					sharedLayerWeightsOutput = True	#default: true
+			#legacy configuration support;
+			sharedLayerWeightsWithOutputs = False	
+			sharedLayerWeightsWithoutOutputs = False
+			if(sharedLayerWeightsSelfAttention and sharedLayerWeightsIntermediate and sharedLayerWeightsSelfOutput and sharedLayerWeightsOutput):
+				sharedLayerWeightsWithOutputs = True
+			elif(sharedLayerWeightsSelfAttention and sharedLayerWeightsIntermediate and not sharedLayerWeightsSelfOutput and not sharedLayerWeightsOutput):
+				sharedLayerWeightsWithoutOutputs = True
+			#normalisation;
 			recursiveLayersNormaliseNumParameters = False	#default: False	#optional	#if use recursiveLayers normalise/equalise num of parameters with respect to !recursiveLayers	#legacy
 			if(recursiveLayersNormaliseNumParameters):
 				recursiveLayersNormaliseNumParametersIntermediate = True	#normalise intermediateSize parameters also
@@ -551,17 +572,19 @@ if(useAlgorithmTransformer):
 			#same model size irrespective of useSingleHiddenLayerDebug
 			if(recursiveLayersNormaliseNumParameters):
 				if(sharedLayerWeights):
-					if(sharedLayerWeightsOutput):
+					if(sharedLayerWeightsWithOutputs):
 						if(recursiveLayersNormaliseNumParametersIntermediate):
 							hiddenLayerSizeMultiplier = (7/4)	#model size = 249MB	
 							#hiddenLayerSizeMultiplier = (5/3)	#~230MB	
 						else:
 							hiddenLayerSizeMultiplier = 2	#model size = ~255MB
-					else:
+					elif(sharedLayerWeightsWithoutOutputs):
 						if(recursiveLayersNormaliseNumParametersIntermediate):
 							hiddenLayerSizeMultiplier = (4/3)	#model size = 273MB
 						else:
 							hiddenLayerSizeMultiplier = 1.5	#model size = ~255MB
+					else:
+						printe("error: recursiveLayersNormaliseNumParameters:sharedLayerWeights currently requires sharedLayerWeightsWithOutputs or sharedLayerWeightsWithoutOutputs")
 				else:
 					hiddenLayerSizeMultiplier = (7/4)	#model size = ~250MB	#optimisation failure observed
 					#hiddenLayerSizeMultiplier = (11/6)	#model size = ~265MB	#optimisation failure observed
@@ -576,10 +599,12 @@ if(useAlgorithmTransformer):
 				print("intermediateSize = ", intermediateSize)
 			else:
 				if(sharedLayerWeights):
-					if(sharedLayerWeightsOutput):
+					if(sharedLayerWeightsWithOutputs):
 						pass	#model size = ~120MB
-					else:
+					elif(sharedLayerWeightsWithoutOutputs):
 						pass	#model size = 176.7MB
+					else:
+						pass	#model size = unknown
 				else:
 					pass	#model size = 120.4MB
 		else:

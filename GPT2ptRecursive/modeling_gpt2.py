@@ -29,8 +29,8 @@ from torch.cuda.amp import autocast
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 
 recursiveLayers = True
-transformerBlockMLPlayer = True	#default: True
-transformerBlockMLPlayerLast = False
+transformerBlockMLPlayer = True	#default: True	#apply all MLP layers
+transformerBlockMLPlayerLast = False	#default: False	#only apply last MLP layer (requires !transformerBlockMLPlayer)
 positionEmbeddingType = "relative_key"	#"absolute"	#default:"relative_key"	#orig (May 2023):"absolute"	#relative is required for recursive transformer performance
 transformerAttentionHeadPermutationsType = "none"	#mandatory (transformerAttentionHeadPermutations not currently supported)
 relativeTimeEmbeddings = False	#mandatory (relativeTimeEmbeddings not currently supported)
@@ -38,6 +38,15 @@ integratedPythonModule = False	#custom/modeling_roberta_sharedLayerWeights.py co
 recursiveLayersEvalOverride = False
 if(recursiveLayersEvalOverride):
 	recursiveLayersNumberIterationsEvalOverride = 12	#12
+
+sharedLayerWeights = False
+sharedLayerWeightsAttention = False
+sharedLayerWeightsMLP = False
+if(recursiveLayers):
+	sharedLayerWeights = False	#orig recursiveLayers implementation
+	if(sharedLayerWeights):
+		sharedLayerWeightsAttention = True	#default: true
+		sharedLayerWeightsMLP = True	#default: true
 
 if(not integratedPythonModule):
 	from transformers.activations import ACT2FN
@@ -98,6 +107,25 @@ GPT2_PRETRAINED_MODEL_ARCHIVE_LIST = [
 ]
 
 
+if(sharedLayerWeights):
+	class GPT2SharedLayerModules:
+		def __init__(self, config):
+			#precalculate these parameters locally (temp);
+			embed_dim = config.hidden_size
+			hidden_size = config.hidden_size
+			inner_dim = config.n_inner if config.n_inner is not None else 4 * hidden_size
+			intermediate_size = inner_dim
+	
+			if(sharedLayerWeightsAttention):
+				self.GPT2CrossAttentionSharedLayerc_attn = Conv1D(2 * embed_dim, embed_dim)
+				self.GPT2CrossAttentionSharedLayerq_attn = Conv1D(embed_dim, embed_dim)
+				self.GPT2AttentionSharedLayerc_attn = Conv1D(3 * embed_dim, embed_dim)
+				self.GPT2AttentionSharedLayerc_proj = Conv1D(embed_dim, embed_dim)
+			if(sharedLayerWeightsMLP):
+				self.GPT2MLPSharedLayerc_fc = Conv1D(intermediate_size, embed_dim)
+				self.GPT2MLPSharedLayerc_proj = Conv1D(embed_dim, intermediate_size)
+
+
 def load_tf_weights_in_gpt2(model, config, gpt2_checkpoint_path):
 	"""Load tf checkpoints in a pytorch model"""
 	try:
@@ -156,7 +184,7 @@ def load_tf_weights_in_gpt2(model, config, gpt2_checkpoint_path):
 
 
 class GPT2Attention(nn.Module):
-	def __init__(self, config, is_cross_attention=False, layer_idx=None):
+	def __init__(self, config, is_cross_attention=False, layer_idx=None, gpt2SharedLayerModules=None):
 		super().__init__()
 		
 		max_positions = config.max_position_embeddings
@@ -187,12 +215,20 @@ class GPT2Attention(nn.Module):
 		self.layer_idx = layer_idx
 		self.reorder_and_upcast_attn = config.reorder_and_upcast_attn
 
-		if self.is_cross_attention:
-			self.c_attn = Conv1D(2 * self.embed_dim, self.embed_dim)
-			self.q_attn = Conv1D(self.embed_dim, self.embed_dim)
+		if(sharedLayerWeightsAttention):
+			if self.is_cross_attention:
+				self.c_attn = gpt2SharedLayerModules.GPT2CrossAttentionSharedLayerc_attn
+				self.q_attn = gpt2SharedLayerModules.GPT2CrossAttentionSharedLayerq_attn
+			else:
+				self.c_attn = gpt2SharedLayerModules.GPT2AttentionSharedLayerc_attn
+			self.c_proj = gpt2SharedLayerModules.GPT2AttentionSharedLayerc_proj
 		else:
-			self.c_attn = Conv1D(3 * self.embed_dim, self.embed_dim)
-		self.c_proj = Conv1D(self.embed_dim, self.embed_dim)
+			if self.is_cross_attention:
+				self.c_attn = Conv1D(2 * self.embed_dim, self.embed_dim)
+				self.q_attn = Conv1D(self.embed_dim, self.embed_dim)
+			else:
+				self.c_attn = Conv1D(3 * self.embed_dim, self.embed_dim)
+			self.c_proj = Conv1D(self.embed_dim, self.embed_dim)
 
 		self.attn_dropout = nn.Dropout(config.attn_pdrop)
 		self.resid_dropout = nn.Dropout(config.resid_pdrop)
@@ -438,11 +474,15 @@ class GPT2Attention(nn.Module):
 
 
 class GPT2MLP(nn.Module):
-	def __init__(self, intermediate_size, config):
+	def __init__(self, intermediate_size, config, gpt2SharedLayerModules=None):
 		super().__init__()
 		embed_dim = config.hidden_size
-		self.c_fc = Conv1D(intermediate_size, embed_dim)
-		self.c_proj = Conv1D(embed_dim, intermediate_size)
+		if(sharedLayerWeightsMLP):
+			self.c_fc = gpt2SharedLayerModules.GPT2MLPSharedLayerc_fc
+			self.c_proj = gpt2SharedLayerModules.GPT2MLPSharedLayerc_proj
+		else:
+			self.c_fc = Conv1D(intermediate_size, embed_dim)
+			self.c_proj = Conv1D(embed_dim, intermediate_size)
 		self.act = ACT2FN[config.activation_function]
 		self.dropout = nn.Dropout(config.resid_pdrop)
 
@@ -455,7 +495,7 @@ class GPT2MLP(nn.Module):
 
 
 class GPT2Block(nn.Module):
-	def __init__(self, config, layer_idx=None):
+	def __init__(self, config, layer_idx=None, gpt2SharedLayerModules=None):
 		super().__init__()
 		hidden_size = config.hidden_size
 		inner_dim = config.n_inner if config.n_inner is not None else 4 * hidden_size
@@ -465,11 +505,11 @@ class GPT2Block(nn.Module):
 		self.ln_2 = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
 
 		if config.add_cross_attention:
-			self.crossattention = GPT2Attention(config, is_cross_attention=True, layer_idx=layer_idx)
+			self.crossattention = GPT2Attention(config, is_cross_attention=True, layer_idx=layer_idx, gpt2SharedLayerModules=gpt2SharedLayerModules)
 			self.ln_cross_attn = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
 
 		if(transformerBlockMLPlayer or transformerBlockMLPlayerLast):
-			self.mlp = GPT2MLP(inner_dim, config)
+			self.mlp = GPT2MLP(inner_dim, config, gpt2SharedLayerModules=gpt2SharedLayerModules)
 			self.num_hidden_layers = config.num_hidden_layers
 			
 	def forward(
@@ -783,13 +823,17 @@ class GPT2Model(GPT2PreTrainedModel):
 		self.drop = nn.Dropout(config.embd_pdrop)
 		
 		if(recursiveLayers):
-			if(recursiveLayersEvalOverride):
-				numberUniqueLayers = recursiveLayersNumberIterationsEvalOverride
+			if(sharedLayerWeights):
+				gpt2SharedLayerModules = GPT2SharedLayerModules(config)
+				self.h = nn.ModuleList([GPT2Block(config, layer_idx=i, gpt2SharedLayerModules=gpt2SharedLayerModules) for i in range(config.num_hidden_layers)])
 			else:
-				numberUniqueLayers = config.num_hidden_layers
-			self.recursiveLayer = GPT2Block(config, layer_idx=0)
-			#does not support scale_attn_by_inverse_layer_idx (requires correct layer_idx)
-			self.h = nn.ModuleList([self.recursiveLayer for i in range(numberUniqueLayers)])
+				if(recursiveLayersEvalOverride):
+					numberUniqueLayers = recursiveLayersNumberIterationsEvalOverride
+				else:
+					numberUniqueLayers = config.num_hidden_layers
+				self.recursiveLayer = GPT2Block(config, layer_idx=0)
+				#does not support scale_attn_by_inverse_layer_idx (requires correct layer_idx)
+				self.h = nn.ModuleList([self.recursiveLayer for i in range(numberUniqueLayers)])
 		else:
 			self.h = nn.ModuleList([GPT2Block(config, layer_idx=i) for i in range(config.num_hidden_layers)])
 		

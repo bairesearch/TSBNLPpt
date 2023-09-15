@@ -25,19 +25,39 @@ from torch import nn
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 
 recursiveLayers = True
-transformerBlockMLPlayer = True	#default: True
-transformerBlockMLPlayerLast = False
+transformerBlockMLPlayer = True	#default: True	#apply all MLP layers
+transformerBlockMLPlayerLast = False	#default: False	#only apply last MLP layer (requires !transformerBlockMLPlayer)
 recursiveLayersEvalOverride = False
 if(recursiveLayersEvalOverride):
 	recursiveLayersNumberIterationsEvalOverride = 6
 	
+#initialise (dependent vars);
 sharedLayerWeights = False
+sharedLayerWeightsAttention = False
+sharedLayerWeightsMLP = False
+sharedLayerWeightsSelfAttention = False
+sharedLayerWeightsSelfOutput = False
+sharedLayerWeightsIntermediate = False
 sharedLayerWeightsOutput = False
 if(recursiveLayers):
 	sharedLayerWeights = False	#orig recursiveLayers implementation
 	if(sharedLayerWeights):
-		sharedLayerWeightsOutput = True	#share RobertaOutputSharedLayerOutput/RobertaSelfOutputSharedLayerOutput parameters also
-
+		sharedLayerWeightsAttention = True	#default: true
+		sharedLayerWeightsMLP = True	#default: true
+		if(sharedLayerWeightsAttention):
+			sharedLayerWeightsSelfAttention = True	#default: true
+			sharedLayerWeightsSelfOutput = True	#default: true
+		if(sharedLayerWeightsMLP):
+			sharedLayerWeightsIntermediate = True	#default: true
+			sharedLayerWeightsOutput = True	#default: true
+#legacy configuration support;
+sharedLayerWeightsWithOutputs = False
+sharedLayerWeightsWithoutOutputs = False
+if(sharedLayerWeightsSelfAttention and sharedLayerWeightsIntermediate and sharedLayerWeightsSelfOutput and sharedLayerWeightsOutput):
+	sharedLayerWeightsWithOutputs = True
+elif(sharedLayerWeightsSelfAttention and sharedLayerWeightsIntermediate and not sharedLayerWeightsSelfOutput and not sharedLayerWeightsOutput):
+	sharedLayerWeightsWithoutOutputs = True
+		
 integratedPythonModule = False	#custom/modeling_roberta_sharedLayerWeights.py code has been integrated into transformers python module
 
 if(not integratedPythonModule):
@@ -105,20 +125,26 @@ ROBERTA_PRETRAINED_MODEL_ARCHIVE_LIST = [
 ]
 
 
-class RobertaSharedLayerModules:
-	def __init__(self, config):
-		#precalculate these parameters locally (temp);
-		num_attention_heads = config.num_attention_heads
-		attention_head_size = int(config.hidden_size / config.num_attention_heads)
-		all_head_size = num_attention_heads * attention_head_size
-		
-		self.robertaSelfAttentionSharedLayerQuery = nn.Linear(config.hidden_size, all_head_size)
-		self.robertaSelfAttentionSharedLayerKey = nn.Linear(config.hidden_size, all_head_size)
-		self.robertaSelfAttentionSharedLayerValue = nn.Linear(config.hidden_size, all_head_size)
-		self.robertaIntermediateSharedLayerDense = nn.Linear(config.hidden_size, config.intermediate_size)
-		if(sharedLayerWeightsOutput):
-			self.RobertaOutputSharedLayerOutput = nn.Linear(config.intermediate_size, config.hidden_size)
-			self.RobertaSelfOutputSharedLayerOutput = nn.Linear(config.hidden_size, config.hidden_size) 
+if(sharedLayerWeights):
+	class RobertaSharedLayerModules:
+		def __init__(self, config):
+			#precalculate these parameters locally (temp);
+			num_attention_heads = config.num_attention_heads
+			attention_head_size = int(config.hidden_size / config.num_attention_heads)
+			all_head_size = num_attention_heads * attention_head_size
+
+			if(sharedLayerWeightsAttention):
+				if(sharedLayerWeightsSelfAttention):
+					self.robertaSelfAttentionSharedLayerQuery = nn.Linear(config.hidden_size, all_head_size)
+					self.robertaSelfAttentionSharedLayerKey = nn.Linear(config.hidden_size, all_head_size)
+					self.robertaSelfAttentionSharedLayerValue = nn.Linear(config.hidden_size, all_head_size)
+				if(sharedLayerWeightsSelfOutput):
+					self.robertaSelfOutputSharedLayerDense = nn.Linear(config.hidden_size, config.hidden_size) 
+			if(sharedLayerWeightsMLP):
+				if(sharedLayerWeightsIntermediate):
+					self.robertaIntermediateSharedLayerDense = nn.Linear(config.hidden_size, config.intermediate_size)
+				if(sharedLayerWeightsOutput):
+					self.robertaOutputSharedLayerDense = nn.Linear(config.intermediate_size, config.hidden_size)
 
 class RobertaEmbeddings(nn.Module):
 	"""
@@ -221,7 +247,7 @@ class RobertaSelfAttention(nn.Module):
 		self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
 		self.all_head_size = self.num_attention_heads * self.attention_head_size
 
-		if(sharedLayerWeights):
+		if(sharedLayerWeightsSelfAttention):
 			self.query = robertaSharedLayerModules.robertaSelfAttentionSharedLayerQuery
 			self.key = robertaSharedLayerModules.robertaSelfAttentionSharedLayerKey
 			self.value = robertaSharedLayerModules.robertaSelfAttentionSharedLayerValue
@@ -344,8 +370,8 @@ class RobertaSelfAttention(nn.Module):
 class RobertaSelfOutput(nn.Module):
 	def __init__(self, config, robertaSharedLayerModules=None):
 		super().__init__()
-		if(sharedLayerWeightsOutput):
-			self.dense = robertaSharedLayerModules.RobertaSelfOutputSharedLayerOutput
+		if(sharedLayerWeightsSelfOutput):
+			self.dense = robertaSharedLayerModules.robertaSelfOutputSharedLayerDense
 		else:
 			self.dense = nn.Linear(config.hidden_size, config.hidden_size)
 		self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
@@ -412,7 +438,7 @@ class RobertaAttention(nn.Module):
 class RobertaIntermediate(nn.Module):
 	def __init__(self, config, robertaSharedLayerModules=None):
 		super().__init__()
-		if(sharedLayerWeights):
+		if(sharedLayerWeightsIntermediate):
 			self.dense = robertaSharedLayerModules.robertaIntermediateSharedLayerDense
 		else:
 			self.dense = nn.Linear(config.hidden_size, config.intermediate_size)
@@ -432,7 +458,7 @@ class RobertaOutput(nn.Module):
 	def __init__(self, config, robertaSharedLayerModules=None):
 		super().__init__()
 		if(sharedLayerWeightsOutput):
-			self.dense = robertaSharedLayerModules.RobertaOutputSharedLayerOutput
+			self.dense = robertaSharedLayerModules.robertaOutputSharedLayerDense
 		else:
 			self.dense = nn.Linear(config.intermediate_size, config.hidden_size)
 		self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)

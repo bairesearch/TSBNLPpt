@@ -48,7 +48,8 @@ stateTestDataset = True	#requires reserveValidationSet
 
 if(recursiveLayers):
 	from modeling_roberta_recursiveLayers import sharedLayerWeights
-	from modeling_roberta_recursiveLayers import sharedLayerWeightsOutput
+	from modeling_roberta_recursiveLayers import sharedLayerWeightsWithOutputs
+	from modeling_roberta_recursiveLayers import sharedLayerWeightsWithoutOutputs
 	recursiveLayersNormaliseNumParameters = False	#default: False	#optional	#if use recursiveLayers normalise/equalise num of parameters with respect to !recursiveLayers
 	recursiveLayersNormaliseNumParameters2 = False	#optional
 	if(recursiveLayersNormaliseNumParameters):
@@ -89,17 +90,19 @@ if(not usePretrainedModelDebug):
 				hiddenLayerSizeMultiplier = numberOfHiddenLayers	#model size = 1.7GB
 			else:
 				if(sharedLayerWeights):
-					if(sharedLayerWeightsOutput):
+					if(sharedLayerWeightsWithOutputs):
 						if(recursiveLayersNormaliseNumParametersIntermediate):
 							hiddenLayerSizeMultiplier = (7/4)	#model size = 249MB	
 							#hiddenLayerSizeMultiplier = (5/3)	#~230MB	
 						else:
 							hiddenLayerSizeMultiplier = 2	#model size = ~255MB
-					else:
+					elif(sharedLayerWeightsWithoutOutputs):
 						if(recursiveLayersNormaliseNumParametersIntermediate):
 							hiddenLayerSizeMultiplier = (4/3)	#model size = 273MB
 						else:
 							hiddenLayerSizeMultiplier = 1.5	#model size = ~255MB
+					else:
+						printe("error: recursiveLayersNormaliseNumParameters:sharedLayerWeights currently requires sharedLayerWeightsWithOutputs or sharedLayerWeightsWithoutOutputs")
 				else:
 					hiddenLayerSizeMultiplier = (7/4)	#model size = ~250MB	#optimisation failure observed
 					#hiddenLayerSizeMultiplier = (11/6)	#model size = ~265MB	#optimisation failure observed
@@ -114,10 +117,12 @@ if(not usePretrainedModelDebug):
 			print("intermediateSize = ", intermediateSize)
 		else:
 			if(sharedLayerWeights):
-				if(sharedLayerWeightsOutput):
+				if(sharedLayerWeightsWithOutputs):
 					pass	#model size = ~120MB
-				else:
+				elif(sharedLayerWeightsWithoutOutputs):
 					pass	#model size = 176.7MB
+				else:
+					pass	#model size = unknown
 			else:
 				pass	#model size = 120.4MB
 	else:
@@ -470,4 +475,6 @@ if(__name__ == '__main__'):
 		if(stateTestDataset):
 			testDataset(tokenizer, paths)
 
-
+def printe(str):
+	print(str)
+	exit()

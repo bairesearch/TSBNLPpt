@@ -55,15 +55,17 @@ trainPartialDataset = False
 trainWithTrainer = False	#also trains using Trainer API: no eval performance output
 if(trainWithTrainer):
 	trainLoadFromCheckpoint = False
-
-stateTrainDataset = False
-stateTestDataset = True	#evaluate an existing model (do not train)
+else:
+	trainLoadFromPrevious = False	#optional (continue training) - incomplete (requires dataset training samples sync)
+	
+stateTrainDataset = True
+stateTestDataset = False	#evaluate an existing model (do not train)
 
 #configuration options;
 shuffleTrainDataset = False	#default: False #orig (< 24 June 2023): True  #False is used comparative tests
 saveTrainedModel = True	#save final model after completing 100% train
-batchSize = 16	#orig: 32
-numberOfHiddenLayers = 18	#default = 12	#12	#1
+batchSize = 16	#default: 16	#orig: 32
+numberOfHiddenLayers = 12	#default = 12	#12	#1
 recursiveLayersNormaliseNumParameters2 = False	#optional
 if(recursiveLayersNormaliseNumParameters2):
 	numberOfAttentionHeads = 28	#orig:24	#32
@@ -360,11 +362,7 @@ def get_grouped_params(model, no_decay=["bias", "LayerNorm.weight"]):
 
 model = GPT2LMHeadModel(config)
 
-model_size = sum(t.numel() for t in model.parameters())
-print(f"GPT-2 size: {model_size/1000**2:.1f}M parameters")
-
 optimizer = AdamW(get_grouped_params(model), lr=5e-4)
-
 
 #accelerator = Accelerator(fp16=True)	#TypeError: __init__() got an unexpected keyword argument 'fp16'
 accelerator = Accelerator()
@@ -410,9 +408,16 @@ def evaluate(model, eval_dataloader):
 		print({"loss/eval": eval_loss, "perplexity": eval_perplexity})
 	return eval_loss, eval_perplexity
 
-
 if(stateTrainDataset):
-	model, optimizer, train_dataloader, eval_dataloader = accelerator.prepare(model, optimizer, train_dataloader, eval_dataloader)
+	if(trainLoadFromPrevious):
+		model = GPT2LMHeadModel.from_pretrained("./codeparrot-ds-accelerate")	#local_files_only=True
+		model_size = sum(t.numel() for t in model.parameters())
+		print(f"GPT-2 size: {model_size/1000**2:.1f}M parameters")
+		model, optimizer, train_dataloader, eval_dataloader = accelerator.prepare(model, optimizer, train_dataloader, eval_dataloader)
+	else:
+		model_size = sum(t.numel() for t in model.parameters())
+		print(f"GPT-2 size: {model_size/1000**2:.1f}M parameters")
+		model, optimizer, train_dataloader, eval_dataloader = accelerator.prepare(model, optimizer, train_dataloader, eval_dataloader)
 
 	num_train_epochs = 1
 	num_update_steps_per_epoch = len(train_dataloader)
