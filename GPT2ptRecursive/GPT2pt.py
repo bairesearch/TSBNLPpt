@@ -62,18 +62,41 @@ stateTrainDataset = True
 stateTestDataset = False	#evaluate an existing model (do not train)
 
 #configuration options;
-shuffleTrainDataset = False	#default: False #orig (< 24 June 2023): True  #False is used comparative tests
+shuffleTrainDataset = False	#default: False #orig (< 24 June 2023): True  #False is used for comparative tests
 saveTrainedModel = True	#save final model after completing 100% train
-batchSize = 16	#default: 16	#orig: 32
+batchSize = 16	#16	#default: 16	#orig: 32
 numberOfHiddenLayers = 12	#default = 12	#12	#1
-recursiveLayersNormaliseNumParameters2 = False	#optional
-if(recursiveLayersNormaliseNumParameters2):
-	numberOfAttentionHeads = 28	#orig:24	#32
-	hiddenLayerSizeTransformer = 1792	#orig:1536	#2048
+from modeling_gpt2 import recursiveLayers
+numberOfAttentionHeads = 12
+hiddenLayerSizeTransformer = 768
+intermediateSizeTransformer = hiddenLayerSizeTransformer*4	#default GPT2 specification	#3072
+if(recursiveLayers):
+	from modeling_gpt2 import sharedLayerWeightsMLPonly
+	recursiveLayersNormaliseNumParameters = False	#optional
+	if(recursiveLayersNormaliseNumParameters):
+		recursiveLayersNormaliseNumParametersIntermediateOnly = False	#optional	#only normalise intermediary MLP layer
+		if(recursiveLayersNormaliseNumParametersIntermediateOnly):
+			#requires high GPU memory ~24GB (although parameter size is equivalent, memory size is much higher for the purposes of storing gradient calculation data in every layer) 	#trial only; batchSize = 4	 
+			if(sharedLayerWeightsMLPonly):
+				intermediateLayerSizeMultiplier = 12	#model size = 477MB	#hiddenLayerSize 768, intermediateSize 36864
+			else:
+				intermediateLayerSizeMultiplier = 18		#model size = 486MB	#hiddenLayerSize 768, intermediateSize 55296
+			intermediateSizeTransformer *= intermediateLayerSizeMultiplier
+		else:
+			recursiveLayersNormaliseNumParametersIntermediate = True	#implied true as intermediate_size = 4*hidden_size
+			if(sharedLayerWeightsMLPonly):	
+				numberOfAttentionHeads = 18	#16	#20
+				hiddenLayerSizeTransformer = 1152	#1024	#1280	#model size = 510MB
+			else:
+				numberOfAttentionHeads = 28	#24	#32
+				hiddenLayerSizeTransformer = 1792	#1536	#2048	#model size = 496MB
+	else:
+		pass
+		#model size = 176MB
 else:
-	numberOfAttentionHeads = 12
-	hiddenLayerSizeTransformer = 768
-
+	pass
+	#model size = 486MB
+	
 printAccuracy = True
 if(printAccuracy):
 	import math 
@@ -185,6 +208,7 @@ config = AutoConfig.from_pretrained(
 	num_hidden_layers=numberOfHiddenLayers,
 	num_attention_heads=numberOfAttentionHeads,
 	hidden_size=hiddenLayerSizeTransformer,
+	n_inner=intermediateSizeTransformer
 )
 
 tokenizer.pad_token = tokenizer.eos_token
@@ -370,6 +394,9 @@ accelerator = Accelerator()
 def evaluateAndSave(model, accelerator, output_dir, eval_dataloader):
 	evaluate(model, eval_dataloader)
 	model.train()
+	saveModel(model, accelerator, output_dir, eval_dataloader)
+
+def saveModel(model, accelerator, output_dir, eval_dataloader):
 	accelerator.wait_for_everyone()
 	unwrapped_model = accelerator.unwrap_model(model)
 	unwrapped_model.save_pretrained(output_dir, save_function=accelerator.save)
@@ -437,6 +464,8 @@ if(stateTrainDataset):
 	gradient_accumulation_steps = 8
 	eval_steps = 5_000	#5_000	#10
 
+	saveModel(model, accelerator, output_dir, eval_dataloader)
+	
 	model.train()
 	completed_steps = 0
 	for epoch in range(num_train_epochs):

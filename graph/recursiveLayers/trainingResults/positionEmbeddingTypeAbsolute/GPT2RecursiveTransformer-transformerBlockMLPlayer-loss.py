@@ -15,7 +15,7 @@ l7, = plt.plot(x, y7, color='yellow', label='lay=1r12 MLPlayerLast (176MB)')
 l8, = plt.plot(x, y8, color='navy', label='lay=1r12 sharedLayerWeightsMLP (276MB)')
 
 plt.xticks(np.arange(min(x), max(x)+0.5, 0.5))
-plt.yticks(np.arange(0, 5.0+0.1, 0.5))
+plt.yticks(np.arange(0, 4.0+0.1, 0.5))
 
 plt.xlabel("number of codeparrot-ds train samples (x1280000)")
 plt.ylabel("Causal LM test loss")

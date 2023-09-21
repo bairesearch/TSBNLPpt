@@ -47,6 +47,10 @@ if(recursiveLayers):
 	if(sharedLayerWeights):
 		sharedLayerWeightsAttention = True	#default: true
 		sharedLayerWeightsMLP = True	#default: true
+sharedLayerWeightsMLPonly = False
+if(sharedLayerWeights):
+	if(sharedLayerWeightsMLP and not sharedLayerWeightsAttention):
+		sharedLayerWeightsMLPonly = True
 
 if(not integratedPythonModule):
 	from transformers.activations import ACT2FN
@@ -501,7 +505,7 @@ class GPT2Block(nn.Module):
 		inner_dim = config.n_inner if config.n_inner is not None else 4 * hidden_size
 
 		self.ln_1 = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
-		self.attn = GPT2Attention(config, layer_idx=layer_idx)
+		self.attn = GPT2Attention(config, layer_idx=layer_idx, gpt2SharedLayerModules=gpt2SharedLayerModules)
 		self.ln_2 = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
 
 		if config.add_cross_attention:

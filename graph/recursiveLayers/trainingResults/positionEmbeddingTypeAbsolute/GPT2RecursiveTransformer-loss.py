@@ -17,7 +17,7 @@ l5, = plt.plot(x, y5, color='lightgreen', label='lay=1, hid=768, head=24 (norm:4
 #l6, = plt.plot(x, y6, color='hotpink', label='lay=1r12, hid=1536, head=24 (norm:407MB)')
 
 plt.xticks(np.arange(min(x), max(x)+0.5, 0.5))
-plt.yticks(np.arange(0, 5.0+0.1, 0.5))
+plt.yticks(np.arange(0, 4.0+0.1, 0.5))
 
 plt.xlabel("number of codeparrot-ds train samples (x1280000)")
 plt.ylabel("Causal LM test loss")

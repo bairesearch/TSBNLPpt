@@ -48,16 +48,17 @@ stateTestDataset = True	#requires reserveValidationSet
 
 if(recursiveLayers):
 	from modeling_roberta_recursiveLayers import sharedLayerWeights
-	from modeling_roberta_recursiveLayers import sharedLayerWeightsWithOutputs
-	from modeling_roberta_recursiveLayers import sharedLayerWeightsWithoutOutputs
-	recursiveLayersNormaliseNumParameters = False	#default: False	#optional	#if use recursiveLayers normalise/equalise num of parameters with respect to !recursiveLayers
-	recursiveLayersNormaliseNumParameters2 = False	#optional
+	from modeling_roberta_recursiveLayers import sharedLayerWeightsMLPonly
+	if(sharedLayerWeights):
+		from modeling_roberta_recursiveLayers import sharedLayerWeightsWithOutputs
+		from modeling_roberta_recursiveLayers import sharedLayerWeightsWithoutOutputs
+	recursiveLayersNormaliseNumParameters = True	#optional	#if use recursiveLayers normalise/equalise num of parameters with respect to !recursiveLayers
 	if(recursiveLayersNormaliseNumParameters):
-		recursiveLayersNormaliseNumParametersIntermediate = True	#normalise intermediateSize parameters also
+		recursiveLayersNormaliseNumParametersIntermediate = True	#normalise intermediateSize parameters also	#default:true
+		recursiveLayersNormaliseNumParametersIntermediateOnly = False	#only normalise intermediary MLP layer	#requires recursiveLayersNormaliseNumParametersIntermediate
 		recursiveLayersNormaliseNumParametersDebug = False	#normalise hiddenLayerSize/numberOfAttentionHeads with respect to orig numberOfHiddenLayers instead of number of parameters (model size)
 else:
 	recursiveLayersNormaliseNumParameters = False	#mandatory
-	
 
 trainStartEpoch = 0	#start epoch of training (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
 trainNumberOfEpochs = 1	#default: 10	#number of epochs to train (for production typically train x epochs at a time)
@@ -81,37 +82,33 @@ if(not usePretrainedModelDebug):
 
 	if(recursiveLayers):
 		#same model size irrespective of useSingleHiddenLayerDebug
-		if(recursiveLayersNormaliseNumParameters2):
-			#model size = ~263MB
-			numberOfAttentionHeads = 24
-			hiddenLayerSize = 1536
-		elif(recursiveLayersNormaliseNumParameters):
+		if(recursiveLayersNormaliseNumParameters):
 			if(recursiveLayersNormaliseNumParametersDebug):
 				hiddenLayerSizeMultiplier = numberOfHiddenLayers	#model size = 1.7GB
-			else:
-				if(sharedLayerWeights):
-					if(sharedLayerWeightsWithOutputs):
-						if(recursiveLayersNormaliseNumParametersIntermediate):
-							hiddenLayerSizeMultiplier = (7/4)	#model size = 249MB	
-							#hiddenLayerSizeMultiplier = (5/3)	#~230MB	
-						else:
-							hiddenLayerSizeMultiplier = 2	#model size = ~255MB
-					elif(sharedLayerWeightsWithoutOutputs):
-						if(recursiveLayersNormaliseNumParametersIntermediate):
-							hiddenLayerSizeMultiplier = (4/3)	#model size = 273MB
-						else:
-							hiddenLayerSizeMultiplier = 1.5	#model size = ~255MB
-					else:
-						printe("error: recursiveLayersNormaliseNumParameters:sharedLayerWeights currently requires sharedLayerWeightsWithOutputs or sharedLayerWeightsWithoutOutputs")
+			elif(recursiveLayersNormaliseNumParametersIntermediateOnly):
+				if(sharedLayerWeightsMLPonly):
+					hiddenLayerSizeMultiplier = 1
+					intermediateLayerSizeMultiplier = 6	#model size = 257MB	#hiddenLayerSize 768, intermediateSize 18432
 				else:
-					hiddenLayerSizeMultiplier = (7/4)	#model size = ~250MB	#optimisation failure observed
-					#hiddenLayerSizeMultiplier = (11/6)	#model size = ~265MB	#optimisation failure observed
-					#hiddenLayerSizeMultiplier = 2.0	#model size = ~280MB	#optimisation failure observed
-					
+					hiddenLayerSizeMultiplier = 1
+					intermediateLayerSizeMultiplier = 8	#model size = 248MB	#hiddenLayerSize 768, intermediateSize 24576
+			elif(sharedLayerWeightsWithoutOutputs):
+				if(recursiveLayersNormaliseNumParametersIntermediate):
+					hiddenLayerSizeMultiplier = (4/3)	#model size = 273MB
+					intermediateLayerSizeMultiplier = hiddenLayerSizeMultiplier
+				else:
+					hiddenLayerSizeMultiplier = 1.5	#model size = ~255MB
+			else:	#elif((not sharedLayerWeights) or sharedLayerWeightsWithOutputs):
+				if(recursiveLayersNormaliseNumParametersIntermediate):
+					hiddenLayerSizeMultiplier = (7/4)	#model size = 249MB		#hiddenLayerSize 1344, intermediateSize 5376
+					intermediateLayerSizeMultiplier = hiddenLayerSizeMultiplier
+				else:
+					hiddenLayerSizeMultiplier = 2	#model size = ~255-263MB	#hiddenLayerSize 1536, numberOfAttentionHeads 24
+				
 			hiddenLayerSize = round(hiddenLayerSize*hiddenLayerSizeMultiplier)
 			numberOfAttentionHeads = round(numberOfAttentionHeads*hiddenLayerSizeMultiplier)	#or: round(numberOfAttentionHeads)
 			if(recursiveLayersNormaliseNumParametersIntermediate):
-				intermediateSize = round(intermediateSize*hiddenLayerSizeMultiplier)
+				intermediateSize = round(intermediateSize*intermediateLayerSizeMultiplier)
 			print("hiddenLayerSize = ", hiddenLayerSize)
 			print("numberOfAttentionHeads = ", numberOfAttentionHeads)
 			print("intermediateSize = ", intermediateSize)

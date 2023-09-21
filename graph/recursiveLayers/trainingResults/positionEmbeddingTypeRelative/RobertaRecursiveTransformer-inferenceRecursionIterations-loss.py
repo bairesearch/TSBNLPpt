@@ -16,6 +16,7 @@ l10, = plt.plot(x, y10, color='darkviolet', label='lay=1r6, test:1r12, hid=768, 
 
 plt.xticks(np.arange(min(x), max(x)+1, 1.0))
 plt.yticks(np.arange(0, 0.5+0.1, 0.1))
+plt.ylim([0, 0.51])
 
 plt.xlabel("number of oscar en train samples (x1000000)")
 plt.ylabel("Masked LM test loss")

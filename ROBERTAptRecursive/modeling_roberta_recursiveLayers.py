@@ -50,14 +50,18 @@ if(recursiveLayers):
 		if(sharedLayerWeightsMLP):
 			sharedLayerWeightsIntermediate = True	#default: true
 			sharedLayerWeightsOutput = True	#default: true
-#legacy configuration support;
-sharedLayerWeightsWithOutputs = False
-sharedLayerWeightsWithoutOutputs = False
-if(sharedLayerWeightsSelfAttention and sharedLayerWeightsIntermediate and sharedLayerWeightsSelfOutput and sharedLayerWeightsOutput):
-	sharedLayerWeightsWithOutputs = True
-elif(sharedLayerWeightsSelfAttention and sharedLayerWeightsIntermediate and not sharedLayerWeightsSelfOutput and not sharedLayerWeightsOutput):
-	sharedLayerWeightsWithoutOutputs = True
-		
+#shared layer configuration;
+sharedLayerWeightsMLPonly = False
+if(sharedLayerWeights):
+	sharedLayerWeightsWithOutputs = False
+	sharedLayerWeightsWithoutOutputs = False
+	if(sharedLayerWeightsSelfAttention and sharedLayerWeightsIntermediate and sharedLayerWeightsSelfOutput and sharedLayerWeightsOutput):
+		sharedLayerWeightsWithOutputs = True
+	elif(sharedLayerWeightsSelfAttention and sharedLayerWeightsIntermediate and not sharedLayerWeightsSelfOutput and not sharedLayerWeightsOutput):
+		sharedLayerWeightsWithoutOutputs = True
+	if(sharedLayerWeightsMLP and not sharedLayerWeightsAttention):
+		sharedLayerWeightsMLPonly = True
+	
 integratedPythonModule = False	#custom/modeling_roberta_sharedLayerWeights.py code has been integrated into transformers python module
 
 if(not integratedPythonModule):
