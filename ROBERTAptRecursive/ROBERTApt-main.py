@@ -32,6 +32,11 @@ See RobertaForMaskedLM tutorial;
 
 from modeling_roberta_recursiveLayers import recursiveLayers
 
+relativeFolderLocations = False
+
+legacyDataloaderCode1 = False
+legacyDataloaderCode0 = False
+
 #user config vars:
 
 useSmallDatasetDebug = False
@@ -49,10 +54,9 @@ stateTestDataset = True	#requires reserveValidationSet
 if(recursiveLayers):
 	from modeling_roberta_recursiveLayers import sharedLayerWeights
 	from modeling_roberta_recursiveLayers import sharedLayerWeightsMLPonly
-	if(sharedLayerWeights):
-		from modeling_roberta_recursiveLayers import sharedLayerWeightsWithOutputs
-		from modeling_roberta_recursiveLayers import sharedLayerWeightsWithoutOutputs
-	recursiveLayersNormaliseNumParameters = True	#optional	#if use recursiveLayers normalise/equalise num of parameters with respect to !recursiveLayers
+	from modeling_roberta_recursiveLayers import sharedLayerWeightsWithOutputs
+	from modeling_roberta_recursiveLayers import sharedLayerWeightsWithoutOutputs
+	recursiveLayersNormaliseNumParameters = False	#optional	#if use recursiveLayers normalise/equalise num of parameters with respect to !recursiveLayers
 	if(recursiveLayersNormaliseNumParameters):
 		recursiveLayersNormaliseNumParametersIntermediate = True	#normalise intermediateSize parameters also	#default:true
 		recursiveLayersNormaliseNumParametersIntermediateOnly = False	#only normalise intermediary MLP layer	#requires recursiveLayersNormaliseNumParametersIntermediate
@@ -73,7 +77,7 @@ if(not usePretrainedModelDebug):
 	if(useSingleHiddenLayerDebug):
 		numberOfHiddenLayers = 1
 	else:
-		numberOfHiddenLayers = 6	#default: 6
+		numberOfHiddenLayers = 6	#6	#default: 6
 
 	vocabularySize = 30522	#default: 30522
 	hiddenLayerSize = 768	#default: 768
@@ -145,14 +149,23 @@ fractionOfMaskedTokens = 0.15
 
 if(useSmallBatchSizeDebug):
 	batchSize = 1	#use small batch size to enable simultaneous execution (GPU ram limited) 
-	
+
 numberOfSamplesPerDataFile = 10000
 numberOfSamplesPerDataFileLast = 423
 dataFileLastSampleIndex = 30423
 
+dataPreprocessedFileNameStart = "/text_"
+dataPreprocessedFileNameEnd = ".txt"
+
 #storage location vars (requires 4TB harddrive);
-downloadCacheFolder = '/media/rich/datasets/cache'
-dataFolder = '/media/rich/datasets/data'
+downloadCacheFolderName = 'cache'
+dataFolderName = 'data'
+if(relativeFolderLocations):
+	downloadCacheFolder = downloadCacheFolderName
+	dataFolder = dataFolderName
+else:
+	downloadCacheFolder = '/media/rich/datasets/cache'
+	dataFolder = '/media/rich/datasets/data'
 modelFolderName = 'model'
 
 modelSaveNumberOfBatches = 1000	#resave model after x training batches
@@ -239,26 +252,51 @@ def addMaskTokens(input_ids):
 		input_ids[i, selection] = customMaskTokenID
 	return input_ids
 
-def dataFileIndexListContainsLastFile(dataFileIndexList, paths):
-	containsDataFileLastSample = False
-	for dataFileIndex in dataFileIndexList:
-		path = paths[dataFileIndex]
-		if(str(dataFileLastSampleIndex) in path):
-			containsDataFileLastSample = True
-	return containsDataFileLastSample
+if(legacyDataloaderCode1):
+	def dataFileIndexListContainsLastFile(dataFileIndexList, paths):
+		containsDataFileLastSample = False
+		for dataFileIndex in dataFileIndexList:
+			path = paths[dataFileIndex]
+			if(str(dataFileLastSampleIndex) in path):
+				containsDataFileLastSample = True
+		return containsDataFileLastSample
+else:
+	def getNumberOfDocumentsHDD(numberOfDocumentsEst, dataFileIndexList):
+		containsDataFileLastDocument = dataFileIndexListContainsLastDocument(dataFileIndexList)
+		numberOfDocuments = len(dataFileIndexList)*numberOfSamplesPerDataFile
+		if(containsDataFileLastDocument):
+			numberOfDocuments = numberOfDocuments-numberOfSamplesPerDataFile + datasetNumberOfSamplesPerDataFileLast
+		return numberOfDocuments
+
+	def dataFileIndexListContainsLastDocument(dataFileIndexList):
+		containsDataFileLastDocument = False
+		for dataFileIndex in dataFileIndexList:
+			if(str(dataFileIndex) == dataFileLastSampleIndex):
+				containsDataFileLastDocument = True
+		return containsDataFileLastDocument
+if(not legacyDataloaderCode0):
+	def generateDataFileName(fileIndex):
+		fileName = dataFolder + dataPreprocessedFileNameStart + str(fileIndex) + dataPreprocessedFileNameEnd
+		return fileName
 	
 class DatasetHDD(torch.utils.data.Dataset):
-	def __init__(self, dataFileIndexList, paths):
+	def __init__(self, numberOfDocumentsEst, dataFileIndexList, paths):
 		self.dataFileIndexList = dataFileIndexList
 		self.paths = paths
 		self.encodings = None
-		self.containsDataFileLastSample = dataFileIndexListContainsLastFile(dataFileIndexList, paths)
+		if(legacyDataloaderCode1):
+			self.containsDataFileLastSample = dataFileIndexListContainsLastFile(dataFileIndexList, paths)
+		else:
+			self.numberOfDocuments = getNumberOfDocumentsHDD(numberOfDocumentsEst, dataFileIndexList)
 
 	def __len__(self):
-		numberOfSamples = len(self.dataFileIndexList)*numberOfSamplesPerDataFile
-		if(self.containsDataFileLastSample):
-			numberOfSamples = numberOfSamples-numberOfSamplesPerDataFile + numberOfSamplesPerDataFileLast
-		return numberOfSamples
+		if(legacyDataloaderCode1):
+			numberOfSamples = len(self.dataFileIndexList)*numberOfSamplesPerDataFile
+			if(self.containsDataFileLastSample):
+				numberOfSamples = numberOfSamples-numberOfSamplesPerDataFile + numberOfSamplesPerDataFileLast
+			return numberOfSamples
+		else:
+			return self.numberOfDocuments
 
 	def __getitem__(self, i):
 	
@@ -271,8 +309,11 @@ class DatasetHDD(torch.utils.data.Dataset):
 					
 		if(loadNextDataFile):
 			
-			path = self.paths[dataFileIndex]
-
+			if(legacyDataloaderCode0):
+				path = self.paths[dataFileIndex]
+			else:
+				path = generateDataFileName(dataFileIndex)	#OLD: self.paths[dataFileIndex] - requires dataFolder to contain all dataFiles up to dataFileIndex
+			
 			with open(path, 'r', encoding='utf-8') as fp:
 				lines = fp.read().split('\n')
 
@@ -298,12 +339,14 @@ class DatasetHDD(torch.utils.data.Dataset):
 		
 		return {key: tensor[itemIndexInSample] for key, tensor in self.encodings.items()}
 
-def createDataLoader(tokenizer, paths, pathIndexMin, pathIndexMax):
+def createDataLoader(tokenizer, paths, numberOfDataFiles, pathIndexMin, pathIndexMax):
 
 	dataFileIndexList = list(range(pathIndexMin, pathIndexMax))
 	print("dataFileIndexList = ", dataFileIndexList)
 	
-	dataset = DatasetHDD(dataFileIndexList, paths)
+	numberOfDocuments = numberOfDataFiles*numberOfSamplesPerDataFile	#equivalent number of documents (assuming it were loading data files)
+	
+	dataset = DatasetHDD(numberOfDocuments, dataFileIndexList, paths)
 
 	loader = torch.utils.data.DataLoader(dataset, batch_size=batchSize, shuffle=False)	#shuffle not supported by DatasetHDD
 
@@ -347,7 +390,9 @@ def trainDataset(tokenizer, paths):
 		pathIndexMax = int(numberOfDataFiles*trainSplitFraction)
 	else:
 		pathIndexMax = pathIndexMin+trainNumberOfDataFiles
-	loader = createDataLoader(tokenizer, paths, pathIndexMin, pathIndexMax)
+	loader = createDataLoader(tokenizer, paths, trainNumberOfDataFiles, pathIndexMin, pathIndexMax)
+	
+	model.save_pretrained(modelFolderName)
 	
 	for epoch in range(trainStartEpoch, trainStartEpoch+trainNumberOfEpochs):
 		loop = tqdm(loader, leave=True)
@@ -389,7 +434,7 @@ def testDataset(tokenizer, paths):
 
 	pathIndexMin = int(numberOfDataFiles*trainSplitFraction)
 	pathIndexMax = pathIndexMin+testNumberOfDataFiles		
-	loader = createDataLoader(tokenizer, paths, pathIndexMin, pathIndexMax)
+	loader = createDataLoader(tokenizer, paths, testNumberOfDataFiles, pathIndexMin, pathIndexMax)
 		
 	for epoch in range(trainStartEpoch, trainStartEpoch+trainNumberOfEpochs):
 		loop = tqdm(loader, leave=True)

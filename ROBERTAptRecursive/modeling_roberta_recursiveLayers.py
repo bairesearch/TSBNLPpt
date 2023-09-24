@@ -52,9 +52,9 @@ if(recursiveLayers):
 			sharedLayerWeightsOutput = True	#default: true
 #shared layer configuration;
 sharedLayerWeightsMLPonly = False
+sharedLayerWeightsWithOutputs = False
+sharedLayerWeightsWithoutOutputs = False
 if(sharedLayerWeights):
-	sharedLayerWeightsWithOutputs = False
-	sharedLayerWeightsWithoutOutputs = False
 	if(sharedLayerWeightsSelfAttention and sharedLayerWeightsIntermediate and sharedLayerWeightsSelfOutput and sharedLayerWeightsOutput):
 		sharedLayerWeightsWithOutputs = True
 	elif(sharedLayerWeightsSelfAttention and sharedLayerWeightsIntermediate and not sharedLayerWeightsSelfOutput and not sharedLayerWeightsOutput):

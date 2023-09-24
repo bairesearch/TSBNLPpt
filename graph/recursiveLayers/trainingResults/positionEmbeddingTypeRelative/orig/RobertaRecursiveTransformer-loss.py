@@ -11,8 +11,8 @@ y5 = np.array([0.5, 0.36026279502511027, 0.34200011098980904, 0.3328074170410633
 l1, = plt.plot(x, y1, color='green', label='lay=1, hid=768, head=12 (120MB)')
 l2, = plt.plot(x, y2, color='blue', label='lay=6, hid=768, head=12 (256MB)')
 l3, = plt.plot(x, y3, color='red', label='lay=1r6, hid=768, head=12 (120MB)')
-l4, = plt.plot(x, y4, color='pink', label='lay=1r6, hid=1536, head=24 (non-intermediate norm:263MB)', linestyle='dashed')
-l5, = plt.plot(x, y5, color='lightgreen', label='lay=1, hid=1536, head=24 (non-intermediate norm:263MB)', linestyle='dashed')
+l4, = plt.plot(x, y4, color='pink', label='lay=1r6, hid=1536, head=24 (norm:263MB)')
+l5, = plt.plot(x, y5, color='lightgreen', label='lay=1, hid=1536, head=24 (norm:263MB)')
 
 plt.xticks(np.arange(min(x), max(x)+1, 1.0))
 plt.yticks(np.arange(0, 0.5+0.1, 0.1))
