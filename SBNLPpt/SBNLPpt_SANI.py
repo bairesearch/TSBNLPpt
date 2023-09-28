@@ -55,7 +55,7 @@ def propagate(device, model, tokenizer, batch):
 	loss, outputs, predictionMask = model(labels, attentionMask, device)
 	
 	if(SBNLPpt_SANImodel.calculateVocabPredictionHeadLoss):
-		accuracy = SBNLPpt_data.getAccuracy(tokenizer, inputIDs, predictionMask, labels, outputs)
+		accuracy = SBNLPpt_data.getAccuracy(inputIDs, predictionMask, labels, outputs)
 	else:
 		accuracy = 0.0
 	

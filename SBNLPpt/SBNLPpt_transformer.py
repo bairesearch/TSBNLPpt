@@ -116,7 +116,7 @@ def propagate(device, model, tokenizer, batch):
 		
 	outputs = model(inputIDs, attention_mask=attentionMask, labels=labels)
 
-	accuracy = SBNLPpt_data.getAccuracy(tokenizer, inputIDs, attentionMask, labels, outputs)
+	accuracy = SBNLPpt_data.getAccuracy(inputIDs, attentionMask, labels, outputs)
 	loss = outputs.loss
 	
 	return loss, accuracy
