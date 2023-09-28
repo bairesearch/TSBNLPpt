@@ -31,7 +31,7 @@ from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 recursiveLayers = True
 transformerBlockMLPlayer = True	#default: True	#apply all MLP layers
 transformerBlockMLPlayerLast = False	#default: False	#only apply last MLP layer (requires !transformerBlockMLPlayer)
-positionEmbeddingType = "relative_key"	#"absolute"	#default:"relative_key"	#orig (May 2023):"absolute"	#relative is required for recursive transformer performance
+positionEmbeddingType = "absolute"	#"absolute" or "relative_key"	#default:"absolute"	#orig (May 2023):"absolute"	#relative_key implementation from ROBERTApt (requires optimisation)
 transformerAttentionHeadPermutationsType = "none"	#mandatory (transformerAttentionHeadPermutations not currently supported)
 relativeTimeEmbeddings = False	#mandatory (relativeTimeEmbeddings not currently supported)
 integratedPythonModule = False	#custom/modeling_roberta_sharedLayerWeights.py code has been integrated into transformers python module

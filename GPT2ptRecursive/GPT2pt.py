@@ -52,6 +52,9 @@ from transformers import get_scheduler
 
 #debug options;
 trainPartialDataset = False
+if(trainPartialDataset):
+	trainPartialDatasetTrainSamples = 5000	#max 606720	#50000
+	trainPartialDatasetValidSamples = 3322 #max 3322	#500	#50	
 trainWithTrainer = False	#also trains using Trainer API: no eval performance output
 if(trainWithTrainer):
 	trainLoadFromCheckpoint = False
@@ -62,6 +65,7 @@ stateTrainDataset = True
 stateTestDataset = False	#evaluate an existing model (do not train)
 
 #configuration options;
+num_train_epochs = 1	#default: 1	#10 - measure max training performance over multiple epochs
 shuffleTrainDataset = False	#default: False #orig (< 24 June 2023): True  #False is used for comparative tests
 saveTrainedModel = True	#save final model after completing 100% train
 batchSize = 16	#16	#default: 16	#orig: 32
@@ -137,11 +141,15 @@ ds_train = load_dataset("huggingface-course/codeparrot-ds-train", split="train")
 ds_valid = load_dataset("huggingface-course/codeparrot-ds-valid", split="validation")
 print("end load dataset")
 
+print("Number of rows in the ds_train:", ds_train.num_rows)
+print("Number of rows in the ds_valid:", ds_valid.num_rows)
+
 if(trainPartialDataset):
+	#if(shuffleTrainDataset): consider restoring "ds_.shuffle().select"
 	raw_datasets = DatasetDict(
 		{
-			"train": ds_train.shuffle().select(range(50000)),
-			"valid": ds_valid.shuffle().select(range(500))	#50
+			"train": ds_train.select(range(trainPartialDatasetTrainSamples)),
+			"valid": ds_valid.select(range(trainPartialDatasetValidSamples))
 		}
 	)
 else:
@@ -238,7 +246,7 @@ if(trainWithTrainer):
 		eval_steps=5_000,
 		logging_steps=5_000,
 		gradient_accumulation_steps=8,
-		num_train_epochs=1,
+		num_train_epochs=num_train_epochs,
 		weight_decay=0.1,
 		warmup_steps=1_000,
 		lr_scheduler_type="cosine",
@@ -446,7 +454,6 @@ if(stateTrainDataset):
 		print(f"GPT-2 size: {model_size/1000**2:.1f}M parameters")
 		model, optimizer, train_dataloader, eval_dataloader = accelerator.prepare(model, optimizer, train_dataloader, eval_dataloader)
 
-	num_train_epochs = 1
 	num_update_steps_per_epoch = len(train_dataloader)
 	num_training_steps = num_train_epochs * num_update_steps_per_epoch
 

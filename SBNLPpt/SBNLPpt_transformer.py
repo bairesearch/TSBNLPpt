@@ -28,10 +28,16 @@ import torch as pt
 from SBNLPpt_globalDefs import *
 import SBNLPpt_data
 from transformers import RobertaConfig
-if(usePretrainedModelDebug):
-	from transformers import RobertaForMaskedLM
+if(useMaskedLM):
+	if(usePretrainedModelDebug):
+		from transformers import RobertaForMaskedLM as RobertaLM
+	else:
+		from SBNLPpt_transformerModel import RobertaForMaskedLM as RobertaLM
 else:
-	from SBNLPpt_transformerModel import RobertaForMaskedLM
+	if(usePretrainedModelDebug):
+		from transformers import RobertaForCausalLM as RobertaLM
+	else:
+		from SBNLPpt_transformerModel import RobertaForCausalLM as RobertaLM
 import SBNLPpt_transformerModel
 import SBNLPpt_transformerTokenMemoryBank
 if(transformerPOSembeddings):
@@ -80,7 +86,7 @@ def createModel(vocabularySize):
 		type_vocab_size=1,
 		position_embedding_type=positionEmbeddingType,
 	)
-	model = RobertaForMaskedLM(config)
+	model = RobertaLM(config)
 	return model
 
 def loadModel():
@@ -110,8 +116,7 @@ def propagate(device, model, tokenizer, batch):
 		
 	outputs = model(inputIDs, attention_mask=attentionMask, labels=labels)
 
-	predictionMask = pt.where(inputIDs==customMaskTokenID, 1.0, 0.0)	#maskTokenIndexFloat = maskTokenIndex.float()	
-	accuracy = SBNLPpt_data.getAccuracy(tokenizer, inputIDs, predictionMask, labels, outputs.logits)
+	accuracy = SBNLPpt_data.getAccuracy(tokenizer, inputIDs, attentionMask, labels, outputs)
 	loss = outputs.loss
 	
 	return loss, accuracy

@@ -32,10 +32,12 @@ See RobertaForMaskedLM tutorial;
 
 from modeling_roberta_recursiveLayers import recursiveLayers
 
+useMaskedLM = True
+
 relativeFolderLocations = False
 
-legacyDataloaderCode1 = False
-legacyDataloaderCode0 = False
+legacyDataloaderCode0 = True
+legacyDataloaderCode1 = True
 
 #user config vars:
 
@@ -49,7 +51,7 @@ useSmallTokenizerTrainNumberOfFiles = True	#used during rapid testing only (FUTU
 statePreprocessDataset = False	#only required once
 stateTrainTokenizer = False	#only required once
 stateTrainDataset = True
-stateTestDataset = True	#requires reserveValidationSet
+stateTestDataset = False	#requires reserveValidationSet
 
 if(recursiveLayers):
 	from modeling_roberta_recursiveLayers import sharedLayerWeights
@@ -135,17 +137,20 @@ if(not usePretrainedModelDebug):
 reserveValidationSet = True	#reserves a fraction of the data for validation
 trainSplitFraction = 0.9	#90% train data, 10% test data
 
-if(recursiveLayersNormaliseNumParameters):
-	if(recursiveLayersNormaliseNumParametersDebug):
-		batchSize = 1
-		learningRate = 1.25e5 #1e-4/8=0.0000125
-	else:
-		batchSize = 8	#recursiveLayersNormaliseNumParameters uses ~16x more GPU RAM than !recursiveLayersNormaliseNumParameters, and ~2x more GPU RAM than !recursiveLayers
-		learningRate = 1e-4
-else:
-	batchSize = 8  #default: 16	#8 and 16 train at approx same rate (16 uses more GPU ram)	#depends on GPU RAM	#with 12GB GPU RAM, batchSize max = 16
+if(useMaskedLM):
+	batchSize = 8	#recursiveLayersNormaliseNumParameters uses ~16x more GPU RAM than !recursiveLayersNormaliseNumParameters, and ~2x more GPU RAM than !recursiveLayers
 	learningRate = 1e-4
-fractionOfMaskedTokens = 0.15
+else:
+	if(recursiveLayersNormaliseNumParameters):
+		if(recursiveLayersNormaliseNumParametersDebug):
+			batchSize = 1
+			learningRate = 1.25e5 #1e-4/8=0.0000125
+		else:
+			batchSize = 8	#recursiveLayersNormaliseNumParameters uses ~16x more GPU RAM than !recursiveLayersNormaliseNumParameters, and ~2x more GPU RAM than !recursiveLayers
+			learningRate = 1e-4
+	else:
+		batchSize = 8  #default: 16	#8 and 16 train at approx same rate (16 uses more GPU ram)	#depends on GPU RAM	#with 12GB GPU RAM, batchSize max = 16
+		learningRate = 1e-4
 
 if(useSmallBatchSizeDebug):
 	batchSize = 1	#use small batch size to enable simultaneous execution (GPU ram limited) 
@@ -180,10 +185,16 @@ import os
 from transformers import RobertaTokenizer
 import torch
 from transformers import RobertaConfig
-if(recursiveLayers):
-	from modeling_roberta_recursiveLayers import RobertaForMaskedLM
+if(useMaskedLM):
+	if(recursiveLayers):
+		from modeling_roberta_recursiveLayers import RobertaForMaskedLM as RobertaLM
+	else:
+		from transformers import RobertaForMaskedLM as RobertaLM
 else:
-	from transformers import RobertaForMaskedLM
+	if(recursiveLayers):
+		from modeling_roberta_recursiveLayers import RobertaForCausalLM as RobertaLM
+	else:
+		from transformers import RobertaForCausalLM as RobertaLM
 from transformers import AdamW
 from transformers import pipeline
 from torchsummary import summary
@@ -195,9 +206,10 @@ torch.set_printoptions(profile="full")
 #store models to large datasets partition cache folder (not required)
 #os.environ['TRANSFORMERS_CACHE'] = '/media/rich/datasets/models/'	#select partition with 3TB+ disk space
 
-transformerMaxNumTokens = 512
-customMaskTokenID = 4	#3
-
+sequenceMaxNumTokens = 512
+if(useMaskedLM):
+	customMaskTokenID = 4	#3
+	fractionOfMaskedTokens = 0.15
 
 def downloadDataset():
 	if(useSmallDatasetDebug):
@@ -241,7 +253,7 @@ def trainTokenizer(paths):
 	return tokenizer
 
 def loadTokenizer():	
-	tokenizer = RobertaTokenizer.from_pretrained(modelFolderName, max_len=transformerMaxNumTokens)
+	tokenizer = RobertaTokenizer.from_pretrained(modelFolderName, max_len=sequenceMaxNumTokens)
 	return tokenizer
 
 def addMaskTokens(input_ids):
@@ -317,20 +329,23 @@ class DatasetHDD(torch.utils.data.Dataset):
 			with open(path, 'r', encoding='utf-8') as fp:
 				lines = fp.read().split('\n')
 
-			#sample = tokenizer(lines, max_length=transformerMaxNumTokens, padding='max_length', truncation=True)
+			#sample = tokenizer(lines, max_length=sequenceMaxNumTokens, padding='max_length', truncation=True)
 			#labels = torch.tensor([x for x in sample['input_ids']])
 			#mask = torch.tensor([x for x in sample['attention_mask']])
 			#input_ids = labels.detach().clone() 
 			#input_ids = addMaskTokens(input_ids)
 			
-			sample = tokenizer(lines, max_length=transformerMaxNumTokens, padding='max_length', truncation=True, return_tensors='pt')
+			sample = tokenizer(lines, max_length=sequenceMaxNumTokens, padding='max_length', truncation=True, return_tensors='pt')
 			input_ids = []
 			mask = []
 			labels = []
 			labels.append(sample.input_ids)
 			mask.append(sample.attention_mask)
 			sample_input_ids = (sample.input_ids).detach().clone()
-			input_ids.append(addMaskTokens(sample_input_ids))
+			if(useMaskedLM):
+				input_ids.append(addMaskTokens(sample_input_ids))
+			else:
+				input_ids.append(sample_input_ids)	#labels are redundant (equivalent to input_ids)
 			input_ids = torch.cat(input_ids)
 			mask = torch.cat(mask)
 			labels = torch.cat(labels)
@@ -362,12 +377,12 @@ def trainDataset(tokenizer, paths):
 
 	if(continueTrainingModel()):
 		print("loading existing model")
-		model = RobertaForMaskedLM.from_pretrained(modelFolderName, local_files_only=True)
+		model = RobertaLM.from_pretrained(modelFolderName, local_files_only=True)
 	else:
 		print("creating new model")
 		config = RobertaConfig(
 			vocab_size=vocabularySize,  #sync with tokenizer vocab_size
-			max_position_embeddings=(transformerMaxNumTokens+2),
+			max_position_embeddings=(sequenceMaxNumTokens+2),
 			hidden_size=hiddenLayerSize,
 			num_attention_heads=numberOfAttentionHeads,
 			num_hidden_layers=numberOfHiddenLayers,
@@ -375,7 +390,7 @@ def trainDataset(tokenizer, paths):
 			type_vocab_size=1,
 			position_embedding_type=positionEmbeddingType
 		)
-		model = RobertaForMaskedLM(config)
+		model = RobertaLM(config)
 	
 	device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 	model.to(device)
@@ -421,9 +436,9 @@ def trainDataset(tokenizer, paths):
 def testDataset(tokenizer, paths):
 
 	if(usePretrainedModelDebug):
-		model = RobertaForMaskedLM.from_pretrained("roberta-base")
+		model = RobertaLM.from_pretrained("roberta-base")
 	else:
-		model = RobertaForMaskedLM.from_pretrained(modelFolderName, local_files_only=True)
+		model = RobertaLM.from_pretrained(modelFolderName, local_files_only=True)
 
 	device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 	model.to(device)
@@ -472,33 +487,58 @@ def getTokenizerLength(tokenizer):
 	return len(tokenizer)	#Size of the full vocabulary with the added token	#https://github.com/huggingface/transformers/blob/main/src/transformers/tokenization_utils.py
 
 def getAccuracy(tokenizer, input_ids, attention_mask, labels, outputs):
+	if(useMaskedLM):
+		return getAccuracyMaskedLM(tokenizer, input_ids, labels, outputs)
+	else:
+		return getAccuracyCausalLM(input_ids, outputs)
+		
+def getAccuracyMaskedLM(tokenizer, input_ids, labels, outputs):
+	predictionMask = torch.where(input_ids==customMaskTokenID, 1.0, 0.0)	#maskTokenIndexFloat = maskTokenIndex.float()		#orig: maskTokenIndex
+
 	tokenizerNumberTokens = getTokenizerLength(tokenizer)
 	
 	tokenLogits = (outputs.logits).detach()
 
-	tokenLogitsTopIndex = torch.topk(tokenLogits, accuracyTopN).indices	#get highest n scored entries from dictionary	#tokenLogitsTopIndex.shape = batchSize, transformerMaxNumTokens, accuracyTopN
-	
-	maskTokenIndex = torch.where(input_ids==customMaskTokenID, 1.0, 0.0)	#maskTokenIndexFloat = maskTokenIndex.float()	
-
+	tokenLogitsTopIndex = torch.topk(tokenLogits, accuracyTopN).indices	#get highest n scored entries from dictionary	#tokenLogitsTopIndex.shape = batchSize, sequenceMaxNumTokens, accuracyTopN
+			
 	if(accuracyTopN == 1):
-		tokenLogitsTopIndex = torch.squeeze(tokenLogitsTopIndex)	#tokenLogitsTopIndex[:, :, 1] -> #tokenLogitsTopIndex[:, :] 	
-
+		tokenLogitsTopIndex = torch.squeeze(tokenLogitsTopIndex)	#tokenLogitsTopIndex[:, :, 1] -> #tokenLogitsTopIndex[:, :]
 		comparison = (tokenLogitsTopIndex == labels).float()
-		comparisonMasked = torch.multiply(comparison, maskTokenIndex)
-		accuracy = (torch.sum(comparisonMasked)/torch.sum(maskTokenIndex)).cpu().numpy() 
+		comparisonMasked = torch.multiply(comparison, predictionMask)
+		accuracy = (torch.sum(comparisonMasked)/torch.sum(predictionMask)).cpu().numpy()	#accuracy.item()
 	else:
 		labelsExpanded = torch.unsqueeze(labels, dim=2)
-		labelsExpanded = labelsExpanded.expand(-1, -1, tokenLogitsTopIndex.shape[2])	#labels broadcasted to [batchSize, transformerMaxNumTokens, accuracyTopN]
+		labelsExpanded = labelsExpanded.expand(-1, -1, tokenLogitsTopIndex.shape[2])	#labels broadcasted to [batchSize, sequenceMaxNumTokens, accuracyTopN]
 		comparison = (tokenLogitsTopIndex == labelsExpanded).float()
-		maskTokenIndexExpanded = torch.unsqueeze(maskTokenIndex, dim=2)
-		maskTokenIndexExpanded = maskTokenIndexExpanded.expand(-1, -1, tokenLogitsTopIndex.shape[2])	#maskTokenIndex broadcasted to [batchSize, transformerMaxNumTokens, accuracyTopN]
-		comparisonMasked = torch.multiply(comparison, maskTokenIndexExpanded)	#maskTokenIndex broadcasted to [batchSize, transformerMaxNumTokens, accuracyTopN]
-		accuracy = (torch.sum(comparisonMasked)/torch.sum(maskTokenIndex)).cpu().numpy() 	#or torch.sum(comparisonMasked)/(torch.sum(maskTokenIndexExpanded)/accuracyTopN)
-	
-	#accuracy2 = (torch.mean(comparisonMasked)).cpu().numpy()
-	
+		predictionMaskExpanded = torch.unsqueeze(predictionMask, dim=2)
+		predictionMaskExpanded = predictionMaskExpanded.expand(-1, -1, tokenLogitsTopIndex.shape[2])	#predictionMask broadcasted to [batchSize, sequenceMaxNumTokens, accuracyTopN]
+		comparisonMasked = torch.multiply(comparison, predictionMaskExpanded)	#predictionMask broadcasted to [batchSize, sequenceMaxNumTokens, accuracyTopN]
+		accuracy = (torch.sum(comparisonMasked)/torch.sum(predictionMask)).cpu().numpy() 	#or torch.sum(comparisonMasked)/(torch.sum(predictionMaskExpanded)/accuracyTopN)	#accuracy.item()
+		
 	return accuracy
-
+	
+def getAccuracyCausalLM(inputs, outputs):	
+	#based on SBNLPpt_data:getAccuracyMaskedLM
+	logits = outputs.logits.detach()
+	#print("inputs.shape = ", inputs.shape)
+	#print("logits.shape = ", logits.shape)
+	# Shift so that tokens < n predict n
+	shift_labels = inputs[..., 1:].contiguous()
+	shift_logits = logits[..., :-1, :].contiguous()
+	tokenLogitsTopIndex = torch.topk(shift_logits, accuracyTopN).indices	#get highest n scored entries from dictionary	#tokenLogitsTopIndex.shape = batchSize, sequenceMaxNumTokens, accuracyTopN
+	if(accuracyTopN == 1):
+		tokenLogitsTopIndex = torch.squeeze(tokenLogitsTopIndex)	#tokenLogitsTopIndex[:, :, 1] -> #tokenLogitsTopIndex[:, :] 	
+		comparison = (tokenLogitsTopIndex == shift_labels).float()
+		accuracy = torch.mean(comparison)
+	else:
+		labelsExpanded = torch.unsqueeze(shift_labels, dim=2)
+		labelsExpanded = labelsExpanded.expand(-1, -1, tokenLogitsTopIndex.shape[2])	#labels broadcasted to [batchSize, sequenceMaxNumTokens, accuracyTopN]
+		comparison = (tokenLogitsTopIndex == labelsExpanded).float()
+		accuracy = torch.mean(comparison)
+	accuracy = accuracy.item()
+	#print("accuracy = ", accuracy)
+	return accuracy
+	
 if(__name__ == '__main__'):
 	if(statePreprocessDataset):
 		dataset = downloadDataset()

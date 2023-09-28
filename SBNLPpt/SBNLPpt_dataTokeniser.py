@@ -114,10 +114,13 @@ def getSampleEncodings(useMLM, input_ids, attention_mask, batched):
 	labels.append(input_ids)
 	mask.append(attention_mask)
 	sampleInputIDs = (input_ids).detach().clone()
-	if(batched):
-		sampleInputIDsMasked = addMaskTokensBatch(useMLM, sampleInputIDs)
+	if(useMaskedLM):
+		if(batched):
+			sampleInputIDsMasked = addMaskTokensBatch(useMLM, sampleInputIDs)
+		else:
+			sampleInputIDsMasked = addMaskTokensSample(useMLM, sampleInputIDs)
 	else:
-		sampleInputIDsMasked = addMaskTokensSample(useMLM, sampleInputIDs)
+		sampleInputIDsMasked = sampleInputIDs
 	inputIDs.append(sampleInputIDsMasked)
 	inputIDs = torch.cat(inputIDs)
 	mask = torch.cat(mask)

@@ -49,28 +49,58 @@ def createDataLoader(useMLM, tokenizer, dataElements, trainNumberOfDataFiles, pa
 	return SBNLPpt_dataLoader.createDataLoader(useMLM, tokenizer, dataElements, trainNumberOfDataFiles, pathIndexMin, pathIndexMax)
 
 #can be moved to SBNLP algorithm common file:
-def getAccuracy(tokenizer, inputIDs, predictionMask, labels, outputs):
+
+def getAccuracy(tokenizer, input_ids, attention_mask, labels, outputs):
+	if(useMaskedLM):
+		return getAccuracyMaskedLM(tokenizer, input_ids, labels, outputs)
+	else:
+		return getAccuracyCausalLM(input_ids, outputs)
+		
+def getAccuracyMaskedLM(tokenizer, inputIDs, labels, outputs):
+	predictionMask = torch.where(inputIDs==customMaskTokenID, 1.0, 0.0)	#maskTokenIndexFloat = maskTokenIndex.float()	#orig: maskTokenIndex
+
 	tokenizerNumberTokens = SBNLPpt_dataTokeniser.getTokenizerLength(tokenizer)
 	
-	tokenLogits = outputs.detach()
+	tokenLogits = (outputs.logits).detach()
 
 	tokenLogitsTopIndex = torch.topk(tokenLogits, accuracyTopN).indices	#get highest n scored entries from dictionary	#tokenLogitsTopIndex.shape = batchSize, sequenceMaxNumTokens, accuracyTopN
 	
 	if(accuracyTopN == 1):
-		tokenLogitsTopIndex = torch.squeeze(tokenLogitsTopIndex)	#tokenLogitsTopIndex[:, :, 1] -> #tokenLogitsTopIndex[:, :] 	
-
+		tokenLogitsTopIndex = torch.squeeze(tokenLogitsTopIndex)	#tokenLogitsTopIndex[:, :, 1] -> #tokenLogitsTopIndex[:, :]
 		comparison = (tokenLogitsTopIndex == labels).float()
 		comparisonMasked = torch.multiply(comparison, predictionMask)
-		accuracy = (torch.sum(comparisonMasked)/torch.sum(predictionMask)).cpu().numpy() 
+		accuracy = (torch.sum(comparisonMasked)/torch.sum(predictionMask)).cpu().numpy()
 	else:
 		labelsExpanded = torch.unsqueeze(labels, dim=2)
 		labelsExpanded = labelsExpanded.expand(-1, -1, tokenLogitsTopIndex.shape[2])	#labels broadcasted to [batchSize, sequenceMaxNumTokens, accuracyTopN]
 		comparison = (tokenLogitsTopIndex == labelsExpanded).float()
-		maskTokenIndexExpanded = torch.unsqueeze(predictionMask, dim=2)
-		maskTokenIndexExpanded = maskTokenIndexExpanded.expand(-1, -1, tokenLogitsTopIndex.shape[2])	#predictionMask broadcasted to [batchSize, sequenceMaxNumTokens, accuracyTopN]
-		comparisonMasked = torch.multiply(comparison, maskTokenIndexExpanded)	#predictionMask broadcasted to [batchSize, sequenceMaxNumTokens, accuracyTopN]
-		accuracy = (torch.sum(comparisonMasked)/torch.sum(predictionMask)).cpu().numpy() 	#or torch.sum(comparisonMasked)/(torch.sum(maskTokenIndexExpanded)/accuracyTopN)
+		predictionMaskExpanded = torch.unsqueeze(predictionMask, dim=2)
+		predictionMaskExpanded = predictionMaskExpanded.expand(-1, -1, tokenLogitsTopIndex.shape[2])	#predictionMask broadcasted to [batchSize, sequenceMaxNumTokens, accuracyTopN]
+		comparisonMasked = torch.multiply(comparison, predictionMaskExpanded)	#predictionMask broadcasted to [batchSize, sequenceMaxNumTokens, accuracyTopN]
+		accuracy = (torch.sum(comparisonMasked)/torch.sum(predictionMask)).cpu().numpy() 	#or torch.sum(comparisonMasked)/(torch.sum(predictionMaskExpanded)/accuracyTopN)
 	
 	#accuracy2 = (torch.mean(comparisonMasked)).cpu().numpy()
 	
 	return accuracy
+
+def getAccuracyCausalLM(inputs, outputs):	
+	#based on SBNLPpt_data:getAccuracyMaskedLM
+	logits = outputs.logits.detach()
+	logits = outputs.logits.detach()
+	# Shift so that tokens < n predict n
+	shift_labels = inputs[..., 1:].contiguous()
+	shift_logits = logits[..., :-1, :].contiguous()
+	tokenLogitsTopIndex = torch.topk(shift_logits, accuracyTopN).indices	#get highest n scored entries from dictionary	#tokenLogitsTopIndex.shape = batchSize, sequenceMaxNumTokens, accuracyTopN
+	if(accuracyTopN == 1):
+		tokenLogitsTopIndex = torch.squeeze(tokenLogitsTopIndex)	#tokenLogitsTopIndex[:, :, 1] -> #tokenLogitsTopIndex[:, :] 	
+		comparison = (tokenLogitsTopIndex == shift_labels).float()
+		accuracy = torch.mean(comparison)
+	else:
+		labelsExpanded = torch.unsqueeze(shift_labels, dim=2)
+		labelsExpanded = labelsExpanded.expand(-1, -1, tokenLogitsTopIndex.shape[2])	#labels broadcasted to [batchSize, sequenceMaxNumTokens, accuracyTopN]
+		comparison = (tokenLogitsTopIndex == labelsExpanded).float()
+		accuracy = torch.mean(comparison)
+	accuracy = accuracy.item()
+	#print("accuracy = ", accuracy)
+	return accuracy
+	

@@ -27,6 +27,7 @@ else:
 import math
 import pynvml
 
+useMaskedLM = True
 
 #recursive algorithm selection:
 useAlgorithmTransformer = True
@@ -479,8 +480,9 @@ modelSaveNumberOfBatches = 1000	#resave model after x training batches
 
 
 #transformer only;
-customMaskTokenID = 4	#3
-fractionOfMaskedTokens = 0.15
+if(useMaskedLM):
+	customMaskTokenID = 4	#3
+	fractionOfMaskedTokens = 0.15
 
 #Warning: if change vocabularySize, require reexecution of python SBNLPpt_GIAdefinePOSwordLists.py (LRPdata/NLTK/wordlistVector*.txt)
 if(useEffectiveFullwordTokenizer):
@@ -495,7 +497,8 @@ accuracyTopN = 1	#default: 1	#>= 1	#calculates batch accuracy based on top n dic
 
 specialTokens = ['<s>', '<pad>', '</s>', '<unk>', '<mask>']
 specialTokenPadding = '<pad>'
-specialTokenMask = '<mask>'
+if(useMaskedLM):
+	specialTokenMask = '<mask>'
 
 if(createOrderedDataset):
 	if(sequenceMaxNumTokens > sequenceMaxNumTokensDefault):	#eg debugCompareTokenMemoryBankPerformance and sequenceMaxNumTokens=1024
