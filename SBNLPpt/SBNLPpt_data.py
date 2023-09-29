@@ -81,8 +81,6 @@ def getAccuracyWithPredictionMask(labels, tokenLogits, predictionMask):
 	if(accuracyTopN == 1):
 		tokenLogitsTopIndex = torch.squeeze(tokenLogitsTopIndex)	#tokenLogitsTopIndex[:, :, 1] -> #tokenLogitsTopIndex[:, :]
 		comparison = (tokenLogitsTopIndex == labels).float()
-		#print("comparison = ", comparison)
-		#print("predictionMask = ", predictionMask)
 		comparisonMasked = torch.multiply(comparison, predictionMask)
 		accuracy = (torch.sum(comparisonMasked)/torch.sum(predictionMask)).cpu().numpy()	#accuracy.item()
 	else:

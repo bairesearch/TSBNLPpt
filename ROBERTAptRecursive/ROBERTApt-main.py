@@ -388,7 +388,8 @@ def trainDataset(tokenizer, paths):
 			num_hidden_layers=numberOfHiddenLayers,
 			intermediate_size=intermediateSize,
 			type_vocab_size=1,
-			position_embedding_type=positionEmbeddingType
+			position_embedding_type=positionEmbeddingType,
+			is_decoder=True
 		)
 		model = RobertaLM(config)
 	
@@ -503,8 +504,6 @@ def getAccuracyCausalLM(inputs, outputs, attention_mask):
 	#based on SBNLPpt_data:getAccuracyMaskedLM
 	predictionMask = attention_mask[:, 1:]
 	logits = outputs.logits.detach()
-	#print("inputs.shape = ", inputs.shape)
-	#print("logits.shape = ", logits.shape)
 	# Shift so that tokens < n predict n
 	shift_labels = inputs[..., 1:].contiguous()
 	shift_logits = logits[..., :-1, :].contiguous()

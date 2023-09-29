@@ -85,6 +85,7 @@ def createModel(vocabularySize):
 		intermediate_size=intermediateSize,
 		type_vocab_size=1,
 		position_embedding_type=positionEmbeddingType,
+		is_decoder=True,
 	)
 	model = RobertaLM(config)
 	return model
