@@ -6,7 +6,7 @@ y1 = np.array([0, 0.24316118257284164, np.nan, np.nan, np.nan])
 y2 = np.array([0, 0.31380176396012305, np.nan, np.nan, np.nan])
 y3 = np.array([0, 0.30387136477828025, np.nan, np.nan, np.nan])
 y4 = np.array([0, np.nan, np.nan, np.nan, np.nan])
-y5 = np.array([0, np.nan, np.nan, np.nan, np.nan])
+y5 = np.array([0, 0.2571000176203251, np.nan, np.nan, np.nan])
 
 l1, = plt.plot(x, y1, color='green', label='lay=1, hid=768, head=12 (120MB)')
 l2, = plt.plot(x, y2, color='blue', label='lay=6, hid=768, head=12 (256MB)')

@@ -27,7 +27,9 @@ else:
 import math
 import pynvml
 
-useMaskedLM = True
+useMaskedLM = False
+
+legacyDataloaderCode2 = False	#wo patch SBNLPpt_dataTokeniser:getSampleEncodings to calculate labels = addLabelsPredictionMaskTokens (convert paddingTokenID [1] to labelPredictionMaskTokenID [-100])
 
 #recursive algorithm selection:
 useAlgorithmTransformer = True
@@ -483,6 +485,9 @@ modelSaveNumberOfBatches = 1000	#resave model after x training batches
 if(useMaskedLM):
 	customMaskTokenID = 4	#3
 	fractionOfMaskedTokens = 0.15
+if(not legacyDataloaderCode2):
+	paddingTokenID = 1
+	labelPredictionMaskTokenID = -100	#https://huggingface.co/docs/transformers/model_doc/roberta#transformers.RobertaForCausalLM.forward.labels
 
 #Warning: if change vocabularySize, require reexecution of python SBNLPpt_GIAdefinePOSwordLists.py (LRPdata/NLTK/wordlistVector*.txt)
 if(useEffectiveFullwordTokenizer):
@@ -560,7 +565,8 @@ if(useAlgorithmTransformer):
 			#normalisation;
 			recursiveLayersNormaliseNumParameters = False	#default: False	#optional	#if use recursiveLayers normalise/equalise num of parameters with respect to !recursiveLayers	#legacy
 			if(recursiveLayersNormaliseNumParameters):
-				recursiveLayersNormaliseNumParametersIntermediate = True	#normalise intermediateSize parameters also	#default:true
+				recursiveLayersNormaliseNumParametersAttentionHeads = True	#default: true
+				recursiveLayersNormaliseNumParametersIntermediate = True	#default: true	#normalise intermediateSize parameters also
 				recursiveLayersNormaliseNumParametersIntermediateOnly = False	#only normalise intermediary MLP layer	#requires recursiveLayersNormaliseNumParametersIntermediate
 		else:
 			recursiveLayersNormaliseNumParameters = False	#mandatory
@@ -603,7 +609,8 @@ if(useAlgorithmTransformer):
 						hiddenLayerSizeMultiplier = 2	#model size = ~255-263MB	#hiddenLayerSize 1536, numberOfAttentionHeads 24
 
 				hiddenLayerSize = round(hiddenLayerSize*hiddenLayerSizeMultiplier)
-				numberOfAttentionHeads = round(numberOfAttentionHeads*hiddenLayerSizeMultiplier)	#or: round(numberOfAttentionHeads)
+				if(recursiveLayersNormaliseNumParametersAttentionHeads):
+					numberOfAttentionHeads = round(numberOfAttentionHeads*hiddenLayerSizeMultiplier)	#or: round(numberOfAttentionHeads)
 				if(recursiveLayersNormaliseNumParametersIntermediate):
 					intermediateSize = round(intermediateSize*intermediateLayerSizeMultiplier)
 				print("hiddenLayerSize = ", hiddenLayerSize)

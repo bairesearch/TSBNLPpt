@@ -111,7 +111,10 @@ def getSampleEncodings(useMLM, input_ids, attention_mask, batched):
 	inputIDs = []
 	mask = []
 	labels = []
-	labels.append(input_ids)
+	if(legacyDataloaderCode2):
+		labels.append(input_ids)
+	else:
+		labels.append(addLabelsPredictionMaskTokens(input_ids))
 	mask.append(attention_mask)
 	sampleInputIDs = (input_ids).detach().clone()
 	if(useMaskedLM):
@@ -128,6 +131,13 @@ def getSampleEncodings(useMLM, input_ids, attention_mask, batched):
 	encodings = {'inputIDs': inputIDs, 'attentionMask': mask, 'labels': labels}
 	return encodings
 
+def addLabelsPredictionMaskTokens(input_ids):
+	mask_arr = (input_ids == paddingTokenID)
+	mask_arr = mask_arr*(labelPredictionMaskTokenID-paddingTokenID)
+	labels = input_ids + mask_arr
+	#print("labels = ", labels)
+	return labels
+	
 def addMaskTokensBatch(useMLM, inputIDs):
 	for i in range(inputIDs.shape[0]):
 		inputIDs[i] = addMaskTokensSample(useMLM, inputIDs[i])

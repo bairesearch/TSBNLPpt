@@ -32,12 +32,13 @@ See RobertaForMaskedLM tutorial;
 
 from modeling_roberta_recursiveLayers import recursiveLayers
 
-useMaskedLM = True
+useMaskedLM = False
 
 relativeFolderLocations = False
 
-legacyDataloaderCode0 = True
-legacyDataloaderCode1 = True
+legacyDataloaderCode0 = False
+legacyDataloaderCode1 = False
+legacyDataloaderCode2 = False	#wo patch SBNLPpt_dataTokeniser:getSampleEncodings to calculate labels = addLabelsPredictionMaskTokens (convert paddingTokenID [1] to labelPredictionMaskTokenID [-100])
 
 #user config vars:
 
@@ -51,7 +52,7 @@ useSmallTokenizerTrainNumberOfFiles = True	#used during rapid testing only (FUTU
 statePreprocessDataset = False	#only required once
 stateTrainTokenizer = False	#only required once
 stateTrainDataset = True
-stateTestDataset = False	#requires reserveValidationSet
+stateTestDataset = True	#requires reserveValidationSet
 
 if(recursiveLayers):
 	from modeling_roberta_recursiveLayers import sharedLayerWeights
@@ -60,8 +61,9 @@ if(recursiveLayers):
 	from modeling_roberta_recursiveLayers import sharedLayerWeightsWithoutOutputs
 	recursiveLayersNormaliseNumParameters = False	#optional	#if use recursiveLayers normalise/equalise num of parameters with respect to !recursiveLayers
 	if(recursiveLayersNormaliseNumParameters):
-		recursiveLayersNormaliseNumParametersIntermediate = True	#normalise intermediateSize parameters also	#default:true
-		recursiveLayersNormaliseNumParametersIntermediateOnly = False	#only normalise intermediary MLP layer	#requires recursiveLayersNormaliseNumParametersIntermediate
+		recursiveLayersNormaliseNumParametersAttentionHeads = True	#default: true
+		recursiveLayersNormaliseNumParametersIntermediate = True	#default: true	#normalise intermediateSize parameters also	
+		recursiveLayersNormaliseNumParametersIntermediateOnly = False	#default: false	#only normalise intermediary MLP layer	#requires recursiveLayersNormaliseNumParametersIntermediate
 		recursiveLayersNormaliseNumParametersDebug = False	#normalise hiddenLayerSize/numberOfAttentionHeads with respect to orig numberOfHiddenLayers instead of number of parameters (model size)
 else:
 	recursiveLayersNormaliseNumParameters = False	#mandatory
@@ -79,7 +81,7 @@ if(not usePretrainedModelDebug):
 	if(useSingleHiddenLayerDebug):
 		numberOfHiddenLayers = 1
 	else:
-		numberOfHiddenLayers = 6	#6	#default: 6
+		numberOfHiddenLayers = 6	#default: 6
 
 	vocabularySize = 30522	#default: 30522
 	hiddenLayerSize = 768	#default: 768
@@ -112,7 +114,8 @@ if(not usePretrainedModelDebug):
 					hiddenLayerSizeMultiplier = 2	#model size = ~255-263MB	#hiddenLayerSize 1536, numberOfAttentionHeads 24
 				
 			hiddenLayerSize = round(hiddenLayerSize*hiddenLayerSizeMultiplier)
-			numberOfAttentionHeads = round(numberOfAttentionHeads*hiddenLayerSizeMultiplier)	#or: round(numberOfAttentionHeads)
+			if(recursiveLayersNormaliseNumParametersAttentionHeads):
+				numberOfAttentionHeads = round(numberOfAttentionHeads*hiddenLayerSizeMultiplier)	#or: round(numberOfAttentionHeads)
 			if(recursiveLayersNormaliseNumParametersIntermediate):
 				intermediateSize = round(intermediateSize*intermediateLayerSizeMultiplier)
 			print("hiddenLayerSize = ", hiddenLayerSize)
@@ -154,6 +157,7 @@ else:
 
 if(useSmallBatchSizeDebug):
 	batchSize = 1	#use small batch size to enable simultaneous execution (GPU ram limited) 
+#batchSize = 4
 
 numberOfSamplesPerDataFile = 10000
 numberOfSamplesPerDataFileLast = 423
@@ -210,6 +214,9 @@ sequenceMaxNumTokens = 512
 if(useMaskedLM):
 	customMaskTokenID = 4	#3
 	fractionOfMaskedTokens = 0.15
+if(not legacyDataloaderCode2):
+	paddingTokenID = 1
+	labelPredictionMaskTokenID = -100	#https://huggingface.co/docs/transformers/model_doc/roberta#transformers.RobertaForCausalLM.forward.labels
 
 def downloadDataset():
 	if(useSmallDatasetDebug):
@@ -255,6 +262,13 @@ def trainTokenizer(paths):
 def loadTokenizer():	
 	tokenizer = RobertaTokenizer.from_pretrained(modelFolderName, max_len=sequenceMaxNumTokens)
 	return tokenizer
+
+def addLabelsPredictionMaskTokens(input_ids):
+	mask_arr = (input_ids == paddingTokenID)
+	mask_arr = mask_arr*(labelPredictionMaskTokenID-paddingTokenID)
+	labels = input_ids + mask_arr
+	#print("labels = ", labels)
+	return labels
 
 def addMaskTokens(input_ids):
 	rand = torch.rand(input_ids.shape)
@@ -339,7 +353,10 @@ class DatasetHDD(torch.utils.data.Dataset):
 			input_ids = []
 			mask = []
 			labels = []
-			labels.append(sample.input_ids)
+			if(legacyDataloaderCode2):
+				labels.append(sample.input_ids)
+			else:
+				labels.append(addLabelsPredictionMaskTokens(sample.input_ids))
 			mask.append(sample.attention_mask)
 			sample_input_ids = (sample.input_ids).detach().clone()
 			if(useMaskedLM):
@@ -514,6 +531,9 @@ def getAccuracyCausalLM(inputs, outputs, attention_mask):
 
 def getAccuracyWithPredictionMask(labels, tokenLogits, predictionMask):	
 	tokenLogitsTopIndex = torch.topk(tokenLogits, accuracyTopN).indices	#get highest n scored entries from dictionary	#tokenLogitsTopIndex.shape = batchSize, sequenceMaxNumTokens, accuracyTopN
+	#print("tokenLogitsTopIndex = ", tokenLogitsTopIndex)
+	#print("labels = ", labels)
+	#print("predictionMask = ", predictionMask)
 	if(accuracyTopN == 1):
 		tokenLogitsTopIndex = torch.squeeze(tokenLogitsTopIndex)	#tokenLogitsTopIndex[:, :, 1] -> #tokenLogitsTopIndex[:, :]
 		comparison = (tokenLogitsTopIndex == labels).float()
