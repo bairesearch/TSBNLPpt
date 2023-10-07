@@ -33,10 +33,15 @@ See RobertaForMaskedLM tutorial;
 from modeling_roberta_recursiveLayers import recursiveLayers
 
 useMaskedLM = False
+useTrainWarmup = False	#orig: False (may be required for recursiveLayersNormaliseNumParameters)
+if(useTrainWarmup):
+	warmupSteps = 4000
+	warmupLearningRateStart = 1e-7
+	warmupLearningRateIncrement = 2.5e-8
+	warmupLearningRateEnd = 1e-4	#==learningRate
 
 relativeFolderLocations = False
 
-legacyDataloaderCode0 = False
 legacyDataloaderCode1 = False
 legacyDataloaderCode2 = False	#wo patch SBNLPpt_dataTokeniser:getSampleEncodings to calculate labels = addLabelsPredictionMaskTokens (convert paddingTokenID [1] to labelPredictionMaskTokenID [-100])
 
@@ -64,7 +69,6 @@ if(recursiveLayers):
 		recursiveLayersNormaliseNumParametersAttentionHeads = True	#default: true
 		recursiveLayersNormaliseNumParametersIntermediate = True	#default: true	#normalise intermediateSize parameters also	
 		recursiveLayersNormaliseNumParametersIntermediateOnly = False	#default: false	#only normalise intermediary MLP layer	#requires recursiveLayersNormaliseNumParametersIntermediate
-		recursiveLayersNormaliseNumParametersDebug = False	#normalise hiddenLayerSize/numberOfAttentionHeads with respect to orig numberOfHiddenLayers instead of number of parameters (model size)
 else:
 	recursiveLayersNormaliseNumParameters = False	#mandatory
 
@@ -91,9 +95,7 @@ if(not usePretrainedModelDebug):
 	if(recursiveLayers):
 		#same model size irrespective of useSingleHiddenLayerDebug
 		if(recursiveLayersNormaliseNumParameters):
-			if(recursiveLayersNormaliseNumParametersDebug):
-				hiddenLayerSizeMultiplier = numberOfHiddenLayers	#model size = 1.7GB
-			elif(recursiveLayersNormaliseNumParametersIntermediateOnly):
+			if(recursiveLayersNormaliseNumParametersIntermediateOnly):
 				if(sharedLayerWeightsMLPonly):
 					hiddenLayerSizeMultiplier = 1
 					intermediateLayerSizeMultiplier = 6	#model size = 257MB	#hiddenLayerSize 768, intermediateSize 18432
@@ -112,10 +114,10 @@ if(not usePretrainedModelDebug):
 					intermediateLayerSizeMultiplier = hiddenLayerSizeMultiplier
 				else:
 					hiddenLayerSizeMultiplier = 2	#model size = ~255-263MB	#hiddenLayerSize 1536, numberOfAttentionHeads 24
-				
+			attentionHeadMultiplier = hiddenLayerSizeMultiplier
 			hiddenLayerSize = round(hiddenLayerSize*hiddenLayerSizeMultiplier)
 			if(recursiveLayersNormaliseNumParametersAttentionHeads):
-				numberOfAttentionHeads = round(numberOfAttentionHeads*hiddenLayerSizeMultiplier)	#or: round(numberOfAttentionHeads)
+				numberOfAttentionHeads = round(numberOfAttentionHeads*attentionHeadMultiplier)	#or: round(numberOfAttentionHeads)
 			if(recursiveLayersNormaliseNumParametersIntermediate):
 				intermediateSize = round(intermediateSize*intermediateLayerSizeMultiplier)
 			print("hiddenLayerSize = ", hiddenLayerSize)
@@ -140,28 +142,20 @@ if(not usePretrainedModelDebug):
 reserveValidationSet = True	#reserves a fraction of the data for validation
 trainSplitFraction = 0.9	#90% train data, 10% test data
 
-if(useMaskedLM):
+if(recursiveLayersNormaliseNumParameters):
 	batchSize = 8	#recursiveLayersNormaliseNumParameters uses ~16x more GPU RAM than !recursiveLayersNormaliseNumParameters, and ~2x more GPU RAM than !recursiveLayers
 	learningRate = 1e-4
 else:
-	if(recursiveLayersNormaliseNumParameters):
-		if(recursiveLayersNormaliseNumParametersDebug):
-			batchSize = 1
-			learningRate = 1.25e5 #1e-4/8=0.0000125
-		else:
-			batchSize = 8	#recursiveLayersNormaliseNumParameters uses ~16x more GPU RAM than !recursiveLayersNormaliseNumParameters, and ~2x more GPU RAM than !recursiveLayers
-			learningRate = 1e-4
-	else:
-		batchSize = 8  #default: 16	#8 and 16 train at approx same rate (16 uses more GPU ram)	#depends on GPU RAM	#with 12GB GPU RAM, batchSize max = 16
-		learningRate = 1e-4
-
+	batchSize = 8  #default: 16	#8 and 16 train at approx same rate (16 uses more GPU ram)	#depends on GPU RAM	#with 12GB GPU RAM, batchSize max = 16
+	learningRate = 1e-4
+		
 if(useSmallBatchSizeDebug):
 	batchSize = 1	#use small batch size to enable simultaneous execution (GPU ram limited) 
-#batchSize = 4
 
 numberOfSamplesPerDataFile = 10000
 numberOfSamplesPerDataFileLast = 423
 dataFileLastSampleIndex = 30423
+datasetNumberOfDataFiles = dataFileLastSampleIndex+1
 
 dataPreprocessedFileNameStart = "/text_"
 dataPreprocessedFileNameEnd = ".txt"
@@ -300,7 +294,7 @@ else:
 			if(str(dataFileIndex) == dataFileLastSampleIndex):
 				containsDataFileLastDocument = True
 		return containsDataFileLastDocument
-if(not legacyDataloaderCode0):
+if(not legacyDataloaderCode1):
 	def generateDataFileName(fileIndex):
 		fileName = dataFolder + dataPreprocessedFileNameStart + str(fileIndex) + dataPreprocessedFileNameEnd
 		return fileName
@@ -335,7 +329,7 @@ class DatasetHDD(torch.utils.data.Dataset):
 					
 		if(loadNextDataFile):
 			
-			if(legacyDataloaderCode0):
+			if(legacyDataloaderCode1):
 				path = self.paths[dataFileIndex]
 			else:
 				path = generateDataFileName(dataFileIndex)	#OLD: self.paths[dataFileIndex] - requires dataFolder to contain all dataFiles up to dataFileIndex
@@ -414,15 +408,14 @@ def trainDataset(tokenizer, paths):
 	model.to(device)
 
 	model.train()
-	optim = AdamW(model.parameters(), lr=learningRate)
-	
-	numberOfDataFiles = len(paths)
-
-	pathIndexMin = trainStartDataFile
-	if(reserveValidationSet and trainNumberOfDataFiles==-1):
-		pathIndexMax = int(numberOfDataFiles*trainSplitFraction)
+	if(useTrainWarmup):
+		learningRateCurrent = warmupLearningRateStart
 	else:
-		pathIndexMax = pathIndexMin+trainNumberOfDataFiles
+		learningRateCurrent = learningRate
+	optim = AdamW(model.parameters(), lr=learningRateCurrent)
+	
+	pathIndexMin = trainStartDataFile
+	pathIndexMax = pathIndexMin+trainNumberOfDataFiles
 	loader = createDataLoader(tokenizer, paths, trainNumberOfDataFiles, pathIndexMin, pathIndexMax)
 	
 	model.save_pretrained(modelFolderName)
@@ -444,6 +437,13 @@ def trainDataset(tokenizer, paths):
 			loss.backward()
 			optim.step()
 
+			if(useTrainWarmup):
+				if(epoch == trainStartEpoch):
+					if(batchIndex < warmupSteps):
+						learningRateCurrent += warmupLearningRateIncrement
+						for param_group in optim.param_groups:
+							param_group['lr'] = learningRateCurrent
+			
 			loop.set_description(f'Epoch {epoch}')
 			loop.set_postfix(batchIndex=batchIndex, loss=loss.item(), accuracy=accuracy)
 		
@@ -463,9 +463,11 @@ def testDataset(tokenizer, paths):
 
 	model.eval()
 	
-	numberOfDataFiles = len(paths)
-
-	pathIndexMin = int(numberOfDataFiles*trainSplitFraction)
+	if(legacyDataloaderCode1):
+		numberOfDataFiles = len(paths)
+		pathIndexMin = int(numberOfDataFiles*trainSplitFraction)
+	else:
+		pathIndexMin = int(datasetNumberOfDataFiles*trainSplitFraction)
 	pathIndexMax = pathIndexMin+testNumberOfDataFiles		
 	loader = createDataLoader(tokenizer, paths, testNumberOfDataFiles, pathIndexMin, pathIndexMax)
 		

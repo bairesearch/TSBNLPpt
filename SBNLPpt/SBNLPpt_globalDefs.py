@@ -28,7 +28,13 @@ import math
 import pynvml
 
 useMaskedLM = False
-
+useTrainWarmup = False	#orig: False (may be required for recursiveLayersNormaliseNumParameters)
+if(useTrainWarmup):
+	warmupSteps = 4000
+	warmupLearningRateStart = 1e-7
+	warmupLearningRateIncrement = 2.5e-8
+	warmupLearningRateEnd = 1e-4	#==learningRate
+	
 legacyDataloaderCode2 = False	#wo patch SBNLPpt_dataTokeniser:getSampleEncodings to calculate labels = addLabelsPredictionMaskTokens (convert paddingTokenID [1] to labelPredictionMaskTokenID [-100])
 
 #recursive algorithm selection:
@@ -211,10 +217,6 @@ if(useAlgorithmTransformer):
 	
 	#if(recursiveLayers or transformerSuperblocksRecursive):
 	#	numberOfAttentionHeads = 1	#prevents recursion across different attention heads, nullifying precise recursion
-	recursiveLayersNormaliseNumParameters2 = False	#optional
-	if(recursiveLayersNormaliseNumParameters2):
-		numberOfAttentionHeads = 24
-		hiddenLayerSizeTransformer = 1536
 			
 	if(transformerAttentionHeadPermutations):
 		transformerAttentionHeadPermutationsIndependentOutput = True	#SelfOutput executes dense linear in groups of size numberOfAttentionHeads	#does not support sharedLayerWeightsOutput
@@ -411,7 +413,7 @@ if(useAlgorithmTransformer):
 	else:
 		officialRobertaBaseModel = False	#mandatory
 	
-useSmallDatasetDebug = True
+useSmallDatasetDebug = False
 useSingleHiddenLayerDebug = False
 usePretrainedModelDebug = False	#executes stateTestDataset only	#useAlgorithmTransformer only
 useSmallBatchSizeDebug = False
@@ -586,9 +588,7 @@ if(useAlgorithmTransformer):
 		if(recursiveLayers):
 			#same model size irrespective of useSingleHiddenLayerDebug
 			if(recursiveLayersNormaliseNumParameters):
-				if(recursiveLayersNormaliseNumParametersDebug):
-					hiddenLayerSizeMultiplier = numberOfHiddenLayers	#model size = 1.7GB
-				elif(recursiveLayersNormaliseNumParametersIntermediateOnly):
+				if(recursiveLayersNormaliseNumParametersIntermediateOnly):
 					if(sharedLayerWeightsMLPonly):
 						hiddenLayerSizeMultiplier = 1
 						intermediateLayerSizeMultiplier = 6	#model size = 257MB	#hiddenLayerSize 768, intermediateSize 18432
@@ -607,10 +607,10 @@ if(useAlgorithmTransformer):
 						intermediateLayerSizeMultiplier = hiddenLayerSizeMultiplier
 					else:
 						hiddenLayerSizeMultiplier = 2	#model size = ~255-263MB	#hiddenLayerSize 1536, numberOfAttentionHeads 24
-
+				attentionHeadMultiplier = hiddenLayerSizeMultiplier
 				hiddenLayerSize = round(hiddenLayerSize*hiddenLayerSizeMultiplier)
 				if(recursiveLayersNormaliseNumParametersAttentionHeads):
-					numberOfAttentionHeads = round(numberOfAttentionHeads*hiddenLayerSizeMultiplier)	#or: round(numberOfAttentionHeads)
+					numberOfAttentionHeads = round(numberOfAttentionHeads*attentionHeadMultiplier)	#or: round(numberOfAttentionHeads)
 				if(recursiveLayersNormaliseNumParametersIntermediate):
 					intermediateSize = round(intermediateSize*intermediateLayerSizeMultiplier)
 				print("hiddenLayerSize = ", hiddenLayerSize)

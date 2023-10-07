@@ -101,6 +101,9 @@ def trainDataset(tokenizer, dataElements):
 		useMLM = True
 	else:
 		useMLM = False
+
+	if(useTrainWarmup):
+		learningRateCurrent = warmupLearningRateStart
 	
 	for epoch in range(trainStartEpoch, trainStartEpoch+trainNumberOfEpochs):
 		loader = SBNLPpt_data.createDataLoader(useMLM, tokenizer, dataElements, trainNumberOfDataFiles, pathIndexMin, pathIndexMax)	#required to reset dataloader and still support tqdm modification
@@ -111,7 +114,14 @@ def trainDataset(tokenizer, dataElements):
 		
 		for batchIndex, batch in enumerate(loop):			
 			loss, accuracy = trainOrTestBatchWrapper(True, batchIndex, batch, tokenizer, model, optim)
-			
+
+			if(useTrainWarmup):
+				if(epoch == trainStartEpoch):
+					if(batchIndex < warmupSteps):
+						learningRateCurrent += warmupLearningRateIncrement
+						for param_group in optim.param_groups:
+							param_group['lr'] = learningRateCurrent
+
 			if(printAccuracyRunningAverage):
 				(loss, accuracy) = (runningLoss, runningAccuracy) = (runningLoss/runningAverageBatches*(runningAverageBatches-1)+(loss/runningAverageBatches), runningAccuracy/runningAverageBatches*(runningAverageBatches-1)+(accuracy/runningAverageBatches))
 				
@@ -274,7 +284,11 @@ def prepareModelTrain(vocabSize, modelStoreIndex=None):
 		model.to(device)
 
 		model.train()
-		optim = AdamW(model.parameters(), lr=learningRate)
+		if(useTrainWarmup):
+			learningRateCurrent = warmupLearningRateStart
+		else:
+			learningRateCurrent = learningRate
+		optim = AdamW(model.parameters(), lr=learningRateCurrent)
 	
 	return model, optim
 
