@@ -588,7 +588,9 @@ if(useAlgorithmTransformer):
 		if(recursiveLayers):
 			#same model size irrespective of useSingleHiddenLayerDebug
 			if(recursiveLayersNormaliseNumParameters):
-				if(recursiveLayersNormaliseNumParametersIntermediateOnly):
+				if(not transformerBlockMLPlayer):
+					hiddenLayerSizeMultiplier = 2.2	#model size = 255MB
+				elif(recursiveLayersNormaliseNumParametersIntermediateOnly):
 					if(sharedLayerWeightsMLPonly):
 						hiddenLayerSizeMultiplier = 1
 						intermediateLayerSizeMultiplier = 6	#model size = 257MB	#hiddenLayerSize 768, intermediateSize 18432

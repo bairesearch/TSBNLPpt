@@ -64,6 +64,7 @@ if(recursiveLayers):
 	from modeling_roberta_recursiveLayers import sharedLayerWeightsMLPonly
 	from modeling_roberta_recursiveLayers import sharedLayerWeightsWithOutputs
 	from modeling_roberta_recursiveLayers import sharedLayerWeightsWithoutOutputs
+	from modeling_roberta_recursiveLayers import transformerBlockMLPlayer
 	recursiveLayersNormaliseNumParameters = False	#optional	#if use recursiveLayers normalise/equalise num of parameters with respect to !recursiveLayers
 	if(recursiveLayersNormaliseNumParameters):
 		recursiveLayersNormaliseNumParametersAttentionHeads = True	#default: true
@@ -95,7 +96,9 @@ if(not usePretrainedModelDebug):
 	if(recursiveLayers):
 		#same model size irrespective of useSingleHiddenLayerDebug
 		if(recursiveLayersNormaliseNumParameters):
-			if(recursiveLayersNormaliseNumParametersIntermediateOnly):
+			if(not transformerBlockMLPlayer):
+				hiddenLayerSizeMultiplier = 2.2	#model size = 255MB
+			elif(recursiveLayersNormaliseNumParametersIntermediateOnly):
 				if(sharedLayerWeightsMLPonly):
 					hiddenLayerSizeMultiplier = 1
 					intermediateLayerSizeMultiplier = 6	#model size = 257MB	#hiddenLayerSize 768, intermediateSize 18432

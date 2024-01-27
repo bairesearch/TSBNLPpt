@@ -7,12 +7,14 @@ y3 = np.array([0.0, 0.5370364785194397, 0.5751139521598816, 0.5930986404418945, 
 y6 = np.array([0.0, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan])
 y7 = np.array([0.0, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan])
 y8 = np.array([0.0, 0.5002896189689636, 0.5535823702812195, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan])
+y13 = np.array([0.0, 0.49833741784095764, 0.5456426739692688, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan])
 
 l2, = plt.plot(x, y2, color='blue', label='lay=12 (486MB)')
 l3, = plt.plot(x, y3, color='red', label='lay=1r12 (176MB)')
 l6, = plt.plot(x, y6, color='orange', label='lay=1r12 !MLPlayer (156MB)')
 l7, = plt.plot(x, y7, color='yellow', label='lay=1r12 MLPlayerLast (176MB)')
 l8, = plt.plot(x, y8, color='navy', label='lay=1r12 sharedLayerWeightsMLP (276MB)')
+l13, = plt.plot(x, y13, color='orange', label='lay=1r12 !MLPlayer (norm:463MB)')
 
 plt.xticks(np.arange(min(x), max(x)+0.5, 0.5))
 plt.yticks(np.arange(0, 0.7+0.1, 0.1))
@@ -21,6 +23,6 @@ plt.xlabel("number of codeparrot-ds train samples (x1280000)")
 plt.ylabel("Causal LM test accuracy (Top-1)")
 plt.title("GPT2 Recursive Transformer")
 
-plt.legend(handles=[l2, l3, l8])
+plt.legend(handles=[l2, l3, l8, l13])
 
 plt.show()

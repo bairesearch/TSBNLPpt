@@ -76,10 +76,14 @@ hiddenLayerSizeTransformer = 768
 intermediateSizeTransformer = hiddenLayerSizeTransformer*4	#default GPT2 specification	#3072
 if(recursiveLayers):
 	from modeling_gpt2 import sharedLayerWeightsMLPonly
+	from modeling_gpt2 import transformerBlockMLPlayer
 	recursiveLayersNormaliseNumParameters = False	#optional
 	if(recursiveLayersNormaliseNumParameters):
 		recursiveLayersNormaliseNumParametersIntermediateOnly = False	#optional	#only normalise intermediary MLP layer
-		if(recursiveLayersNormaliseNumParametersIntermediateOnly):
+		if(not transformerBlockMLPlayer):
+			numberOfAttentionHeads = 32
+			hiddenLayerSizeTransformer = 2048	#model size = 463MB
+		elif(recursiveLayersNormaliseNumParametersIntermediateOnly):
 			#requires high GPU memory ~24GB (although parameter size is equivalent, memory size is much higher for the purposes of storing gradient calculation data in every layer) 	#trial only; batchSize = 4	 
 			if(sharedLayerWeightsMLPonly):
 				intermediateLayerSizeMultiplier = 12	#model size = 477MB	#hiddenLayerSize 768, intermediateSize 36864
