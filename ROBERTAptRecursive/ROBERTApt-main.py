@@ -32,6 +32,19 @@ See RobertaForMaskedLM tutorial;
 
 from modeling_roberta_recursiveLayers import recursiveLayers
 
+usePretrainedRobertaTokenizer = False	#incomplete #do not use retrained tokenizer
+
+prosodyDelimitedData = False
+if(prosodyDelimitedData):
+	#FUTURE update prosodyDelimitedData implementation to reserve special tokenizer tokens for prosodyDelimiterToken
+	prosodyDelimitedUniqueTokens = True
+	prosodyDelimiterToken = '\u6F22' #random chinese character
+	#prosodyDelimiterTokenStart = '<'
+	#prosodyDelimiterTokenEnd = 'S>'
+	prosodyDelimiterTokenStart = prosodyDelimiterToken
+	prosodyDelimiterTokenEnd = ''
+	debugProsodyDelimitedData = False
+
 useMaskedLM = False
 useTrainWarmup = False	#orig: False (may be required for recursiveLayersNormaliseNumParameters)
 if(useTrainWarmup):
@@ -57,7 +70,7 @@ useSmallTokenizerTrainNumberOfFiles = True	#used during rapid testing only (FUTU
 statePreprocessDataset = False	#only required once
 stateTrainTokenizer = False	#only required once
 stateTrainDataset = True
-stateTestDataset = True	#requires reserveValidationSet
+stateTestDataset = False	#requires reserveValidationSet
 
 if(recursiveLayers):
 	from modeling_roberta_recursiveLayers import sharedLayerWeights
@@ -76,7 +89,7 @@ else:
 trainStartEpoch = 0	#start epoch of training (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
 trainNumberOfEpochs = 1	#default: 10	#number of epochs to train (for production typically train x epochs at a time)
 trainStartDataFile = 0	#default: 0	#start data file to train (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
-trainNumberOfDataFiles = 100	#default: -1 (all)	#number of data files to train (for production typically train x dataFiles at a time)	#< numberOfDataFiles (30424) * trainSplitFraction
+trainNumberOfDataFiles = 10	#default: 100	#number of data files to train (for production typically train x dataFiles at a time)	#< numberOfDataFiles (30424) * trainSplitFraction
 testNumberOfDataFiles = 10	#default: -1 (all)
 
 if(not usePretrainedModelDebug):
@@ -161,17 +174,20 @@ dataFileLastSampleIndex = 30423
 datasetNumberOfDataFiles = dataFileLastSampleIndex+1
 
 dataPreprocessedFileNameStart = "/text_"
-dataPreprocessedFileNameEnd = ".txt"
+if(prosodyDelimitedData):
+	dataPreprocessedFileNameEnd = ".txtw"
+else:
+	dataPreprocessedFileNameEnd = ".txt"
 
 #storage location vars (requires 4TB harddrive);
 downloadCacheFolderName = 'cache'
-dataFolderName = 'data'
+dataFolderName = 'dataOSCAR1900preprocessed'	#dataOSCAR1900preprocessed #dataLibrivoxBooksPreprocessed
 if(relativeFolderLocations):
 	downloadCacheFolder = downloadCacheFolderName
 	dataFolder = dataFolderName
 else:
-	downloadCacheFolder = '/media/rich/datasets/cache'
-	dataFolder = '/media/rich/datasets/data'
+	downloadCacheFolder = '/media/user/datasets/' + downloadCacheFolderName
+	dataFolder = '/media/user/datasets/' + dataFolderName
 modelFolderName = 'model'
 
 modelSaveNumberOfBatches = 1000	#resave model after x training batches
@@ -205,7 +221,7 @@ import math
 torch.set_printoptions(profile="full")
 
 #store models to large datasets partition cache folder (not required)
-#os.environ['TRANSFORMERS_CACHE'] = '/media/rich/datasets/models/'	#select partition with 3TB+ disk space
+#os.environ['TRANSFORMERS_CACHE'] = '/media/user/datasets/models/'	#select partition with 3TB+ disk space
 
 sequenceMaxNumTokens = 512
 if(useMaskedLM):
@@ -256,8 +272,13 @@ def trainTokenizer(paths):
 		
 	return tokenizer
 
-def loadTokenizer():	
-	tokenizer = RobertaTokenizer.from_pretrained(modelFolderName, max_len=sequenceMaxNumTokens)
+		
+def loadTokenizer():
+	if(usePretrainedRobertaTokenizer):
+		tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
+	else:
+		tokenizer = RobertaTokenizer.from_pretrained(modelFolderName, max_len=sequenceMaxNumTokens)
+
 	return tokenizer
 
 def addLabelsPredictionMaskTokens(input_ids):
@@ -346,6 +367,9 @@ class DatasetHDD(torch.utils.data.Dataset):
 			#input_ids = labels.detach().clone() 
 			#input_ids = addMaskTokens(input_ids)
 			
+			if(prosodyDelimitedData):
+				lines = replaceProsodySpaceWithTokens(lines)
+	
 			sample = tokenizer(lines, max_length=sequenceMaxNumTokens, padding='max_length', truncation=True, return_tensors='pt')
 			input_ids = []
 			mask = []
@@ -368,6 +392,19 @@ class DatasetHDD(torch.utils.data.Dataset):
 		
 		return {key: tensor[itemIndexInSample] for key, tensor in self.encodings.items()}
 
+def replaceProsodySpaceWithTokens(text):
+	for index in range(len(text)):
+		line = text[index]
+		if(prosodyDelimitedUniqueTokens):
+			for i in range(100, 0, -1):  # Replace up to 100 consecutive spaces
+				line = line.replace(' ' * i, f'{prosodyDelimiterTokenStart}{i}{prosodyDelimiterTokenEnd}')
+		else:
+			line = line.replace(' ', f'{prosodyDelimiterToken}')
+		if(debugProsodyDelimitedData):
+			print("line = ", line)
+		text[index] = line
+	return text
+	
 def createDataLoader(tokenizer, paths, numberOfDataFiles, pathIndexMin, pathIndexMax):
 
 	dataFileIndexList = list(range(pathIndexMin, pathIndexMax))
