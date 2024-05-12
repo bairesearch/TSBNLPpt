@@ -31,7 +31,9 @@ usePretrainedRobertaTokenizer = False	#incomplete #do not use retrained tokenize
 
 prosodyDelimitedData = False
 if(prosodyDelimitedData):
-	prosodyDelimitedUniqueTokens = True
+	prosodyDelimitedType = "controlTokens"	#txtptc
+	#prosodyDelimitedType = "repeatTokens"	#txtptr
+	#prosodyDelimitedType = "uniqueTokens"	#txtptu
 	
 useMaskedLM = False
 useTrainWarmup = False	#orig: False (may be required for recursiveLayersNormaliseNumParameters)
@@ -129,10 +131,12 @@ if(debugCreateOrderedDatasetFiles):
 	dataFolderNameLargeDocuments = 'dataLargeDocuments'
 dataPreprocessedFileNameStart = "/text_"
 if(prosodyDelimitedData):
-	if(prosodyDelimitedUniqueTokens):
+	if(prosodyDelimitedType=="controlTokens"):
+		dataPreprocessedFileNameEnd = ".txtptc"
+	elif(prosodyDelimitedType=="repeatTokens"):
+		dataPreprocessedFileNameEnd = ".txtptr"
+	elif(prosodyDelimitedType=="uniqueTokens"):
 		dataPreprocessedFileNameEnd = ".txtptu"
-	else:
-		dataPreprocessedFileNameEnd = ".txtpt"
 else:
 	dataPreprocessedFileNameEnd = ".txt"
  
