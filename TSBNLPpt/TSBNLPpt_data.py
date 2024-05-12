@@ -38,7 +38,7 @@ def initialiseDataLoader():
 	else:
 		if(stateTrainTokeniser):
 			TSBNLPpt_dataTokeniser.trainTokeniser(dataElements, vocabularySize)
-		if(stateTrainDataset or stateTestDataset):
+		if(stateTrainTokeniser or stateTrainDataset or stateTestDataset):
 			tokenizer = TSBNLPpt_dataTokeniser.loadTokeniser()
 		if(debugCreateOrderedDatasetFiles):
 			TSBNLPpt_dataLoaderOrdered.createDatasetLargeDocuments(tokenizer, dataElements)

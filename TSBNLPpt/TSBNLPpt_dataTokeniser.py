@@ -26,23 +26,7 @@ if(useFullwordTokenizer):
 if(tokeniserOnlyTrainOnDictionary):
 	from nltk.corpus import words
 
-def replaceProsodySpaceWithTokens(text):
-	for index in range(len(text)):
-		line = text[index]
-		if(prosodyDelimitedUniqueTokens):
-			for i in range(100, 0, -1):  # Replace up to 100 consecutive spaces
-				line = line.replace(' ' * i, f'{prosodyDelimiterTokenStart}{i}{prosodyDelimiterTokenEnd}')
-		else:
-			line = line.replace(' ', f'{prosodyDelimiterToken}')
-		if(debugProsodyDelimitedData):
-			print("line = ", line)
-		text[index] = line
-	return text
-
-def tokenise(lines, tokenizer, maxLength):
-	if(prosodyDelimitedData):
-		lines = replaceProsodySpaceWithTokens(lines)
-					
+def tokenise(lines, tokenizer, maxLength):			
 	if(useFullwordTokenizerClass):
 		if(maxLength is None):
 			sample = tokenizer(lines, return_tensors='pt')
@@ -78,7 +62,8 @@ def trainTokeniserSubwords(dataElements, vocabSize):
 	tokenizer = ByteLevelBPETokenizer()
 
 	if(trainTokeniserFromDataFiles):
-		tokenizer.train(files=paths[:trainTokenizerNumberOfFilesToUse], vocab_size=vocabSize, min_frequency=1, special_tokens=specialTokens)
+		#print("dataElements = ", dataElements)
+		tokenizer.train(files=dataElements[:trainTokenizerNumberOfFilesToUse], vocab_size=vocabSize, min_frequency=1, special_tokens=specialTokens)
 	else:
 		tokenizer.train_from_iterator(dataset, length=trainTokenizerNumberOfFilesToUse, vocab_size=vocabSize, min_frequency=1, special_tokens=specialTokens)
 	

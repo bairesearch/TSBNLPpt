@@ -31,14 +31,7 @@ usePretrainedRobertaTokenizer = False	#incomplete #do not use retrained tokenize
 
 prosodyDelimitedData = False
 if(prosodyDelimitedData):
-	#FUTURE update prosodyDelimitedData implementation to reserve special tokenizer tokens for prosodyDelimiterToken
 	prosodyDelimitedUniqueTokens = True
-	prosodyDelimiterToken = '\u6F22' #random chinese character
-	#prosodyDelimiterTokenStart = '<'
-	#prosodyDelimiterTokenEnd = 'S>'
-	prosodyDelimiterTokenStart = prosodyDelimiterToken
-	prosodyDelimiterTokenEnd = ''
-	debugProsodyDelimitedData = False
 	
 useMaskedLM = False
 useTrainWarmup = False	#orig: False (may be required for recursiveLayersNormaliseNumParameters)
@@ -49,6 +42,7 @@ if(useTrainWarmup):
 	warmupLearningRateEnd = 1e-4	#==learningRate
 	
 legacyDataloaderCode2 = False	#wo patch TSBNLPpt_dataTokeniser:getSampleEncodings to calculate labels = addLabelsPredictionMaskTokens (convert paddingTokenID [1] to labelPredictionMaskTokenID [-100])
+sortDataFilesByName = True	#orig; False	#only stateTrainTokeniser and legacyDataloaderCode1 uses sortDataFilesByName (!legacyDataloaderCode1 assumes sortDataFilesByName=True)
 
 #recursive algorithm selection:
 useAlgorithmTransformer = True
@@ -68,9 +62,6 @@ trainNumberOfEpochs = 1	#default: 10	#number of epochs to train (for production 
 trainStartDataFile = 0	#default: 0	#start data file to train (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
 trainNumberOfDataFiles = 100	#15	#default: 100	#number of data files to train (for production typically train x dataFiles at a time)	#< datasetNumberOfDataFiles (30424) * trainSplitFraction
 testNumberOfDataFiles = 1	#10
-
-
-sortDataFilesByName = True	#orig; False
 
 debugCompareTokenMemoryBankPerformance = False
 debugCreateOrderedDatasetFiles = False	#create data files comprising documents of sufficient length for createOrderedDataset
@@ -138,7 +129,10 @@ if(debugCreateOrderedDatasetFiles):
 	dataFolderNameLargeDocuments = 'dataLargeDocuments'
 dataPreprocessedFileNameStart = "/text_"
 if(prosodyDelimitedData):
-	dataPreprocessedFileNameEnd = ".txtw"
+	if(prosodyDelimitedUniqueTokens):
+		dataPreprocessedFileNameEnd = ".txtptu"
+	else:
+		dataPreprocessedFileNameEnd = ".txtpt"
 else:
 	dataPreprocessedFileNameEnd = ".txt"
  

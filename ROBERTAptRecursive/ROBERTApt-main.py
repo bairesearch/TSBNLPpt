@@ -36,14 +36,7 @@ usePretrainedRobertaTokenizer = False	#incomplete #do not use retrained tokenize
 
 prosodyDelimitedData = False
 if(prosodyDelimitedData):
-	#FUTURE update prosodyDelimitedData implementation to reserve special tokenizer tokens for prosodyDelimiterToken
 	prosodyDelimitedUniqueTokens = True
-	prosodyDelimiterToken = '\u6F22' #random chinese character
-	#prosodyDelimiterTokenStart = '<'
-	#prosodyDelimiterTokenEnd = 'S>'
-	prosodyDelimiterTokenStart = prosodyDelimiterToken
-	prosodyDelimiterTokenEnd = ''
-	debugProsodyDelimitedData = False
 
 useMaskedLM = False
 useTrainWarmup = False	#orig: False (may be required for recursiveLayersNormaliseNumParameters)
@@ -57,6 +50,7 @@ relativeFolderLocations = False
 
 legacyDataloaderCode1 = False
 legacyDataloaderCode2 = False	#wo patch SBNLPpt_dataTokeniser:getSampleEncodings to calculate labels = addLabelsPredictionMaskTokens (convert paddingTokenID [1] to labelPredictionMaskTokenID [-100])
+sortDataFilesByName = True	#orig; False	#only stateTrainTokeniser and legacyDataloaderCode1 uses sortDataFilesByName (!legacyDataloaderCode1 assumes sortDataFilesByName=True)
 
 #user config vars:
 
@@ -175,7 +169,10 @@ datasetNumberOfDataFiles = dataFileLastSampleIndex+1
 
 dataPreprocessedFileNameStart = "/text_"
 if(prosodyDelimitedData):
-	dataPreprocessedFileNameEnd = ".txtw"
+	if(prosodyDelimitedUniqueTokens):
+		dataPreprocessedFileNameEnd = ".txtptu"
+	else:
+		dataPreprocessedFileNameEnd = ".txtpt"
 else:
 	dataPreprocessedFileNameEnd = ".txt"
 
@@ -258,12 +255,14 @@ def writeDataFile(fileCount, textData):
 
 def trainTokenizer(paths):
 	if(useSmallTokenizerTrainNumberOfFiles):
-		trainTokenizerNumberOfFilesToUse = 1000	#default 1000	#100: 15 min, 1000: 3.75 hours
+		trainTokenizerNumberOfFilesToUse = 100	#100	#default 1000	#100: 15 min, 1000: 3.75 hours
 	else:
 		trainTokenizerNumberOfFilesToUse = len(paths)
 
 	tokenizer = ByteLevelBPETokenizer()
 
+	print("paths = ", paths)
+	
 	tokenizer.train(files=paths[:trainTokenizerNumberOfFilesToUse], vocab_size=vocabularySize, min_frequency=2, special_tokens=['<s>', '<pad>', '</s>', '<unk>', '<mask>'])
 
 	os.mkdir(modelFolderName)
@@ -367,9 +366,6 @@ class DatasetHDD(torch.utils.data.Dataset):
 			#input_ids = labels.detach().clone() 
 			#input_ids = addMaskTokens(input_ids)
 			
-			if(prosodyDelimitedData):
-				lines = replaceProsodySpaceWithTokens(lines)
-	
 			sample = tokenizer(lines, max_length=sequenceMaxNumTokens, padding='max_length', truncation=True, return_tensors='pt')
 			input_ids = []
 			mask = []
@@ -391,19 +387,6 @@ class DatasetHDD(torch.utils.data.Dataset):
 			self.encodings = {'input_ids': input_ids, 'attention_mask': mask, 'labels': labels}
 		
 		return {key: tensor[itemIndexInSample] for key, tensor in self.encodings.items()}
-
-def replaceProsodySpaceWithTokens(text):
-	for index in range(len(text)):
-		line = text[index]
-		if(prosodyDelimitedUniqueTokens):
-			for i in range(100, 0, -1):  # Replace up to 100 consecutive spaces
-				line = line.replace(' ' * i, f'{prosodyDelimiterTokenStart}{i}{prosodyDelimiterTokenEnd}')
-		else:
-			line = line.replace(' ', f'{prosodyDelimiterToken}')
-		if(debugProsodyDelimitedData):
-			print("line = ", line)
-		text[index] = line
-	return text
 	
 def createDataLoader(tokenizer, paths, numberOfDataFiles, pathIndexMin, pathIndexMax):
 
@@ -590,12 +573,23 @@ def getAccuracyWithPredictionMask(labels, tokenLogits, predictionMask):
 		comparisonMasked = torch.multiply(comparison, predictionMaskExpanded)	#predictionMask broadcasted to [batchSize, sequenceMaxNumTokens, accuracyTopN]
 		accuracy = (torch.sum(comparisonMasked)/torch.sum(predictionMask)).cpu().numpy() 	#or torch.sum(comparisonMasked)/(torch.sum(predictionMaskExpanded)/accuracyTopN)	#accuracy.item()
 	return accuracy
+
+def getPaths(dataPathName):
+	if(Path(dataPathName).exists()):
+		pathsGlob = Path(dataPathName).glob('**/*' + dataPreprocessedFileNameEnd)
+		if(sortDataFilesByName):
+			pathsGlob = sorted(pathsGlob, key=os.path.getmtime)	#key required because path names indices are not padded with 0s
+		paths = [str(x) for x in pathsGlob]
+	else:
+		print("main error: Path does not exist, dataPathName = ", dataPathName)
+		exit()
+	return paths
 	
 if(__name__ == '__main__'):
 	if(statePreprocessDataset):
 		dataset = downloadDataset()
 		preprocessDataset(dataset)
-	paths = [str(x) for x in Path(dataFolder).glob('**/*.txt')]
+	paths = getPaths(dataFolder)  #[str(x) for x in Path(dataFolder).glob('**/*.txt')]
 	if(usePretrainedModelDebug):
 		tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
 		testDataset(tokenizer, paths)
@@ -608,7 +602,7 @@ if(__name__ == '__main__'):
 			trainDataset(tokenizer, paths)
 		if(stateTestDataset):
 			testDataset(tokenizer, paths)
-
+			
 def printe(str):
 	print(str)
 	exit()

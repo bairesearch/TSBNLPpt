@@ -52,19 +52,22 @@ def loadDataset():
 
 def prepareDataElements(dataset):
 	if(usePreprocessedDataset):
-		if(Path(dataPathName).exists()):
-			pathsGlob = Path(dataPathName).glob('**/*' + dataPreprocessedFileNameEnd)
-			if(sortDataFilesByName):
-				pathsGlob = sorted(pathsGlob, key=os.path.getmtime)	#key required because path names indices are not padded with 0s
-			paths = [str(x) for x in pathsGlob]
-		else:
-			print("main error: Path does not exist, dataPathName = ", dataPathName)
-			exit()
-		dataElements = paths
+		dataElements = getPaths(dataPathName)
 	else:
 		dataElements = dataset
 	return dataElements
-		
+
+def getPaths(dataPathName):
+	if(Path(dataPathName).exists()):
+		pathsGlob = Path(dataPathName).glob('**/*' + dataPreprocessedFileNameEnd)
+		if(sortDataFilesByName):
+			pathsGlob = sorted(pathsGlob, key=os.path.getmtime)	#key required because path names indices are not padded with 0s
+		paths = [str(x) for x in pathsGlob]
+	else:
+		print("main error: Path does not exist, dataPathName = ", dataPathName)
+		exit()
+	return paths
+	
 def preprocessDataset(dataset):
 	if(usePreprocessedDataset):
 		textData = []
