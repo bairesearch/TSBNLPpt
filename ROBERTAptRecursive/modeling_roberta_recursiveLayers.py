@@ -24,7 +24,25 @@ import torch.utils.checkpoint
 from torch import nn
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 
-recursiveLayers = True
+centralSequencePrediction = False	#generateCentralSequence	#to generate reasoning/planning between sentences in a novel dataset, a model is trained to predict a central sequence of sentences given first and last sentences in a sequence.
+if(centralSequencePrediction):
+	maxAllLength=512
+	maxConclusionLength = 128	#max number of tokens of conclusion (padded); conclusion sentence is added to the start of the contextual window, using a separate (dedicated) positional embedding dimension
+	maxIntroLength = 128	#est
+	maxCentralLength = 256	#est	#may represent reasoning or planning between intro and conclusion
+	maxIntroCentralLength = maxIntroLength+maxCentralLength
+	centralSequencePredictionErrorChecking = True
+	
+	def generateCentralSequencePredictionPositionIDs(contextLength):
+		position_ids1 = torch.arange(maxConclusionLength, dtype=torch.long, device=device) + maxIntroCentralLength	#or self.config.n_ctx 
+		position_ids2 = torch.arange(maxIntroCentralLength, dtype=torch.long, device=device)
+		position_ids = torch.cat((position_ids1, position_ids2), dim=0)
+		if(contextLength > maxAllLength):
+			position_ids = F.pad(position_ids, (0, contextLength-maxAllLength), mode='constant', value=0)
+		return position_ids
+				
+				
+recursiveLayers = False
 transformerBlockMLPlayer = True	#default: True	#apply all MLP layers
 transformerBlockMLPlayerLast = False	#default: False	#only apply last MLP layer (requires !transformerBlockMLPlayer)
 recursiveLayersEvalOverride = False
@@ -168,10 +186,13 @@ class RobertaEmbeddings(nn.Module):
 		self.dropout = nn.Dropout(config.hidden_dropout_prob)
 		# position_ids (1, len position emb) is contiguous in memory and exported when serialized
 		self.position_embedding_type = getattr(config, "position_embedding_type", "absolute")
-		self.register_buffer("position_ids", torch.arange(config.max_position_embeddings).expand((1, -1)))
-		self.register_buffer(
-			"token_type_ids", torch.zeros(self.position_ids.size(), dtype=torch.long), persistent=False
-		)
+
+		if(centralSequencePrediction):
+			position_ids = generateCentralSequencePredictionPositionIDs(config.max_position_embeddings)
+			self.register_buffer("position_ids", position_ids.expand((1, -1)))
+		else:
+			self.register_buffer("position_ids", torch.arange(config.max_position_embeddings).expand((1, -1)))
+		self.register_buffer("token_type_ids", torch.zeros(self.position_ids.size(), dtype=torch.long), persistent=False)
 
 		# End copy
 		self.padding_idx = config.pad_token_id
@@ -183,6 +204,8 @@ class RobertaEmbeddings(nn.Module):
 		self, input_ids=None, token_type_ids=None, position_ids=None, inputs_embeds=None, past_key_values_length=0
 	):
 		if position_ids is None:
+			if(centralSequencePredictionErrorChecking):
+				assert input_ids is not None
 			if input_ids is not None:
 				# Create the position ids from the input token ids. Any padded tokens remain padded.
 				position_ids = create_position_ids_from_input_ids(input_ids, self.padding_idx, past_key_values_length)
@@ -1688,5 +1711,10 @@ def create_position_ids_from_input_ids(input_ids, padding_idx, past_key_values_l
 	"""
 	# The series of casts and type-conversions here are carefully balanced to both work with ONNX export and XLA.
 	mask = input_ids.ne(padding_idx).int()
-	incremental_indices = (torch.cumsum(mask, dim=1).type_as(mask) + past_key_values_length) * mask
+	if(centralSequencePrediction):
+		if(centralSequencePredictionErrorChecking):
+			assert past_key_values_length==0
+		incremental_indices = generateCentralSequencePredictionPositionIDs(mask.size()).type_as(mask) * mask
+	else:
+		incremental_indices = (torch.cumsum(mask, dim=1).type_as(mask) + past_key_values_length) * mask
 	return incremental_indices.long() + padding_idx

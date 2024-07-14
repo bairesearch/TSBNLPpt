@@ -9,11 +9,12 @@ MIT License
 # Installation:
 conda create -n transformersenv
 source activate transformersenv
-conda install python=3.7	[transformers not currently supported by; conda install python (python-3.10.6)]
+conda install python
+pip install transformers
 pip install datasets
-pip install transfomers==4.23.1
 pip install torch
 pip install torchsummary
+pip install nltk
 
 # Usage:
 source activate transformersenv
@@ -31,13 +32,24 @@ See RobertaForMaskedLM tutorial;
 """
 
 from modeling_roberta_recursiveLayers import recursiveLayers
+from modeling_roberta_recursiveLayers import centralSequencePrediction
+if(centralSequencePrediction):
+	import nltk
+	from nltk.tokenize import sent_tokenize
+	nltk.download('punkt')
+	from modeling_roberta_recursiveLayers import maxConclusionLength
+	from modeling_roberta_recursiveLayers import maxIntroLength
+	from modeling_roberta_recursiveLayers import maxCentralLength
+	from modeling_roberta_recursiveLayers import maxIntroCentralLength
 
+	
 usePretrainedRobertaTokenizer = False	#incomplete #do not use retrained tokenizer
 
 prosodyDelimitedData = False
 if(prosodyDelimitedData):
+	#prosodyDelimitedType = "txtDebug"	#txt	#not currently used
 	prosodyDelimitedType = "controlTokens"	#txtptc
-	#prosodyDelimitedType = "repeatTokens"	#txtptr
+	#prosodyDelimitedType = "repeatTokens"	#txtptr	#not currently used
 	#prosodyDelimitedType = "uniqueTokens"	#txtptu
 
 useMaskedLM = False
@@ -64,9 +76,12 @@ useSmallBatchSizeDebug = False
 useSmallTokenizerTrainNumberOfFiles = True	#used during rapid testing only (FUTURE: assign est 80 hours to perform full tokenisation train)
 
 statePreprocessDataset = False	#only required once
-stateTrainTokenizer = False	#only required once
+if(prosodyDelimitedData):
+	stateTrainTokenizer = True	#only required once
+else:
+	stateTrainTokenizer = False
 stateTrainDataset = True
-stateTestDataset = False	#requires reserveValidationSet
+stateTestDataset = True	#requires reserveValidationSet
 
 if(recursiveLayers):
 	from modeling_roberta_recursiveLayers import sharedLayerWeights
@@ -85,8 +100,11 @@ else:
 trainStartEpoch = 0	#start epoch of training (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
 trainNumberOfEpochs = 1	#default: 10	#number of epochs to train (for production typically train x epochs at a time)
 trainStartDataFile = 0	#default: 0	#start data file to train (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
-trainNumberOfDataFiles = 10	#default: 100	#number of data files to train (for production typically train x dataFiles at a time)	#< numberOfDataFiles (30424) * trainSplitFraction
-testNumberOfDataFiles = 10	#default: -1 (all)
+trainNumberOfDataFiles = 100	#default: 100	#number of data files to train (for production typically train x dataFiles at a time)	#< numberOfDataFiles (30424) * trainSplitFraction
+if(prosodyDelimitedData):
+	testNumberOfDataFiles = 6
+else:
+	testNumberOfDataFiles = 10	#default: 10
 
 if(not usePretrainedModelDebug):
 
@@ -152,13 +170,16 @@ if(not usePretrainedModelDebug):
 			pass	#model size = 255.6MB
 		
 reserveValidationSet = True	#reserves a fraction of the data for validation
-trainSplitFraction = 0.9	#90% train data, 10% test data
+if(prosodyDelimitedData):
+	trainSplitFraction = 0.95
+else:
+	trainSplitFraction = 0.9	#90% train data, 10% test data
 
 if(recursiveLayersNormaliseNumParameters):
 	batchSize = 8	#recursiveLayersNormaliseNumParameters uses ~16x more GPU RAM than !recursiveLayersNormaliseNumParameters, and ~2x more GPU RAM than !recursiveLayers
 	learningRate = 1e-4
 else:
-	batchSize = 8  #default: 16	#8 and 16 train at approx same rate (16 uses more GPU ram)	#depends on GPU RAM	#with 12GB GPU RAM, batchSize max = 16
+	batchSize = 8	#8  #default: 16	#8 and 16 train at approx same rate (16 uses more GPU ram)	#depends on GPU RAM	#with 12GB GPU RAM, batchSize max = 16
 	learningRate = 1e-4
 		
 if(useSmallBatchSizeDebug):
@@ -166,7 +187,10 @@ if(useSmallBatchSizeDebug):
 
 numberOfSamplesPerDataFile = 10000
 numberOfSamplesPerDataFileLast = 423
-dataFileLastSampleIndex = 30423
+if(prosodyDelimitedData):
+	dataFileLastSampleIndex = 105
+else:
+	dataFileLastSampleIndex = 30423
 datasetNumberOfDataFiles = dataFileLastSampleIndex+1
 
 dataPreprocessedFileNameStart = "/text_"
@@ -177,16 +201,22 @@ if(prosodyDelimitedData):
 		dataPreprocessedFileNameEnd = ".txtptr"
 	elif(prosodyDelimitedType=="uniqueTokens"):
 		dataPreprocessedFileNameEnd = ".txtptu"
+	elif(prosodyDelimitedType=="txtDebug"):
+		dataPreprocessedFileNameEnd = ".txt"
 else:
 	dataPreprocessedFileNameEnd = ".txt"
 
 #storage location vars (requires 4TB harddrive);
 downloadCacheFolderName = 'cache'
-dataFolderName = 'dataOSCAR1900preprocessed'	#dataOSCAR1900preprocessed #dataLibrivoxBooksPreprocessed
 if(relativeFolderLocations):
+	dataFolderName = 'data'
 	downloadCacheFolder = downloadCacheFolderName
 	dataFolder = dataFolderName
 else:
+	if(prosodyDelimitedData):
+		dataFolderName = 'dataLibrivoxBooksPreprocessed'
+	else:
+		dataFolderName = 'dataOSCAR1900preprocessed'
 	downloadCacheFolder = '/media/user/datasets/' + downloadCacheFolderName
 	dataFolder = '/media/user/datasets/' + dataFolderName
 modelFolderName = 'model'
@@ -224,7 +254,10 @@ torch.set_printoptions(profile="full")
 #store models to large datasets partition cache folder (not required)
 #os.environ['TRANSFORMERS_CACHE'] = '/media/user/datasets/models/'	#select partition with 3TB+ disk space
 
-sequenceMaxNumTokens = 512
+if(prosodyDelimitedData):
+	sequenceMaxNumTokens = 256
+else:
+	sequenceMaxNumTokens = 512
 if(useMaskedLM):
 	customMaskTokenID = 4	#3
 	fractionOfMaskedTokens = 0.15
@@ -345,6 +378,70 @@ class DatasetHDD(torch.utils.data.Dataset):
 		else:
 			return self.numberOfDocuments
 
+	def reorderSampleStartConclusionSentence(self, sample, lines):
+		#print("sample = ", sample)
+		tokensNewList = []
+		attentionMaskNewList = []
+		for lineIndex, line in enumerate(lines):
+			tokens = tokenizer.convert_ids_to_tokens(sample.input_ids[lineIndex])
+			token_ids = sample.input_ids[lineIndex]
+			attention_mask = sample.attention_mask[lineIndex]
+			token_offsets = []
+			current_offset = 0
+			for token, token_id in zip(tokens, token_ids):
+				tokenFormatted =  token.replace('\u0120', '')	#remove start/end word 'G' characters from token
+				tokenFormatted = tokenFormatted.lower()
+				start_pos = line.lower().find(tokenFormatted, current_offset)
+				if(start_pos != -1):
+					#<s>, </s> are not found in lines;
+					end_pos = start_pos + len(tokenFormatted)
+					token_offsets.append((token, token_id, start_pos, end_pos))
+					current_offset = end_pos
+			last_pos = end_pos
+
+			sentences = nltk.sent_tokenize(line)
+			sentencePos = 0
+			for sentenceIndex, sentence in enumerate(sentences):
+				if(sentencePos < last_pos):
+					conclusionSentencePos = sentencePos
+				sentencePos = sentencePos + len(sentence)
+
+			conclusionFirstTokenIndex = None
+			for tokenIndex, tokenTuple in enumerate(token_offsets):
+				start_pos = tokenTuple[2]
+				if(start_pos == conclusionSentencePos):
+					conclusionFirstTokenIndex = tokenIndex
+
+			tokenidsIntroCentral = token_ids[:conclusionFirstTokenIndex]
+			tokenidsConclusion = token_ids[conclusionFirstTokenIndex:]
+			tokenidsIntroCentral = self.resizeSubtensor(tokenidsIntroCentral, maxIntroCentralLength, tokenizer.pad_token_id)
+			tokenidsConclusion = self.resizeSubtensor(tokenidsConclusion, maxConclusionLength, tokenizer.pad_token_id)
+
+			attentionMaskIntroCentral = attention_mask[:conclusionFirstTokenIndex]
+			attentionMaskConclusion = attention_mask[conclusionFirstTokenIndex:]
+			attentionMaskIntroCentral = self.resizeSubtensor(attentionMaskIntroCentral, maxIntroCentralLength, 0)
+			attentionMaskConclusion = self.resizeSubtensor(attentionMaskConclusion, maxConclusionLength, 0)
+
+			inputidsNew = torch.cat((tokenidsIntroCentral, tokenidsConclusion), dim=0)
+			attentionMaskNew = torch.cat((attentionMaskIntroCentral, attentionMaskConclusion), dim=0)
+			tokensNewList.append(inputidsNew)
+			attentionMaskNewList.append(attentionMaskNew)
+
+		inputidsNew = torch.stack(tokensNewList, dim=0)
+		attentionMaskNew = torch.stack(attentionMaskNewList, dim=0)
+		sample.input_ids = inputidsNew
+		sample.attention_mask = attentionMaskNew
+		
+		
+	def resizeSubtensor(self, tokens, maxLength, padTokenID):
+		if(tokens.shape[0] > maxLength):
+			tokens = tokens[0:maxLength]
+		if(tokens.shape[0] < maxLength):
+			paddingLength = maxLength-tokens.shape[0]
+			tokensPadding = torch.full((paddingLength,), padTokenID, dtype=torch.long)
+			tokens = torch.cat((tokens, tokensPadding), dim=0)
+		return tokens
+						
 	def __getitem__(self, i):
 	
 		loadNextDataFile = False
@@ -363,14 +460,12 @@ class DatasetHDD(torch.utils.data.Dataset):
 			
 			with open(path, 'r', encoding='utf-8') as fp:
 				lines = fp.read().split('\n')
-
-			#sample = tokenizer(lines, max_length=sequenceMaxNumTokens, padding='max_length', truncation=True)
-			#labels = torch.tensor([x for x in sample['input_ids']])
-			#mask = torch.tensor([x for x in sample['attention_mask']])
-			#input_ids = labels.detach().clone() 
-			#input_ids = addMaskTokens(input_ids)
 			
 			sample = tokenizer(lines, max_length=sequenceMaxNumTokens, padding='max_length', truncation=True, return_tensors='pt')
+			
+			if(centralSequencePrediction):
+				self.reorderSampleStartConclusionSentence(sample, lines)
+
 			input_ids = []
 			mask = []
 			labels = []
@@ -413,6 +508,8 @@ def continueTrainingModel():
 
 def trainDataset(tokenizer, paths):
 
+	excluded_token_set = generateProsodyExcludedTokenSet(tokenizer)
+	
 	if(continueTrainingModel()):
 		print("loading existing model")
 		model = RobertaLM.from_pretrained(modelFolderName, local_files_only=True)
@@ -458,7 +555,7 @@ def trainDataset(tokenizer, paths):
 			
 			outputs = model(input_ids, attention_mask=attention_mask, labels=labels)
 						
-			accuracy = getAccuracy(input_ids, attention_mask, labels, outputs)
+			accuracy = getAccuracy(input_ids, attention_mask, labels, outputs, excluded_token_set)
 			loss = outputs.loss
 			
 			loss.backward()
@@ -479,6 +576,8 @@ def trainDataset(tokenizer, paths):
 		model.save_pretrained(modelFolderName)
 
 def testDataset(tokenizer, paths):
+
+	excluded_token_set = generateProsodyExcludedTokenSet(tokenizer)
 
 	if(usePretrainedModelDebug):
 		model = RobertaLM.from_pretrained("roberta-base")
@@ -513,7 +612,7 @@ def testDataset(tokenizer, paths):
 						
 			outputs = model(input_ids, attention_mask=attention_mask, labels=labels)
 			
-			accuracy = getAccuracy(input_ids, attention_mask, labels, outputs)
+			accuracy = getAccuracy(input_ids, attention_mask, labels, outputs, excluded_token_set)
 			loss = outputs.loss
 			loss = loss.detach().cpu().numpy()
 			
@@ -533,26 +632,54 @@ def testDataset(tokenizer, paths):
 def getTokenizerLength(tokenizer):
 	return len(tokenizer)	#Size of the full vocabulary with the added token	#https://github.com/huggingface/transformers/blob/main/src/transformers/tokenization_utils.py
 
-def getAccuracy(input_ids, attention_mask, labels, outputs):
+def getAccuracy(input_ids, attention_mask, labels, outputs, excluded_token_set=None):
 	if(useMaskedLM):
-		return getAccuracyMaskedLM(input_ids, labels, outputs)
+		return getAccuracyMaskedLM(input_ids, labels, outputs, excluded_token_set)
 	else:
-		return getAccuracyCausalLM(input_ids, outputs, attention_mask)
-		
-def getAccuracyMaskedLM(input_ids, labels, outputs):
+		return getAccuracyCausalLM(input_ids, outputs, attention_mask, excluded_token_set)
+
+def read_token_ids(file_path):
+	with open(file_path, 'r') as file:
+		token_ids = [int(line.strip()) for line in file]
+	return token_ids
+	
+def generateProsodyExcludedTokenSet(tokenizer):
+	excluded_token_set = None
+	if(prosodyDelimitedData):
+		if(prosodyDelimitedType=="controlTokens" or prosodyDelimitedType=="txtDebug"):
+			excludedTokensIntList = []
+		elif(prosodyDelimitedType=="uniqueTokens"):
+			excludedTokensIntList = read_token_ids("prosodyTokenIDs.txt")
+			print("excludedTokensIntList = ", excludedTokensIntList)
+			#excludedTokensStringList = read_token_ids("prosodyTokens.txt")
+			#excludedTokensIntList = [tokenizer.encode(token, add_special_tokens=False)[0] for token in excludedTokensStringList]
+		elif(prosodyDelimitedType=="repeatTokens"):
+			excludedTokensIntList = []	#TODO
+		excluded_token_set = set(excludedTokensIntList)
+	return excluded_token_set
+				
+def removeProsodyTokensFromPredictionMask(predictionMask, labels, excluded_token_set):
+	if(prosodyDelimitedData):
+		if(prosodyDelimitedType=="uniqueTokens"):	#FUTURE: or prosodyDelimitedType=="repeatTokens"
+			for token in excluded_token_set:
+				predictionMask &= (labels != token)
+	return predictionMask
+				
+def getAccuracyMaskedLM(input_ids, labels, outputs, excluded_token_set=None):
 	predictionMask = torch.where(input_ids==customMaskTokenID, 1.0, 0.0)	#maskTokenIndexFloat = maskTokenIndex.float()		#orig: maskTokenIndex
-	#tokenizerNumberTokens = getTokenizerLength(tokenizer)
+	###predictionMask = removeProsodyTokensFromPredictionMask(predictionMask, labels, excluded_token_set)
 	tokenLogits = (outputs.logits).detach()
 	accuracy = getAccuracyWithPredictionMask(labels, tokenLogits, predictionMask)
 	return accuracy
 	
-def getAccuracyCausalLM(inputs, outputs, attention_mask):	
+def getAccuracyCausalLM(inputs, outputs, attention_mask, excluded_token_set=None):	
 	#based on SBNLPpt_data:getAccuracyMaskedLM
 	predictionMask = attention_mask[:, 1:]
 	logits = outputs.logits.detach()
 	# Shift so that tokens < n predict n
 	shift_labels = inputs[..., 1:].contiguous()
 	shift_logits = logits[..., :-1, :].contiguous()
+	###predictionMask = removeProsodyTokensFromPredictionMask(predictionMask, shift_labels, excluded_token_set)
 	accuracy = getAccuracyWithPredictionMask(shift_labels, shift_logits, predictionMask)
 	accuracy = accuracy.item()
 	#print("accuracy = ", accuracy)
@@ -565,6 +692,7 @@ def getAccuracyWithPredictionMask(labels, tokenLogits, predictionMask):
 	#print("predictionMask = ", predictionMask)
 	if(accuracyTopN == 1):
 		tokenLogitsTopIndex = torch.squeeze(tokenLogitsTopIndex)	#tokenLogitsTopIndex[:, :, 1] -> #tokenLogitsTopIndex[:, :]
+		#print("tokenLogitsTopIndex = ", tokenLogitsTopIndex)
 		comparison = (tokenLogitsTopIndex == labels).float()
 		comparisonMasked = torch.multiply(comparison, predictionMask)
 		accuracy = (torch.sum(comparisonMasked)/torch.sum(predictionMask)).cpu().numpy()	#accuracy.item()
