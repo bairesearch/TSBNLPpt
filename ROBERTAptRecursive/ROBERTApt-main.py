@@ -1,7 +1,7 @@
 """ROBERTApt-main.py
 
 # Author:
-Richard Bruce Baxter - Copyright (c) 2022 Baxter AI (baxterai.com)
+Richard Bruce Baxter - Copyright (c) 2022-2024 Baxter AI (baxterai.com)
 
 # License:
 MIT License
@@ -33,6 +33,8 @@ See RobertaForMaskedLM tutorial;
 
 from modeling_roberta_recursiveLayers import recursiveLayers
 from modeling_roberta_recursiveLayers import centralSequencePrediction
+sequenceStartToken = '<s>'
+sequenceEndToken = '</s>'
 if(centralSequencePrediction):
 	import nltk
 	from nltk.tokenize import sent_tokenize
@@ -41,7 +43,8 @@ if(centralSequencePrediction):
 	from modeling_roberta_recursiveLayers import maxIntroLength
 	from modeling_roberta_recursiveLayers import maxCentralLength
 	from modeling_roberta_recursiveLayers import maxIntroCentralLength
-
+	centralSequencePredictionConclusionEndToken = '<conclusion_end>'
+	centralSequencePredictionIntroStartToken = '<intro_start>'
 	
 usePretrainedRobertaTokenizer = False	#incomplete #do not use retrained tokenizer
 
@@ -296,11 +299,15 @@ def trainTokenizer(paths):
 	else:
 		trainTokenizerNumberOfFilesToUse = len(paths)
 
+	special_tokens=[sequenceStartToken, '<pad>', sequenceEndToken, '<unk>', '<mask>']
+	if(centralSequencePrediction):
+		special_tokens = special_tokens + [centralSequencePredictionConclusionEndToken, centralSequencePredictionIntroStartToken]
+		
 	tokenizer = ByteLevelBPETokenizer()
 
 	print("paths = ", paths)
 	
-	tokenizer.train(files=paths[:trainTokenizerNumberOfFilesToUse], vocab_size=vocabularySize, min_frequency=2, special_tokens=['<s>', '<pad>', '</s>', '<unk>', '<mask>'])
+	tokenizer.train(files=paths[:trainTokenizerNumberOfFilesToUse], vocab_size=vocabularySize, min_frequency=2, special_tokens=special_tokens)
 
 	os.mkdir(modelFolderName)
 
@@ -378,7 +385,7 @@ class DatasetHDD(torch.utils.data.Dataset):
 		else:
 			return self.numberOfDocuments
 
-	def reorderSampleStartConclusionSentence(self, sample, lines):
+	def reorderSampleStartConclusionSentence(self, tokenizer, sample, lines):
 		#print("sample = ", sample)
 		tokensNewList = []
 		attentionMaskNewList = []
@@ -388,42 +395,78 @@ class DatasetHDD(torch.utils.data.Dataset):
 			attention_mask = sample.attention_mask[lineIndex]
 			token_offsets = []
 			current_offset = 0
+			i = 0
+			#print("len(line) = ", len(line))
 			for token, token_id in zip(tokens, token_ids):
 				tokenFormatted =  token.replace('\u0120', '')	#remove start/end word 'G' characters from token
 				tokenFormatted = tokenFormatted.lower()
+				#print("\ttokenFormatted = ", tokenFormatted)
 				start_pos = line.lower().find(tokenFormatted, current_offset)
 				if(start_pos != -1):
 					#<s>, </s> are not found in lines;
 					end_pos = start_pos + len(tokenFormatted)
 					token_offsets.append((token, token_id, start_pos, end_pos))
 					current_offset = end_pos
-			last_pos = end_pos
+				#else:
+				#	print("\tline.lower().find fail: i = ", i)
+				i += 1
+			#conclusionSentencePosEnd = end_pos
 
+			introFirstTokenIndex = 1	#skip <s> token
+			conclusionFirstTokenIndex = None
+			conclusionLastTokenIndex = None
+			
 			sentences = nltk.sent_tokenize(line)
+			current_offset = 0
 			sentencePos = 0
 			for sentenceIndex, sentence in enumerate(sentences):
-				if(sentencePos < last_pos):
-					conclusionSentencePos = sentencePos
-				sentencePos = sentencePos + len(sentence)
+				#print("sentence = ", sentence)
+				start_pos = line.find(sentence, current_offset)
+				end_pos = start_pos + len(sentence)
+				current_offset = end_pos
+				sentencePosStart = start_pos
+				sentencePosEnd = end_pos-1
 
-			conclusionFirstTokenIndex = None
-			for tokenIndex, tokenTuple in enumerate(token_offsets):
-				start_pos = tokenTuple[2]
-				if(start_pos == conclusionSentencePos):
-					conclusionFirstTokenIndex = tokenIndex
-
-			tokenidsIntroCentral = token_ids[:conclusionFirstTokenIndex]
-			tokenidsConclusion = token_ids[conclusionFirstTokenIndex:]
-			tokenidsIntroCentral = self.resizeSubtensor(tokenidsIntroCentral, maxIntroCentralLength, tokenizer.pad_token_id)
+				for tokenIndex, tokenTuple in enumerate(token_offsets):
+					start_pos = tokenTuple[2]
+					end_pos = tokenTuple[3]
+					#print("\tstart_pos = ", start_pos)
+					#print("\tend_pos = ", end_pos)
+					if(start_pos == sentencePosStart):
+						conclusionFirstTokenIndex = tokenIndex
+						conclusionSentencePosStart = sentencePosStart
+					if(start_pos == sentencePosEnd):
+						conclusionLastTokenIndex = tokenIndex
+						conclusionSentencePosEnd = sentencePosEnd
+				if(conclusionLastTokenIndex == None):
+					conclusionLastTokenIndex = tokenIndex-1	#last token in context window, skip </s> token
+				
+			#print("conclusionSentencePosStart = ", conclusionSentencePosStart)
+			#print("conclusionSentencePosEnd = ", conclusionSentencePosEnd)
+			#print("conclusionFirstTokenIndex = ", conclusionFirstTokenIndex)
+			#print("conclusionLastTokenIndex = ", conclusionLastTokenIndex)
+			#print("introFirstTokenIndex = ", introFirstTokenIndex)
+					
+			tokenidsConclusion = torch.concat((torch.tensor([tokenizer.convert_tokens_to_ids(sequenceStartToken)]), 
+				token_ids[conclusionFirstTokenIndex:conclusionLastTokenIndex+1], 
+				torch.tensor([tokenizer.convert_tokens_to_ids(centralSequencePredictionConclusionEndToken)])), dim=0)
 			tokenidsConclusion = self.resizeSubtensor(tokenidsConclusion, maxConclusionLength, tokenizer.pad_token_id)
-
-			attentionMaskIntroCentral = attention_mask[:conclusionFirstTokenIndex]
-			attentionMaskConclusion = attention_mask[conclusionFirstTokenIndex:]
-			attentionMaskIntroCentral = self.resizeSubtensor(attentionMaskIntroCentral, maxIntroCentralLength, 0)
+			tokenidsIntroCentral = torch.concat((torch.tensor([tokenizer.convert_tokens_to_ids(centralSequencePredictionIntroStartToken)]), 
+				token_ids[introFirstTokenIndex:conclusionFirstTokenIndex], 
+				torch.tensor([tokenizer.convert_tokens_to_ids(sequenceEndToken)])), dim=0)
+			tokenidsIntroCentral = self.resizeSubtensor(tokenidsIntroCentral, maxIntroCentralLength, tokenizer.pad_token_id)
+			
+			attentionMaskConclusion = torch.concat((torch.ones(1), attention_mask[conclusionFirstTokenIndex:conclusionLastTokenIndex+1], torch.ones(1)), dim=0)
 			attentionMaskConclusion = self.resizeSubtensor(attentionMaskConclusion, maxConclusionLength, 0)
+			attentionMaskIntroCentral = torch.concat((torch.ones(1), attention_mask[introFirstTokenIndex:conclusionFirstTokenIndex], torch.ones(1)), dim=0)
+			attentionMaskIntroCentral = self.resizeSubtensor(attentionMaskIntroCentral, maxIntroCentralLength, 0)
 
 			inputidsNew = torch.cat((tokenidsIntroCentral, tokenidsConclusion), dim=0)
 			attentionMaskNew = torch.cat((attentionMaskIntroCentral, attentionMaskConclusion), dim=0)
+			
+			#print("inputidsNew.shape = ", inputidsNew.shape)
+			#print("attentionMaskNew.shape = ", attentionMaskNew.shape)
+			
 			tokensNewList.append(inputidsNew)
 			attentionMaskNewList.append(attentionMaskNew)
 
@@ -462,10 +505,9 @@ class DatasetHDD(torch.utils.data.Dataset):
 				lines = fp.read().split('\n')
 			
 			sample = tokenizer(lines, max_length=sequenceMaxNumTokens, padding='max_length', truncation=True, return_tensors='pt')
-			
 			if(centralSequencePrediction):
-				self.reorderSampleStartConclusionSentence(sample, lines)
-
+				self.reorderSampleStartConclusionSentence(tokenizer, sample, lines)
+	
 			input_ids = []
 			mask = []
 			labels = []
@@ -552,6 +594,9 @@ def trainDataset(tokenizer, paths):
 			input_ids = batch['input_ids'].to(device)
 			attention_mask = batch['attention_mask'].to(device)
 			labels = batch['labels'].to(device)
+			
+			#print("input_ids = ", input_ids)
+			#print("attention_mask = ", attention_mask)
 			
 			outputs = model(input_ids, attention_mask=attention_mask, labels=labels)
 						
