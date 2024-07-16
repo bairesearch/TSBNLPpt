@@ -33,8 +33,8 @@ See RobertaForMaskedLM tutorial;
 
 from modeling_roberta_recursiveLayers import recursiveLayers
 from modeling_roberta_recursiveLayers import centralSequencePrediction
-sequenceStartToken = '<s>'
-sequenceEndToken = '</s>'
+sequenceStartToken = '<s>'	#tokenizer.bos_token
+sequenceEndToken = '</s>'	#tokenizer.eos_token
 if(centralSequencePrediction):
 	import nltk
 	from nltk.tokenize import sent_tokenize
@@ -82,7 +82,7 @@ statePreprocessDataset = False	#only required once
 if(prosodyDelimitedData):
 	stateTrainTokenizer = True	#only required once
 else:
-	stateTrainTokenizer = False
+	stateTrainTokenizer = False	#only required once
 stateTrainDataset = True
 stateTestDataset = True	#requires reserveValidationSet
 
@@ -308,7 +308,7 @@ def trainTokenizer(paths):
 	print("paths = ", paths)
 	
 	tokenizer.train(files=paths[:trainTokenizerNumberOfFilesToUse], vocab_size=vocabularySize, min_frequency=2, special_tokens=special_tokens)
-
+	
 	os.mkdir(modelFolderName)
 
 	tokenizer.save_model(modelFolderName)
@@ -403,7 +403,7 @@ class DatasetHDD(torch.utils.data.Dataset):
 				#print("\ttokenFormatted = ", tokenFormatted)
 				start_pos = line.lower().find(tokenFormatted, current_offset)
 				if(start_pos != -1):
-					#<s>, </s> are not found in lines;
+					#<s>, </s>, and many other tokens produced by the tokenizer are not found in lines (cannot rely on a complete token_offsets);
 					end_pos = start_pos + len(tokenFormatted)
 					token_offsets.append((token, token_id, start_pos, end_pos))
 					current_offset = end_pos
@@ -440,13 +440,7 @@ class DatasetHDD(torch.utils.data.Dataset):
 						conclusionSentencePosEnd = sentencePosEnd
 				if(conclusionLastTokenIndex == None):
 					conclusionLastTokenIndex = tokenIndex-1	#last token in context window, skip </s> token
-				
-			#print("conclusionSentencePosStart = ", conclusionSentencePosStart)
-			#print("conclusionSentencePosEnd = ", conclusionSentencePosEnd)
-			#print("conclusionFirstTokenIndex = ", conclusionFirstTokenIndex)
-			#print("conclusionLastTokenIndex = ", conclusionLastTokenIndex)
-			#print("introFirstTokenIndex = ", introFirstTokenIndex)
-					
+							
 			tokenidsConclusion = torch.concat((torch.tensor([tokenizer.convert_tokens_to_ids(sequenceStartToken)]), 
 				token_ids[conclusionFirstTokenIndex:conclusionLastTokenIndex+1], 
 				torch.tensor([tokenizer.convert_tokens_to_ids(centralSequencePredictionConclusionEndToken)])), dim=0)

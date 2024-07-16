@@ -1,7 +1,7 @@
 """GPT2pt.py
 
 # Author:
-Richard Bruce Baxter - Copyright (c) 2023 Baxter AI (baxterai.com)
+Richard Bruce Baxter - Copyright (c) 2023-2024 Baxter AI (baxterai.com)
 	
 based on; https://huggingface.co/learn/nlp-course/chapter7/6
 https://colab.research.google.com/github/huggingface/notebooks/blob/master/course/en/chapter7/section6_pt.ipynb
@@ -10,14 +10,18 @@ https://colab.research.google.com/github/huggingface/notebooks/blob/master/cours
 MIT License
 
 # Installation:
-conda create -n transformersenv
-source activate transformersenv
-conda install python=3.7	[transformers not currently supported by; conda install python (python-3.10.6)]
+conda create -n transformersenvGPT2
+source activate transformersenvGPT2
+conda install python=3.7
 pip install datasets
-pip install transfomers==4.23.1
+pip install 'transformers>=4.23'
 pip install torch
-pip install evaluate
+pip install lovely-tensors
+pip install nltk
+pip install torchmetrics
+pip install pynvml
 pip install accelerate
+pip install evaluate
 
 # Usage:
 source activate transformersenv
@@ -50,6 +54,31 @@ from torch.optim import AdamW
 from accelerate import Accelerator
 from transformers import get_scheduler
 
+from modeling_gpt2 import centralSequencePrediction
+if(centralSequencePrediction):
+	import nltk
+	from nltk.tokenize import sent_tokenize
+	nltk.download('punkt')
+	from tokenizers import ByteLevelBPETokenizer
+	from modeling_gpt2 import maxConclusionLength
+	from modeling_gpt2 import maxIntroLength
+	from modeling_gpt2 import maxCentralLength
+	from modeling_gpt2 import maxIntroCentralLength
+	centralSequencePredictionConclusionEndToken = '<conclusion_end>'
+	centralSequencePredictionIntroStartToken = '<intro_start>'
+
+if(centralSequencePrediction):
+	datasetName = 'wikitext'
+else:
+	datasetName = 'codeparrot'
+if(datasetName=='wikitext'):
+	model_name = "wikitext-accelerate"
+	sequenceStartToken = '<s>'	#tokenizer.bos_token
+	sequenceEndToken = '</s>'	#tokenizer.eos_token
+elif(datasetName=='codeparrot'):
+	model_name = "codeparrot-ds-accelerate"
+
+
 #debug options;
 trainPartialDataset = False
 if(trainPartialDataset):
@@ -68,7 +97,7 @@ stateTestDataset = False	#evaluate an existing model (do not train)
 num_train_epochs = 1	#default: 1	#10 - measure max training performance over multiple epochs
 shuffleTrainDataset = False	#default: False #orig (< 24 June 2023): True  #False is used for comparative tests
 saveTrainedModel = True	#save final model after completing 100% train
-batchSize = 16	#16	#default: 16	#orig: 32
+batchSize = 16	#16	#default: 16	#orig: 32	#lower batch size for simultaneous testing (ram usage)
 numberOfHiddenLayers = 12	#default = 12	#12	#1
 from modeling_gpt2 import recursiveLayers
 numberOfAttentionHeads = 12
@@ -131,18 +160,14 @@ def filter_streaming_dataset(dataset, filters):
 split = "train"  # "valid"
 filters = ["pandas", "sklearn", "matplotlib", "seaborn"]
 
-'''
-#recreate huggingface-course/codeparrot-ds-*:
-# This cell will take a very long time to execute
-print("start load dataset")
-data = load_dataset(f"transformersbook/codeparrot-{split}", split=split, streaming=True)
-filtered_data = filter_streaming_dataset(data, filters)
-print("end load dataset")
-'''
 
 print("start load dataset")
-ds_train = load_dataset("huggingface-course/codeparrot-ds-train", split="train")
-ds_valid = load_dataset("huggingface-course/codeparrot-ds-valid", split="validation")
+if(datasetName=='wikitext'):
+	ds_train = load_dataset(path="wikitext", name="wikitext-2-raw-v1", split="train", ignore_verifications=True)
+	ds_valid = load_dataset(path="wikitext", name="wikitext-2-raw-v1", split="validation", ignore_verifications=True)
+elif(datasetName=='codeparrot'):
+	ds_train = load_dataset("huggingface-course/codeparrot-ds-train", split="train")
+	ds_valid = load_dataset("huggingface-course/codeparrot-ds-valid", split="validation")
 print("end load dataset")
 
 print("Number of rows in the ds_train:", ds_train.num_rows)
@@ -163,53 +188,51 @@ else:
 			"valid": ds_valid,
 		}
 	)
-
-context_length = 128
-tokenizer = AutoTokenizer.from_pretrained("huggingface-course/code-search-net-tokenizer")
-
-
-'''
-filters = ["pandas", "sklearn", "matplotlib", "seaborn"]
-example_1 = "import numpy as np"
-example_2 = "import pandas as pd"
-print(any_keyword_in_string(example_1, filters), any_keyword_in_string(example_2, filters))
-
-#raw_datasets
-
-for key in raw_datasets["train"][0]:
-	print(f"{key.upper()}: {raw_datasets['train'][0][key][:200]}")
-
-outputs = tokenizer(
-	raw_datasets["train"][:2]["content"],
-	truncation=True,
-	max_length=context_length,
-	return_overflowing_tokens=True,
-	return_length=True,
-)
-print(f"Input IDs length: {len(outputs['input_ids'])}")
-print(f"Input chunk lengths: {(outputs['length'])}")
-print(f"Chunk mapping: {outputs['overflow_to_sample_mapping']}")
-'''
+	
+if(datasetName=='wikitext'):
+	context_length = 512
+	context_length_min = 256	#ignore text that does not have sufficient number of sentences
+	tokenizer = AutoTokenizer.from_pretrained("roberta-base")
+	new_special_tokens = [centralSequencePredictionConclusionEndToken, centralSequencePredictionIntroStartToken]
+	tokenizer.add_tokens(new_special_tokens)
+elif(datasetName=='codeparrot'):
+	context_length = 128
+	tokenizer = AutoTokenizer.from_pretrained("huggingface-course/code-search-net-tokenizer")
 
 
 def tokenize(element):
-	outputs = tokenizer(
-		element["content"],
-		truncation=True,
-		max_length=context_length,
-		return_overflowing_tokens=True,
-		return_length=True,
-	)
-	input_batch = []
-	for length, input_ids in zip(outputs["length"], outputs["input_ids"]):
-		#print("length = ", length)
-		if length == context_length:	#only perform prediction for sufficient context_length (no padding)
-			input_batch.append(input_ids)
-	return {"input_ids": input_batch}
-
-
-tokenized_datasets = raw_datasets.map(tokenize, batched=True, remove_columns=raw_datasets["train"].column_names)
-#tokenized_datasets
+	if(datasetName=='wikitext'):
+		contentRaw = element["text"]
+		content = []
+		for element in contentRaw:
+			if len(element) > context_length_min:
+				content.append(element)
+		outputs = tokenizer(content, max_length=context_length, padding='max_length', truncation=True, return_tensors='pt')
+		tokensList = []
+		for input_ids in outputs["input_ids"]:
+			tokens = tokenizer.convert_ids_to_tokens(input_ids)
+			tokensList.append(tokens)
+		batch = {"input_ids": outputs["input_ids"], "attention_mask": outputs["attention_mask"], "tokens": tokensList, "content": content}
+		return batch
+	elif(datasetName=='codeparrot'):
+		content = element["content"]
+		outputs = tokenizer(content, truncation=True, max_length=context_length, return_overflowing_tokens=True, return_length=True)
+		input_batch = []
+		for length, input_ids in zip(outputs["length"], outputs["input_ids"]):
+			if length == context_length:	#only perform prediction for sufficient context_length (no padding)
+				input_batch.append(input_ids)
+		batch = {"input_ids": input_batch}
+		return batch
+		
+if(datasetName=='wikitext'):
+	sequenceStartTokenID = tokenizer.convert_tokens_to_ids(sequenceStartToken)
+	centralSequencePredictionConclusionEndTokenID = tokenizer.convert_tokens_to_ids(centralSequencePredictionConclusionEndToken)
+	centralSequencePredictionIntroStartTokenID = tokenizer.convert_tokens_to_ids(centralSequencePredictionIntroStartToken)
+	sequenceEndTokenID = tokenizer.convert_tokens_to_ids(sequenceEndToken)
+	pad_token_id = tokenizer.convert_tokens_to_ids(tokenizer.pad_token)
+	tokenized_datasets = raw_datasets.map(tokenize, batched=True, remove_columns=raw_datasets["train"].column_names)
+elif(datasetName=='codeparrot'):
+	tokenized_datasets = raw_datasets.map(tokenize, batched=True, remove_columns=raw_datasets["train"].column_names)
 	
 config = AutoConfig.from_pretrained(
 	"gpt2",
@@ -278,69 +301,26 @@ if(trainWithTrainer):
 		model.save_pretrained(output_dir)
 		tokenizer.save_pretrained(output_dir)
 		
-	'''
-	import torch
-	from transformers import pipeline
-
-	device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-	pipe = pipeline(
-		"text-generation", model="huggingface-course/codeparrot-ds", device=device
-	)
-
-	txt = """\
-	# create some data
-	x = np.random.randn(100)
-	y = np.random.randn(100)
-
-	# create scatter plot with x, y
-	"""
-	print(pipe(txt, num_return_sequences=1)[0]["generated_text"])
-
-	txt = """\
-	# create some data
-	x = np.random.randn(100)
-	y = np.random.randn(100)
-
-	# create dataframe from x and y
-	"""
-	print(pipe(txt, num_return_sequences=1)[0]["generated_text"])
-
-	txt = """\
-	# dataframe with profession, income and name
-	df = pd.DataFrame({'profession': x, 'income':y, 'name': z})
-
-	# calculate the mean income per profession
-	"""
-	print(pipe(txt, num_return_sequences=1)[0]["generated_text"])
-
-	txt = """
-	# import random forest regressor from scikit-learn
-	from sklearn.ensemble import RandomForestRegressor
-
-	# fit random forest model with 300 estimators on X, y:
-	"""
-	print(pipe(txt, num_return_sequences=1)[0]["generated_text"])
-	'''
-
 keytoken_ids = []
-for keyword in [
-	"plt",
-	"pd",
-	"sk",
-	"fit",
-	"predict",
-	" plt",
-	" pd",
-	" sk",
-	" fit",
-	" predict",
-	"testtest",
-]:
-	ids = tokenizer([keyword]).input_ids[0]
-	if len(ids) == 1:
-		keytoken_ids.append(ids[0])
-	else:
-		print(f"Keyword has not single token: {keyword}")
+if(datasetName=='codeparrot'):
+	for keyword in [
+		"plt",
+		"pd",
+		"sk",
+		"fit",
+		"predict",
+		" plt",
+		" pd",
+		" sk",
+		" fit",
+		" predict",
+		"testtest",
+	]:
+		ids = tokenizer([keyword]).input_ids[0]
+		if len(ids) == 1:
+			keytoken_ids.append(ids[0])
+		else:
+			print(f"Keyword has not single token: {keyword}")
 
 def keytoken_weighted_loss(inputs, logits, keytoken_ids, alpha=1.0):
 	# Shift so that tokens < n predict n
@@ -352,8 +332,13 @@ def keytoken_weighted_loss(inputs, logits, keytoken_ids, alpha=1.0):
 	# Resize and average loss per sample
 	loss_per_sample = loss.view(shift_logits.size(0), shift_logits.size(1)).mean(axis=1)
 	# Calculate and scale weighting
-	weights = torch.stack([(inputs == kt).float() for kt in keytoken_ids]).sum(axis=[0, 2])
-	weights = alpha * (1.0 + weights)
+	if(datasetName=='codeparrot'):
+		#print("keytoken_ids = ", keytoken_ids)
+		#print("inputs = ", inputs)
+		weights = torch.stack([(inputs == kt).float() for kt in keytoken_ids]).sum(axis=[0, 2])
+		weights = alpha * (1.0 + weights)
+	else:
+		weights = 1
 	# Calculate weighted average
 	weighted_loss = (loss_per_sample * weights).mean()
 	return weighted_loss
@@ -376,10 +361,134 @@ def getAccuracy(inputs, logits):
 		accuracy = torch.mean(comparison)
 	#print("accuracy = ", accuracy)
 	return accuracy
+
+
+def batchLists(sample):
+	numberLines = len(sample)
+	input_ids_batch = []
+	attention_mask_batch = []
+	tokens_batch = []
+	content_batch = []
+	for lineIndex in range(numberLines):
+		input_ids_batch.append(sample[lineIndex]["input_ids"])
+		attention_mask_batch.append(sample[lineIndex]["attention_mask"])
+		tokens_batch.append(sample[lineIndex]["tokens"])
+		content_batch.append(sample[lineIndex]["content"])
+	input_ids_batch = torch.stack(input_ids_batch, dim=0)
+	attention_mask_batch = torch.stack(attention_mask_batch, dim=0)
+	#tokens_batch = torch.stack(tokens_batch, dim=0)	#not used
+	#content_batch = torch.stack(content_batch, dim=0)	#not used
+	batch = {"input_ids": input_ids_batch, "attention_mask": attention_mask_batch, "tokens": tokens_batch, "content": content_batch}
+	return batch
+		
+def resizeSubtensor(tokens, maxLength, padTokenID):
+	if(tokens.shape[0] > maxLength):
+		tokens = tokens[0:maxLength]
+	if(tokens.shape[0] < maxLength):
+		paddingLength = maxLength-tokens.shape[0]
+		tokensPadding = torch.full((paddingLength,), padTokenID, dtype=torch.long)
+		tokens = torch.cat((tokens, tokensPadding), dim=0)
+	return tokens
+
+def centralSequencePredictionCollateFunction(sample):
+	numberLines = len(sample)
+	#print("numberLines = ", numberLines)
+
+	tokensNewList = []
+	attentionMaskNewList = []
+	for lineIndex in range(numberLines):
+		line = sample[lineIndex]["content"]
+		tokens = sample[lineIndex]["tokens"]
+		token_ids = sample[lineIndex]["input_ids"]
+		attention_mask = sample[lineIndex]["attention_mask"]
+		token_offsets = []
+		current_offset = 0
+		i = 0
+		#print("line = ", line)
+		#print("len(line) = ", len(line))
+		for token, token_id in zip(tokens, token_ids):
+			tokenFormatted =  token.replace('\u0120', '')	#remove start/end word 'G' characters from token
+			tokenFormatted = tokenFormatted.lower()
+			#print("\ttokenFormatted = ", tokenFormatted)
+			start_pos = line.lower().find(tokenFormatted, current_offset)
+			if(start_pos != -1):
+				#<s>, </s>, and many other tokens produced by the tokenizer are not found in lines (cannot rely on a complete token_offsets);
+				end_pos = start_pos + len(tokenFormatted)
+				token_offsets.append((token, token_id, start_pos, end_pos))
+				current_offset = end_pos
+			#else:
+			#	print("\tline.lower().find fail: i = ", i)
+			i += 1
+		#conclusionSentencePosEnd = end_pos
+
+		introFirstTokenIndex = 1	#skip <s> token
+		conclusionFirstTokenIndex = None
+		conclusionLastTokenIndex = None
+		
+		#print("token_offsets = ", token_offsets)
+		
+		sentences = nltk.sent_tokenize(line)
+		current_offset = 0
+		sentencePos = 0
+		for sentenceIndex, sentence in enumerate(sentences):
+			#print("sentence = ", sentence)
+			start_pos = line.find(sentence, current_offset)
+			end_pos = start_pos + len(sentence)
+			current_offset = end_pos
+			sentencePosStart = start_pos
+			sentencePosEnd = end_pos-1
+
+			for tokenIndex, tokenTuple in enumerate(token_offsets):
+				start_pos = tokenTuple[2]
+				end_pos = tokenTuple[3]
+				#print("\tstart_pos = ", start_pos)
+				#print("\tend_pos = ", end_pos)
+				if(start_pos == sentencePosStart):
+					conclusionFirstTokenIndex = tokenIndex
+					conclusionSentencePosStart = sentencePosStart
+				if(start_pos == sentencePosEnd):
+					conclusionLastTokenIndex = tokenIndex
+					conclusionSentencePosEnd = sentencePosEnd
+			if(conclusionLastTokenIndex == None):
+				conclusionLastTokenIndex = tokenIndex-1	#last token in context window, skip </s> token
+		
+		#print("token_ids = ", token_ids)
+		#print("conclusionFirstTokenIndex = ", conclusionFirstTokenIndex)
+		#print("conclusionLastTokenIndex = ", conclusionLastTokenIndex)
+		
+		tokenidsConclusion = torch.concat((torch.tensor([sequenceStartTokenID]), 
+			token_ids[conclusionFirstTokenIndex:conclusionLastTokenIndex+1], 
+			torch.tensor([centralSequencePredictionConclusionEndTokenID])), dim=0)
+		tokenidsConclusion = resizeSubtensor(tokenidsConclusion, maxConclusionLength, pad_token_id)
+		tokenidsIntroCentral = torch.concat((torch.tensor([centralSequencePredictionIntroStartTokenID]), 
+			token_ids[introFirstTokenIndex:conclusionFirstTokenIndex], 
+			torch.tensor([sequenceEndTokenID])), dim=0)
+		tokenidsIntroCentral = resizeSubtensor(tokenidsIntroCentral, maxIntroCentralLength, pad_token_id)
+
+		attentionMaskConclusion = torch.concat((torch.ones(1), attention_mask[conclusionFirstTokenIndex:conclusionLastTokenIndex+1], torch.ones(1)), dim=0)
+		attentionMaskConclusion = resizeSubtensor(attentionMaskConclusion, maxConclusionLength, 0)
+		attentionMaskIntroCentral = torch.concat((torch.ones(1), attention_mask[introFirstTokenIndex:conclusionFirstTokenIndex], torch.ones(1)), dim=0)
+		attentionMaskIntroCentral = resizeSubtensor(attentionMaskIntroCentral, maxIntroCentralLength, 0)
+
+		inputidsNew = torch.cat((tokenidsIntroCentral, tokenidsConclusion), dim=0)
+		attentionMaskNew = torch.cat((attentionMaskIntroCentral, attentionMaskConclusion), dim=0)
+
+		#print("inputidsNew.shape = ", inputidsNew.shape)
+		#print("attentionMaskNew.shape = ", attentionMaskNew.shape)
+
+		sample[lineIndex]["input_ids"] = inputidsNew
+		sample[lineIndex]["attention_mask"] = attentionMaskNew
+
+	batch = batchLists(sample)
+	return batch
 	
 tokenized_datasets.set_format("torch")
-train_dataloader = DataLoader(tokenized_datasets["train"], batch_size=batchSize, shuffle=shuffleTrainDataset)
-eval_dataloader = DataLoader(tokenized_datasets["valid"], batch_size=batchSize)
+if(centralSequencePrediction):
+	train_dataloader = DataLoader(tokenized_datasets["train"], batch_size=batchSize, shuffle=shuffleTrainDataset, collate_fn=centralSequencePredictionCollateFunction)
+	eval_dataloader = DataLoader(tokenized_datasets["valid"], batch_size=batchSize, collate_fn=centralSequencePredictionCollateFunction)
+else:
+	train_dataloader = DataLoader(tokenized_datasets["train"], batch_size=batchSize, shuffle=shuffleTrainDataset)
+	eval_dataloader = DataLoader(tokenized_datasets["valid"], batch_size=batchSize)
 
 weight_decay = 0.1
 
@@ -423,7 +532,10 @@ def evaluate(model, eval_dataloader):
 	for step, batch in enumerate(eval_dataloader):
 		#print("step = ", step)
 		with torch.no_grad():
-			outputs = model(batch["input_ids"], labels=batch["input_ids"])
+			if(datasetName=='wikitext'):
+				outputs = model(batch["input_ids"], labels=batch["input_ids"], attention_mask=batch["attention_mask"])
+			elif(datasetName=='codeparrot'):
+				outputs = model(batch["input_ids"], labels=batch["input_ids"])
 		losses.append(accelerator.gather(outputs.loss.reshape(1)))		#OLD outputs.loss
 		if(printAccuracy):
 			inputs = batch["input_ids"]
@@ -449,7 +561,7 @@ def evaluate(model, eval_dataloader):
 
 if(stateTrainDataset):
 	if(trainLoadFromPrevious):
-		model = GPT2LMHeadModel.from_pretrained("./codeparrot-ds-accelerate")	#local_files_only=True
+		model = GPT2LMHeadModel.from_pretrained("./" + model_name)	#local_files_only=True
 		model_size = sum(t.numel() for t in model.parameters())
 		print(f"GPT-2 size: {model_size/1000**2:.1f}M parameters")
 		model, optimizer, train_dataloader, eval_dataloader = accelerator.prepare(model, optimizer, train_dataloader, eval_dataloader)
@@ -468,8 +580,7 @@ if(stateTrainDataset):
 		num_training_steps=num_training_steps,
 	)
 
-	model_name = "codeparrot-ds-accelerate"
-	output_dir = "codeparrot-ds-accelerate"
+	output_dir = model_name
 
 	samples_per_step = accelerator.state.num_processes * batchSize
 	gradient_accumulation_steps = 8
@@ -481,7 +592,13 @@ if(stateTrainDataset):
 	completed_steps = 0
 	for epoch in range(num_train_epochs):
 		for step, batch in tqdm(enumerate(train_dataloader, start=1), total=num_training_steps):
-			logits = model(batch["input_ids"]).logits
+			if(datasetName=='wikitext'):
+				#print("batch = ", batch)
+				#print("batch[input_ids] = ", batch["input_ids"])
+				#print("batch[input_ids] = ", batch["attention_mask"])
+				logits = model(batch["input_ids"], attention_mask=batch["attention_mask"]).logits
+			elif(datasetName=='codeparrot'):
+				logits = model(batch["input_ids"]).logits
 			loss = keytoken_weighted_loss(batch["input_ids"], logits, keytoken_ids)
 			if step % 100 == 0:
 				accelerator.print(
@@ -504,10 +621,10 @@ if(stateTrainDataset):
 				evaluateAndSave(model, accelerator, output_dir, eval_dataloader)
 
 	if(saveTrainedModel):
-		#output_dir = "codeparrot-ds-accelerate-final"	#temp: separate final stage save from intermittent save
-		 evaluateAndSave(model, accelerator, output_dir, eval_dataloader)
+		#output_dir = model_name + "-final"	#temp: separate final stage save from intermittent save
+		evaluateAndSave(model, accelerator, output_dir, eval_dataloader)
 
 if(stateTestDataset):
-	model = GPT2LMHeadModel.from_pretrained("./codeparrot-ds-accelerate")	#local_files_only=True
+	model = GPT2LMHeadModel.from_pretrained("./" + model_name)	#local_files_only=True
 	model, optimizer, train_dataloader, eval_dataloader = accelerator.prepare(model, optimizer, train_dataloader, eval_dataloader)
 	evaluate(model, eval_dataloader)

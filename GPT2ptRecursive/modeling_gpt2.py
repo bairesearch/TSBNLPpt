@@ -1,7 +1,7 @@
 # coding=utf-8
 # Copyright 2018 The OpenAI Team Authors and HuggingFace Inc. team.
 # Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
-# Copyright (c) 2023 Baxter AI (baxterai.com)
+# Copyright (c) 2023-2024 Baxter AI (baxterai.com)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,8 +27,17 @@ import torch.utils.checkpoint
 from torch import nn
 from torch.cuda.amp import autocast
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
+import torch.nn.functional as F
 
-recursiveLayers = True
+centralSequencePrediction = False	#generateCentralSequence	#to generate reasoning between sentences in a novel dataset, a model is trained to predict a central sequence of sentences given first and last sentences in a sequence.
+if(centralSequencePrediction):
+	#assume context_length=512
+	maxConclusionLength = 128	#max number of tokens of conclusion (padded); conclusion sentence is added to the start of the contextual window, using a separate (dedicated) positional embedding dimension
+	maxIntroLength = 128	#est
+	maxCentralLength = 256	#est	#may represent reasoning or planning between intro and conclusion
+	maxIntroCentralLength = maxIntroLength+maxCentralLength
+	
+recursiveLayers = False
 transformerBlockMLPlayer = True	#default: True	#apply all MLP layers
 transformerBlockMLPlayerLast = False	#default: False	#only apply last MLP layer (requires !transformerBlockMLPlayer)
 positionEmbeddingType = "absolute"	#"absolute" or "relative_key"	#default:"absolute"	#orig (May 2023):"absolute"	#relative_key implementation from ROBERTApt (requires optimisation)
@@ -964,7 +973,14 @@ class GPT2Model(GPT2PreTrainedModel):
 		else:
 			past_length = past_key_values[0][0].size(-2)
 		if position_ids is None:
-			position_ids = torch.arange(past_length, input_shape[-1] + past_length, dtype=torch.long, device=device)
+			#if(positionEmbeddingType == "absolute"):
+			if(centralSequencePrediction):
+				contextLength = self.config.n_ctx
+				position_ids1 = torch.arange(maxConclusionLength, dtype=torch.long, device=device) + maxIntroCentralLength	#or self.config.n_ctx 
+				position_ids2 = torch.arange(maxIntroCentralLength, dtype=torch.long, device=device)
+				position_ids = torch.cat((position_ids1, position_ids2), dim=0)
+			else:
+				position_ids = torch.arange(past_length, input_shape[-1] + past_length, dtype=torch.long, device=device)
 			position_ids = position_ids.unsqueeze(0).view(-1, input_shape[-1])
 
 		# GPT2Attention mask.
