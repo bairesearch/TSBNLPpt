@@ -24,7 +24,7 @@ pip install accelerate
 pip install evaluate
 
 # Usage:
-source activate transformersenv
+source activate transformersenvGPT2
 python GPT2pt.py
 
 # Description:
@@ -70,7 +70,7 @@ if(centralSequencePrediction):
 if(centralSequencePrediction):
 	datasetName = 'wikitext'
 else:
-	datasetName = 'codeparrot'
+	datasetName = 'wikitext'	#'codeparrot'
 if(datasetName=='wikitext'):
 	model_name = "wikitext-accelerate"
 	sequenceStartToken = '<s>'	#tokenizer.bos_token
@@ -97,7 +97,7 @@ stateTestDataset = False	#evaluate an existing model (do not train)
 num_train_epochs = 1	#default: 1	#10 - measure max training performance over multiple epochs
 shuffleTrainDataset = False	#default: False #orig (< 24 June 2023): True  #False is used for comparative tests
 saveTrainedModel = True	#save final model after completing 100% train
-batchSize = 16	#16	#default: 16	#orig: 32	#lower batch size for simultaneous testing (ram usage)
+batchSize = 4	#16	#default: 16	#orig: 32	#lower batch size for simultaneous testing (ram usage)
 numberOfHiddenLayers = 12	#default = 12	#12	#1
 from modeling_gpt2 import recursiveLayers
 numberOfAttentionHeads = 12
@@ -193,8 +193,9 @@ if(datasetName=='wikitext'):
 	context_length = 512
 	context_length_min = 256	#ignore text that does not have sufficient number of sentences
 	tokenizer = AutoTokenizer.from_pretrained("roberta-base")
-	new_special_tokens = [centralSequencePredictionConclusionEndToken, centralSequencePredictionIntroStartToken]
-	tokenizer.add_tokens(new_special_tokens)
+	if(centralSequencePrediction):
+		new_special_tokens = [centralSequencePredictionConclusionEndToken, centralSequencePredictionIntroStartToken]
+		tokenizer.add_tokens(new_special_tokens)
 elif(datasetName=='codeparrot'):
 	context_length = 128
 	tokenizer = AutoTokenizer.from_pretrained("huggingface-course/code-search-net-tokenizer")
@@ -225,11 +226,12 @@ def tokenize(element):
 		return batch
 		
 if(datasetName=='wikitext'):
-	sequenceStartTokenID = tokenizer.convert_tokens_to_ids(sequenceStartToken)
-	centralSequencePredictionConclusionEndTokenID = tokenizer.convert_tokens_to_ids(centralSequencePredictionConclusionEndToken)
-	centralSequencePredictionIntroStartTokenID = tokenizer.convert_tokens_to_ids(centralSequencePredictionIntroStartToken)
-	sequenceEndTokenID = tokenizer.convert_tokens_to_ids(sequenceEndToken)
-	pad_token_id = tokenizer.convert_tokens_to_ids(tokenizer.pad_token)
+	if(centralSequencePrediction):
+		sequenceStartTokenID = tokenizer.convert_tokens_to_ids(sequenceStartToken)
+		centralSequencePredictionConclusionEndTokenID = tokenizer.convert_tokens_to_ids(centralSequencePredictionConclusionEndToken)
+		centralSequencePredictionIntroStartTokenID = tokenizer.convert_tokens_to_ids(centralSequencePredictionIntroStartToken)
+		sequenceEndTokenID = tokenizer.convert_tokens_to_ids(sequenceEndToken)
+		pad_token_id = tokenizer.convert_tokens_to_ids(tokenizer.pad_token)
 	tokenized_datasets = raw_datasets.map(tokenize, batched=True, remove_columns=raw_datasets["train"].column_names)
 elif(datasetName=='codeparrot'):
 	tokenized_datasets = raw_datasets.map(tokenize, batched=True, remove_columns=raw_datasets["train"].column_names)
@@ -322,13 +324,21 @@ if(datasetName=='codeparrot'):
 		else:
 			print(f"Keyword has not single token: {keyword}")
 
-def keytoken_weighted_loss(inputs, logits, keytoken_ids, alpha=1.0):
+def keytoken_weighted_loss(inputs, logits, keytoken_ids, alpha=1.0, attention_mask=None):
+	if(datasetName=='wikitext'):
+		predictionMask = attention_mask[:, 1:].reshape(-1)
+	
 	# Shift so that tokens < n predict n
 	shift_labels = inputs[..., 1:].contiguous()
 	shift_logits = logits[..., :-1, :].contiguous()
 	# Calculate per-token loss
 	loss_fct = CrossEntropyLoss(reduce=False)
 	loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+	if(datasetName=='wikitext'):
+		#print("loss.shape = ", loss.shape)
+		#print("predictionMask.shape = ", predictionMask.shape)
+		loss = torch.multiply(loss, predictionMask)	#set loss to 0 where attention mask==0
+		#print("loss = ", loss)
 	# Resize and average loss per sample
 	loss_per_sample = loss.view(shift_logits.size(0), shift_logits.size(1)).mean(axis=1)
 	# Calculate and scale weighting
@@ -343,7 +353,10 @@ def keytoken_weighted_loss(inputs, logits, keytoken_ids, alpha=1.0):
 	weighted_loss = (loss_per_sample * weights).mean()
 	return weighted_loss
 
-def getAccuracy(inputs, logits):	
+def getAccuracy(inputs, logits, attention_mask=None):	
+	if(datasetName=='wikitext'):
+		predictionMask = attention_mask[:, 1:]
+		
 	#based on SBNLPpt_data:getAccuracy
 	logits = logits.detach()
 	# Shift so that tokens < n predict n
@@ -353,12 +366,22 @@ def getAccuracy(inputs, logits):
 	if(accuracyTopN == 1):
 		tokenLogitsTopIndex = torch.squeeze(tokenLogitsTopIndex)	#tokenLogitsTopIndex[:, :, 1] -> #tokenLogitsTopIndex[:, :] 	
 		comparison = (tokenLogitsTopIndex == shift_labels).float()
-		accuracy = torch.mean(comparison)
+		if(datasetName=='wikitext'):
+			comparisonMasked = torch.multiply(comparison, predictionMask)
+			accuracy = (torch.sum(comparisonMasked)/torch.sum(predictionMask)).cpu().numpy()	#accuracy.item()		
+		else:
+			accuracy = torch.mean(comparison)
 	else:
 		labelsExpanded = torch.unsqueeze(shift_labels, dim=2)
 		labelsExpanded = labelsExpanded.expand(-1, -1, tokenLogitsTopIndex.shape[2])	#labels broadcasted to [batchSize, sequenceMaxNumTokens, accuracyTopN]
 		comparison = (tokenLogitsTopIndex == labelsExpanded).float()
-		accuracy = torch.mean(comparison)
+		if(datasetName=='wikitext'):
+			predictionMaskExpanded = torch.unsqueeze(predictionMask, dim=2)
+			predictionMaskExpanded = predictionMaskExpanded.expand(-1, -1, tokenLogitsTopIndex.shape[2])	#predictionMask broadcasted to [batchSize, sequenceMaxNumTokens, accuracyTopN]
+			comparisonMasked = torch.multiply(comparison, predictionMaskExpanded)	#predictionMask broadcasted to [batchSize, sequenceMaxNumTokens, accuracyTopN]
+			accuracy = (torch.sum(comparisonMasked)/torch.sum(predictionMask)).cpu().numpy() 	#or torch.sum(comparisonMasked)/(torch.sum(predictionMaskExpanded)/accuracyTopN)	#accuracy.item()
+		else:
+			accuracy = torch.mean(comparison)
 	#print("accuracy = ", accuracy)
 	return accuracy
 
@@ -533,14 +556,15 @@ def evaluate(model, eval_dataloader):
 		#print("step = ", step)
 		with torch.no_grad():
 			if(datasetName=='wikitext'):
-				outputs = model(batch["input_ids"], labels=batch["input_ids"], attention_mask=batch["attention_mask"])
-			elif(datasetName=='codeparrot'):
-				outputs = model(batch["input_ids"], labels=batch["input_ids"])
+				attention_mask=batch["attention_mask"]
+			else:
+				attention_mask = None
+			outputs = model(batch["input_ids"], labels=batch["input_ids"], attention_mask=attention_mask)
 		losses.append(accelerator.gather(outputs.loss.reshape(1)))		#OLD outputs.loss
 		if(printAccuracy):
 			inputs = batch["input_ids"]
 			logits = outputs.logits
-			accuracy = getAccuracy(inputs, logits)
+			accuracy = getAccuracy(inputs, logits, attention_mask)
 			#print("accuracy = ", accuracy)
 			if(not math.isnan(accuracy)):
 				accuracies.append(accuracy.reshape(1))
@@ -593,13 +617,11 @@ if(stateTrainDataset):
 	for epoch in range(num_train_epochs):
 		for step, batch in tqdm(enumerate(train_dataloader, start=1), total=num_training_steps):
 			if(datasetName=='wikitext'):
-				#print("batch = ", batch)
-				#print("batch[input_ids] = ", batch["input_ids"])
-				#print("batch[input_ids] = ", batch["attention_mask"])
-				logits = model(batch["input_ids"], attention_mask=batch["attention_mask"]).logits
-			elif(datasetName=='codeparrot'):
-				logits = model(batch["input_ids"]).logits
-			loss = keytoken_weighted_loss(batch["input_ids"], logits, keytoken_ids)
+				attention_mask=batch["attention_mask"]
+			else:
+				attention_mask = None
+			logits = model(batch["input_ids"], attention_mask=attention_mask).logits
+			loss = keytoken_weighted_loss(batch["input_ids"], logits, keytoken_ids, attention_mask=attention_mask)
 			if step % 100 == 0:
 				accelerator.print(
 					{
