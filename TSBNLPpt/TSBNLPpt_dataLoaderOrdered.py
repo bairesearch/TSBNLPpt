@@ -37,7 +37,10 @@ def getOrderedBatchSample(documentSegmentsBatchList, documentIndex, sampleIndexI
 	documentSample = documentSegmentsBatchList[segmentIndexInDocument][sampleIndexInBatch]
 	input_ids = documentSample
 	attention_mask = TSBNLPpt_dataTokeniser.generateAttentionMask(tokenizer, input_ids)
-	encodings = TSBNLPpt_dataTokeniser.getSampleEncodings(useMLM, input_ids, attention_mask, False)
+	offset_mapping = None
+	if(useSubwordTokenizerFast):
+		printe("useSubwordTokenizerFast offset_mapping is not currently supported by tokenMemoryBank:createOrderedDataset")
+	encodings = TSBNLPpt_dataTokeniser.getSampleEncodings(useMLM, input_ids, attention_mask, offset_mapping, False)
 	sampleIndexInBatch+=1
 	if(sampleIndexInBatch == batchSize):
 		segmentIndexInDocument+=1

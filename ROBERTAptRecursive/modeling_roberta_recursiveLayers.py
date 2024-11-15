@@ -24,7 +24,7 @@ import torch.utils.checkpoint
 from torch import nn
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 
-centralSequencePrediction = False	#generateCentralSequence	#to generate reasoning/planning between sentences in a novel dataset, a model is trained to predict a central sequence of sentences given first and last sentences in a sequence.
+centralSequencePrediction = True	#generateCentralSequence	#to generate reasoning/planning between sentences in a novel dataset, a model is trained to predict a central sequence of sentences given first and last sentences in a sequence.
 if(centralSequencePrediction):
 	maxAllLength=512
 	maxConclusionLength = 128	#max number of tokens of conclusion (padded); conclusion sentence is added to the start of the contextual window, using a separate (dedicated) positional embedding dimension

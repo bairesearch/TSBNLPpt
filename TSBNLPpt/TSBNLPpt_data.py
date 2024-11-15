@@ -55,9 +55,33 @@ def getAccuracy(input_ids, attention_mask, labels, outputs):
 		return getAccuracyMaskedLM(input_ids, labels, outputs)
 	else:
 		return getAccuracyCausalLM(input_ids, outputs, attention_mask)
-		
+
+def generateProsodyExcludedTokenSet(tokenizer):
+	global excluded_token_set
+	excluded_token_set = None
+	if(prosodyDelimitedData):
+		if(prosodyDelimitedType=="controlTokens" or prosodyDelimitedType=="txtDebug"):
+			excludedTokensIntList = []
+		elif(prosodyDelimitedType=="uniqueTokens"):
+			excludedTokensIntList = read_token_ids("prosodyTokenIDs.txt")
+			print("excludedTokensIntList = ", excludedTokensIntList)
+			#excludedTokensStringList = read_token_ids("prosodyTokens.txt")
+			#excludedTokensIntList = [tokenizer.encode(token, add_special_tokens=False)[0] for token in excludedTokensStringList]
+		elif(prosodyDelimitedType=="repeatTokens"):
+			excludedTokensIntList = []	#TODO
+		excluded_token_set = set(excludedTokensIntList)
+	#return excluded_token_set
+				
+def removeProsodyTokensFromPredictionMask(predictionMask, labels, excluded_token_set):
+	if(prosodyDelimitedData):
+		if(prosodyDelimitedType=="uniqueTokens"):	#FUTURE: or prosodyDelimitedType=="repeatTokens"
+			for token in excluded_token_set:
+				predictionMask &= (labels != token)
+	return predictionMask
+				
 def getAccuracyMaskedLM(inputIDs, labels, outputs):
 	predictionMask = torch.where(inputIDs==customMaskTokenID, 1.0, 0.0)	#maskTokenIndexFloat = maskTokenIndex.float()	#orig: maskTokenIndex
+	###predictionMask = removeProsodyTokensFromPredictionMask(predictionMask, labels, excluded_token_set)
 	#tokenizerNumberTokens = TSBNLPpt_dataTokeniser.getTokenizerLength(tokenizer)
 	tokenLogits = (outputs.logits).detach()
 	accuracy = getAccuracyWithPredictionMask(labels, tokenLogits, predictionMask)
@@ -71,6 +95,7 @@ def getAccuracyCausalLM(inputs, outputs, attention_mask):
 	# Shift so that tokens < n predict n
 	shift_labels = inputs[..., 1:].contiguous()
 	shift_logits = logits[..., :-1, :].contiguous()
+	###predictionMask = removeProsodyTokensFromPredictionMask(predictionMask, shift_labels, excluded_token_set)
 	accuracy = getAccuracyWithPredictionMask(shift_labels, shift_logits, predictionMask)
 	accuracy = accuracy.item()
 	#print("accuracy = ", accuracy)

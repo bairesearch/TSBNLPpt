@@ -7,19 +7,26 @@ Richard Bruce Baxter - Copyright (c) 2022-2024 Baxter AI (baxterai.com)
 MIT License
 
 # Installation:
-conda create -n transformersenv
-source activate transformersenv
-conda install python=3.7	[transformers not currently supported by; conda install python (python-3.10.6)]
-pip install datasets
-pip install transfomers==4.23.1
+conda create -n pytorchsenv
+source activate pytorchsenv
+conda install python=3.12
+pip install networkx
+pip install matplotlib
+pip install yattag
 pip install torch
+pip install torch_geometric
+pip install nltk 
+pip install spacy
+pip install benepar
+pip install datasets
+pip install transfomers
 pip install lovely-tensors
-pip install nltk
 pip install torchmetrics
 pip install pynvml
+python3 -m spacy download en_core_web_md
 
 # Usage:
-source activate transformersenv
+source activate pytorchsenv
 python TSBNLPpt_main.py
 
 # Description:
@@ -62,9 +69,12 @@ if(useMultipleModels):
 		modelStoreList = TSBNLPpt_GIAvectorSpaces.vectorSpaceList
 	elif(useAlgorithmTransformer):
 		modelStoreList = TSBNLPpt_transformer.modelStoreList
-			
-device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
+if(useGPU):
+	device = torch.device('cuda') #device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+else:
+	device = torch.device('cpu')
+	
 def main():
 	tokenizer, dataElements = TSBNLPpt_data.initialiseDataLoader()
 	if(usePretrainedModelDebug):
@@ -87,6 +97,8 @@ def continueTrainingModel():
 	
 def trainDataset(tokenizer, dataElements):
 
+	TSBNLPpt_data.generateProsodyExcludedTokenSet(tokenizer)
+	
 	#vocabSize = countNumberOfTokens(tokenizer)
 	model, optim = prepareModelTrainOrTestWrapper(True)
 
@@ -112,7 +124,7 @@ def trainDataset(tokenizer, dataElements):
 		if(printAccuracyRunningAverage):
 			(runningLoss, runningAccuracy) = (0.0, 0.0)
 		
-		for batchIndex, batch in enumerate(loop):			
+		for batchIndex, batch in enumerate(loop):
 			loss, accuracy = trainOrTestBatchWrapper(True, batchIndex, batch, tokenizer, model, optim)
 
 			if(useTrainWarmup):
@@ -136,6 +148,8 @@ def trainDataset(tokenizer, dataElements):
 			saveModel(model)
 					
 def testDataset(tokenizer, dataElements):
+
+	TSBNLPpt_data.generateProsodyExcludedTokenSet(tokenizer)
 
 	model, optim = prepareModelTrainOrTestWrapper(False)
 	

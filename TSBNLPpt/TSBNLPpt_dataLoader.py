@@ -88,12 +88,13 @@ class DataloaderDatasetHDD(torch.utils.data.Dataset):
 				self.dataFileLinesIterator = iter(lines)
 			else:
 				sample = TSBNLPpt_dataTokeniser.tokenise(lines, self.tokenizer, sequenceMaxNumTokens)
-				self.encodings = TSBNLPpt_dataTokeniser.getSampleEncodings(self.useMLM, sample.input_ids, sample.attention_mask, True)
+				offset_mapping = None
+				if(useSubwordTokenizerFast):
+					offset_mapping = sample.offset_mapping
+				self.encodings = TSBNLPpt_dataTokeniser.getSampleEncodings(self.useMLM, sample.input_ids, sample.attention_mask, offset_mapping, True)
 
 		if(createOrderedDataset):
-			batchSample, self.documentSegmentsBatchList, self.documentIndexInDataFile, self.sampleIndexInBatch, self.segmentIndexInDocument = TSBNLPpt_dataLoaderOrdered.getOrderedBatchSample(
-				self.documentSegmentsBatchList, self.documentIndexInDataFile, self.sampleIndexInBatch, self.segmentIndexInDocument, self.tokenizer, self.dataFileLinesIterator, self.useMLM
-			)
+			batchSample, self.documentSegmentsBatchList, self.documentIndexInDataFile, self.sampleIndexInBatch, self.segmentIndexInDocument = TSBNLPpt_dataLoaderOrdered.getOrderedBatchSample(self.documentSegmentsBatchList, self.documentIndexInDataFile, self.sampleIndexInBatch, self.segmentIndexInDocument, self.tokenizer, self.dataFileLinesIterator, self.useMLM)
 		else:		
 			batchSample = {key: tensor[self.documentIndexInDataFile] for key, tensor in self.encodings.items()}	
 		
@@ -134,14 +135,15 @@ class DataloaderDatasetInternet(torch.utils.data.Dataset):
 
 	def __getitem__(self, i):	
 		if(createOrderedDataset):
-			batchSample, self.documentSegmentsBatchList, self.documentIndex, self.sampleIndexInBatch, self.segmentIndexInDocument = TSBNLPpt_dataLoaderOrdered.getOrderedBatchSample(
-				self.documentSegmentsBatchList, self.documentIndex, self.sampleIndexInBatch, self.segmentIndexInDocument, self.tokenizer, self.datasetIterator, self.useMLM
-			)
+			batchSample, self.documentSegmentsBatchList, self.documentIndex, self.sampleIndexInBatch, self.segmentIndexInDocument = TSBNLPpt_dataLoaderOrdered.getOrderedBatchSample(self.documentSegmentsBatchList, self.documentIndex, self.sampleIndexInBatch, self.segmentIndexInDocument, self.tokenizer, self.datasetIterator, self.useMLM)
 		else:
 			documentText = TSBNLPpt_dataTokeniser.getNextDocument(self.datasetIterator)
 			documentText = TSBNLPpt_dataTokeniser.preprocessDocumentText(documentText)
 			documentTokens = TSBNLPpt_dataTokeniser.tokenise(documentText, self.tokenizer, sequenceMaxNumTokens)
-			encodings = TSBNLPpt_dataTokeniser.getSampleEncodings(self.useMLM, documentTokens.input_ids[0], documentTokens.attention_mask[0], False)
+			offset_mapping = None
+			if(useSubwordTokenizerFast):
+				offset_mapping = documentTokens.offset_mapping[0]
+			encodings = TSBNLPpt_dataTokeniser.getSampleEncodings(self.useMLM, documentTokens.input_ids[0], documentTokens.attention_mask[0], offset_mapping, False)
 			batchSample = encodings
 			self.documentIndex+=1
 			

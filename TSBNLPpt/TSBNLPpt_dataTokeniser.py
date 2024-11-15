@@ -18,20 +18,28 @@ TSBNLPpt data tokeniser
 """
 
 import torch
-from tokenizers import ByteLevelBPETokenizer
-from transformers import RobertaTokenizer
 from TSBNLPpt_globalDefs import *
 if(useFullwordTokenizer):
 	import TSBNLPpt_dataTokeniserFullword
-if(tokeniserOnlyTrainOnDictionary):
-	from nltk.corpus import words
+else:
+	from tokenizers import ByteLevelBPETokenizer
+	if(tokeniserOnlyTrainOnDictionary):
+		from nltk.corpus import words
+	if(useSubwordTokenizerFast):
+		from transformers import RobertaTokenizerFast as RobertaTokenizer
+	else:
+		from transformers import RobertaTokenizer as RobertaTokenizer
+
 
 def tokenise(lines, tokenizer, maxLength):			
 	if(useFullwordTokenizerClass):
+		return_offsets_mapping = False
+		if(useSubwordTokenizerFast):
+			return_offsets_mapping = True
 		if(maxLength is None):
-			sample = tokenizer(lines, return_tensors='pt')
+			sample = tokenizer(lines, return_tensors='pt', return_offsets_mapping=return_offsets_mapping)
 		else:
-			sample = tokenizer(lines, max_length=maxLength, padding='max_length', truncation=True, return_tensors='pt')
+			sample = tokenizer(lines, max_length=maxLength, padding='max_length', truncation=True, return_tensors='pt', return_offsets_mapping=return_offsets_mapping)
 	else:
 		sample = TSBNLPpt_dataTokeniserFullword.tokenizeBasic(lines, tokenizer)
 	return sample
@@ -66,7 +74,7 @@ def trainTokeniserSubwords(dataElements, vocabSize):
 		tokenizer.train(files=dataElements[:trainTokenizerNumberOfFilesToUse], vocab_size=vocabSize, min_frequency=1, special_tokens=specialTokens)
 	else:
 		tokenizer.train_from_iterator(dataset, length=trainTokenizerNumberOfFilesToUse, vocab_size=vocabSize, min_frequency=1, special_tokens=specialTokens)
-	
+
 	#os.mkdir(modelPathName)
 
 	tokenizer.save_model(modelPathName)
@@ -110,7 +118,7 @@ def printSpecialTokenIDs(tokenizer):
 
 #common data loader functions:
 
-def getSampleEncodings(useMLM, input_ids, attention_mask, batched):
+def getSampleEncodings(useMLM, input_ids, attention_mask, offset_mapping, batched):
 	#print("input_ids = ", input_ids)
 	#print("attention_mask = ", attention_mask)
 	inputIDs = []
@@ -133,7 +141,13 @@ def getSampleEncodings(useMLM, input_ids, attention_mask, batched):
 	inputIDs = torch.cat(inputIDs)
 	mask = torch.cat(mask)
 	labels = torch.cat(labels)
-	encodings = {'inputIDs': inputIDs, 'attentionMask': mask, 'labels': labels}
+	if(useSubwordTokenizerFast):
+		offsets = []
+		offsets.append(offset_mapping)
+		offsets = torch.cat(offsets)
+	else:
+		offsets = torch.zeros_like(inputIDs)	#'None' is not supported	#not used
+	encodings = {'inputIDs': inputIDs, 'attentionMask': mask, 'labels': labels, 'offsets': offsets}
 	return encodings
 
 def addLabelsPredictionMaskTokens(input_ids):

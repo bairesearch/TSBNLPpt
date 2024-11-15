@@ -7,17 +7,26 @@ Richard Bruce Baxter - Copyright (c) 2022-2024 Baxter AI (baxterai.com)
 MIT License
 
 # Installation:
-conda create -n transformersenv
-source activate transformersenv
-conda install python
-pip install transformers
-pip install datasets
+conda create -n pytorchsenv
+source activate pytorchsenv
+conda install python=3.12
+pip install networkx
+pip install matplotlib
+pip install yattag
 pip install torch
-pip install torchsummary
-pip install nltk
+pip install torch_geometric
+pip install nltk 
+pip install spacy
+pip install benepar
+pip install datasets
+pip install transfomers
+pip install lovely-tensors
+pip install torchmetrics
+pip install pynvml
+python3 -m spacy download en_core_web_md
 
 # Usage:
-source activate transformersenv
+source activate pytorchsenv
 python ROBERTApt-main.py
 
 # Description:
@@ -46,7 +55,7 @@ if(centralSequencePrediction):
 	centralSequencePredictionConclusionEndToken = '<conclusion_end>'
 	centralSequencePredictionIntroStartToken = '<intro_start>'
 	
-usePretrainedRobertaTokenizer = False	#incomplete #do not use retrained tokenizer
+usePretrainedRobertaTokenizer = False	#incomplete #do not use pretrained tokenizer
 
 prosodyDelimitedData = False
 if(prosodyDelimitedData):

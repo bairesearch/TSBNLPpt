@@ -16,6 +16,12 @@ see TSBNLPpt_main.py
 TSBNLPpt POS wordLists
 
 # Usage (generateWordlists for LRPdata):
+python	
+import nltk
+nltk.download('words')
+nltk.download('brown')
+Ctrl-D
+
 source activate transformersenv
 python TSBNLPpt_POSwordLists.py
 

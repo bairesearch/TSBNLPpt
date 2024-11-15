@@ -27,14 +27,24 @@ else:
 import math
 import pynvml
 
-usePretrainedRobertaTokenizer = False	#incomplete #do not use retrained tokenizer
+useGPU = True
 
+attendToLocalConceptColumns = False
+
+#recent tokenizer options;
+useSubwordTokenizerFast = False
+if(attendToLocalConceptColumns):
+	useSubwordTokenizerFast = True	#required to obtain offsets during tokenization
+usePretrainedRobertaTokenizer = False	#incomplete #do not use pretrained tokenizer
+
+#prosody delimiters;
 prosodyDelimitedData = False
 if(prosodyDelimitedData):
 	prosodyDelimitedType = "controlTokens"	#txtptc
 	#prosodyDelimitedType = "repeatTokens"	#txtptr
 	#prosodyDelimitedType = "uniqueTokens"	#txtptu
 	
+#masked/causal LM support;
 useMaskedLM = False
 useTrainWarmup = False	#orig: False (may be required for recursiveLayersNormaliseNumParameters)
 if(useTrainWarmup):
@@ -42,8 +52,9 @@ if(useTrainWarmup):
 	warmupLearningRateStart = 1e-7
 	warmupLearningRateIncrement = 2.5e-8
 	warmupLearningRateEnd = 1e-4	#==learningRate
-	
-legacyDataloaderCode2 = False	#wo patch TSBNLPpt_dataTokeniser:getSampleEncodings to calculate labels = addLabelsPredictionMaskTokens (convert paddingTokenID [1] to labelPredictionMaskTokenID [-100])
+
+#legacy implementation;
+legacyDataloaderCode2 = False	#wo patch TSBNLPpt_dataTokeniser:getSampleEncodings to calculate labels = addLabelsPredictionMaskTokens (convert paddingTokenID [1] to labelPredictionMaskTokenID [-100])	#orig; True
 sortDataFilesByName = True	#orig; False	#only stateTrainTokeniser and legacyDataloaderCode1 uses sortDataFilesByName (!legacyDataloaderCode1 assumes sortDataFilesByName=True)
 
 #recursive algorithm selection:
@@ -63,7 +74,10 @@ trainStartEpoch = 0	#start epoch of training (if continuing a training regime se
 trainNumberOfEpochs = 1	#default: 10	#number of epochs to train (for production typically train x epochs at a time)
 trainStartDataFile = 0	#default: 0	#start data file to train (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
 trainNumberOfDataFiles = 100	#15	#default: 100	#number of data files to train (for production typically train x dataFiles at a time)	#< datasetNumberOfDataFiles (30424) * trainSplitFraction
-testNumberOfDataFiles = 1	#10
+if(prosodyDelimitedData):
+	testNumberOfDataFiles = 6
+else:
+	testNumberOfDataFiles = 10	#default: 10
 
 debugCompareTokenMemoryBankPerformance = False
 debugCreateOrderedDatasetFiles = False	#create data files comprising documents of sufficient length for createOrderedDataset
@@ -114,7 +128,13 @@ dataDrive = '/datasets/'
 workingDrive = '/large/source/ANNpython/TSBNLPpt/'
 
 downloadCacheFolderName = 'cache'
-dataFolderName = 'dataOSCAR1900preprocessed'	#dataOSCAR1900preprocessed #dataLibrivoxBooksPreprocessed
+if(prosodyDelimitedData):
+	dataFolderName = 'dataLibrivoxBooksPreprocessed'
+else:
+	if(datasetName=='OSCAR1900'):
+		dataFolderName = 'dataOSCAR1900preprocessed'
+	elif(datasetName=='OSCAR2201'):
+		dataFolderName = 'dataOSCAR2201preprocessed'
 modelFolderName = 'model'
 LRPfolderName = 'LRPdata/' + LRPdatabaseName
 if(relativeFolderLocations):
@@ -139,8 +159,11 @@ if(prosodyDelimitedData):
 		dataPreprocessedFileNameEnd = ".txtptu"
 else:
 	dataPreprocessedFileNameEnd = ".txt"
- 
-sequenceMaxNumTokensDefault = 512
+
+if(prosodyDelimitedData):
+	sequenceMaxNumTokensDefault = 256
+else:
+	sequenceMaxNumTokensDefault = 512
 
 #initialise (dependent vars);
 useMultipleModels = False	
@@ -160,7 +183,7 @@ transformerSuperblocks = False
 if(useAlgorithmTransformer):
 
 	#syntactic bias selection (part 1):
-	recursiveLayers = True	#optional
+	recursiveLayers = False	#optional
 	memoryTraceBias = False	 #optional	#nncustom.Linear adjusts training/inference based on network prior activations
 	simulatedDendriticBranches = False	#optional #nncustom.Linear simulates multiple independent fully connected weights per neuron
 
@@ -191,6 +214,7 @@ if(useAlgorithmTransformer):
 	hiddenLayerSizeTransformer = 768	#default: 768 (can be overridden)
 	positionEmbeddingType = "relative_key"	#default:"relative_key"	#orig (Nov 2022):"absolute"
 	recursiveLayersOrigImplementation = False	#execute orig codebase with orig implementation so that archived models can be reloaded
+	recursiveLayersEmulateOrigImplementation2 = False
 	
 	if(transformerSuperblocks):
 		transformerSuperblocksNumber = 2	#segregate nlp and logic layers
@@ -440,7 +464,10 @@ if(useSmallTokenizerTrainNumberOfFiles):
 		trainTokenizerNumberOfFilesToUseSmall = 100	#100	#default 1000	#100: 15 min, 1000: 3.75 hours
 
 reserveValidationSet = True	#reserves a fraction of the data for validation
-trainSplitFraction = 0.9	#90% train data, 10% test data
+if(prosodyDelimitedData):
+	trainSplitFraction = 0.95
+else:
+	trainSplitFraction = 0.9	#90% train data, 10% test data
 
 if(useAlgorithmTransformer):
 	batchSize = 8	#default: 8	#8 and 16 train at approx same rate (16 uses more GPU ram)	#depends on GPU RAM	#with 12GB GPU RAM, batchSize max = 16
@@ -484,14 +511,15 @@ if(useSmallBatchSizeDebug):
 print("batchSize = ", batchSize)
 	
 numberOfDocumentsPerDataFile = 10000	#if !usePreprocessedDataset; numberOfDocumentsPerDataFile = number of documents per artificial datafile index (e.g. trainNumberOfDataFiles)
-if(datasetName == 'OSCAR1900'):
-	datasetNumberOfDocuments = 304230423	#orig: dataFileLastIndex*numberOfDocumentsPerDataFile + datasetNumberOfSamplesPerDataFileLast = 30423*10000 + 423
-	datasetNumberOfDataFiles =	math.ceil(datasetNumberOfDocuments/numberOfDocumentsPerDataFile) #30424
-	datasetNumberOfSamplesPerDataFileLast = datasetNumberOfDocuments%numberOfDocumentsPerDataFile	#423
-elif(datasetName == 'OSCAR2201'):
-	datasetNumberOfDocuments = 431992659	#number of documents	#https://huggingface.co/datasets/oscar-corpus/OSCAR-2201
-	datasetNumberOfDataFiles =	math.ceil(datasetNumberOfDocuments/numberOfDocumentsPerDataFile)
-	datasetNumberOfSamplesPerDataFileLast = datasetNumberOfDocuments%numberOfDocumentsPerDataFile
+if(prosodyDelimitedData):
+	datasetNumberOfDocuments = 105*10000
+else:
+	if(datasetName == 'OSCAR1900'):
+		datasetNumberOfDocuments = 304230423	#orig: dataFileLastIndex*numberOfDocumentsPerDataFile + datasetNumberOfSamplesPerDataFileLast = 30423*10000 + 423
+	elif(datasetName == 'OSCAR2201'):
+		datasetNumberOfDocuments = 431992659	#number of documents	#https://huggingface.co/datasets/oscar-corpus/OSCAR-2201
+datasetNumberOfDataFiles =	math.ceil(datasetNumberOfDocuments/numberOfDocumentsPerDataFile) #30424
+datasetNumberOfSamplesPerDataFileLast = datasetNumberOfDocuments%numberOfDocumentsPerDataFile	#423
 dataFileLastIndex = datasetNumberOfDataFiles-1
 
 modelSaveNumberOfBatches = 1000	#resave model after x training batches
