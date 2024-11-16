@@ -191,12 +191,13 @@ def generateConceptColumnIndices(device, tokenizer, batch_input_ids, batch_offse
 		conceptColumnEndIndexList.append(first_pad_index)
 
 		# Remove the last start index as per the pseudocode
-		conceptColumnStartIndexList.pop()
-
-		# Convert lists to tensors and pad to seq_length
-		conceptColumnStartIndices = pt.tensor(conceptColumnStartIndexList)
-		conceptColumnEndIndices = pt.tensor(conceptColumnEndIndexList)
-
+		if(len(conceptColumnStartIndexList) > 1):
+			conceptColumnStartIndexList.pop()
+		
+		assert len(conceptColumnStartIndexList) == len(conceptColumnEndIndexList)
+		#print("conceptColumnStartIndexList = ", conceptColumnStartIndexList)
+		#print("conceptColumnEndIndexList = ", conceptColumnEndIndexList)
+		
 		# For each token, assign its concept column start and end indices
 		token_concept_start_indices = pt.zeros(seq_length, dtype=pt.long)
 		token_concept_end_indices = pt.zeros(seq_length, dtype=pt.long)
