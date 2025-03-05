@@ -1,7 +1,7 @@
 """TSBNLPpt_GIAmodel.py
 
 # Author:
-Richard Bruce Baxter - Copyright (c) 2022-2024 Baxter AI (baxterai.com)
+Richard Bruce Baxter - Copyright (c) 2022-2025 Baxter AI (baxterai.com)
 
 # License:
 MIT License

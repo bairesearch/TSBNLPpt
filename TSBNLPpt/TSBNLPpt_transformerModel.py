@@ -3,7 +3,7 @@
 # Author:
 Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
 Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
-Richard Bruce Baxter - Copyright (c) 2022-2024 Baxter AI (baxterai.com)
+Richard Bruce Baxter - Copyright (c) 2022-2025 Baxter AI (baxterai.com)
 
 # License:
 MIT License
@@ -62,6 +62,8 @@ if(tokenMemoryBank):
 	import TSBNLPpt_transformerTokenMemoryBank
 if(transformerAttentionHeadPermutations):
 	import TSBNLPpt_transformerAttentionHeadPermutations
+if(detectLocalConceptColumns):
+	import TSBNLPpt_transformerConceptColumns
 			
 integratedPythonModule = False	#custom/modeling_roberta_sharedLayerWeights.py code has been integrated into transformers python module
 
@@ -287,6 +289,8 @@ class RobertaSelfAttention(nn.Module):
 		layerIndex=None,
 		conceptColumnStartIndices=None,
 		conceptColumnEndIndices=None,
+		conceptColumnIDsPrev=None,
+		conceptColumnIDsNext=None,
 	) -> Tuple[torch.Tensor]:
 		mixed_query_layer = self.query(hidden_states)
 
@@ -330,9 +334,9 @@ class RobertaSelfAttention(nn.Module):
 			hidden_states, attention_mask, head_mask, query_layer, key_layer, value_layer
 		)
 
-		if attendToLocalConceptColumns:
+		if localConceptColumnAttention:
 			# Compute local concept column attention
-			local_attention_probs, local_context_layer = self.applyLocalConceptColumnAttention(hidden_states, attention_mask, head_mask, query_layer, key_layer, value_layer, conceptColumnStartIndices, conceptColumnEndIndices)
+			local_attention_probs, local_context_layer = TSBNLPpt_transformerConceptColumns.applyLocalConceptColumnAttention(self, hidden_states, attention_mask, head_mask, query_layer, key_layer, value_layer, conceptColumnStartIndices, conceptColumnEndIndices, conceptColumnIDsPrev, conceptColumnIDsNext)
 			# Average the outputs
 			context_layer = (context_layer + local_context_layer) / 2
 			# Optionally, average attention_probs as well
@@ -377,48 +381,6 @@ class RobertaSelfAttention(nn.Module):
 		if head_mask is not None:
 			attention_probs = attention_probs * head_mask
 
-		context_layer = torch.matmul(attention_probs, value_layer)
-
-		return attention_probs, context_layer
-
-	def applyLocalConceptColumnAttention(self, hidden_states, attention_mask, head_mask, query_layer, key_layer, value_layer, conceptColumnStartIndices, conceptColumnEndIndices):
-		# Compute attention scores
-		attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
-
-		# Create local concept column mask
-		batch_size, seq_length = hidden_states.size(0), hidden_states.size(1)
-		device = hidden_states.device
-		positions = torch.arange(seq_length, device=device).unsqueeze(0).unsqueeze(0)  # Shape: [1, 1, seq_length]
-
-		# Expand start and end indices to match attention_scores dimensions
-		s = conceptColumnStartIndices.unsqueeze(1).unsqueeze(-1)  # Shape: [batch_size, 1, seq_length, 1]
-		e = conceptColumnEndIndices.unsqueeze(1).unsqueeze(-1)	# Shape: [batch_size, 1, seq_length, 1]
-
-		# Create mask
-		local_mask = (positions >= s) & (positions <= e)  # Shape: [batch_size, 1, seq_length, seq_length]
-
-		# Expand mask for attention heads
-		local_mask = local_mask.expand(batch_size, self.num_attention_heads, seq_length, seq_length)
-
-		# Apply mask to attention scores
-		attention_scores = attention_scores.masked_fill(~local_mask, -float('inf'))
-
-		# Scale attention scores
-		attention_scores = attention_scores / math.sqrt(self.attention_head_size)
-
-		# Apply attention mask (e.g., padding mask)
-		if attention_mask is not None:
-			attention_scores = attention_scores + attention_mask
-
-		# Normalize the attention scores to probabilities
-		attention_probs = nn.functional.softmax(attention_scores, dim=-1)
-		attention_probs = self.dropout(attention_probs)
-
-		# Apply head mask if provided
-		if head_mask is not None:
-			attention_probs = attention_probs * head_mask
-
-		# Compute context layer
 		context_layer = torch.matmul(attention_probs, value_layer)
 
 		return attention_probs, context_layer
@@ -539,6 +501,8 @@ class RobertaAttention(nn.Module):
 		layerIndex=None,
 		conceptColumnStartIndices=None,
 		conceptColumnEndIndices=None,
+		conceptColumnIDsPrev=None,
+		conceptColumnIDsNext=None,
 	) -> Tuple[torch.Tensor]:
 		if tokenMemoryBank:
 			hidden_states = self.self.tokenMemoryBankClass.loadSequenceRegisterHiddenStates(hidden_states)  # load additional hidden states from memory bank
@@ -554,6 +518,8 @@ class RobertaAttention(nn.Module):
 			layerIndex,
 			conceptColumnStartIndices=conceptColumnStartIndices,
 			conceptColumnEndIndices=conceptColumnEndIndices,
+			conceptColumnIDsPrev=conceptColumnIDsPrev,
+			conceptColumnIDsNext=conceptColumnIDsNext,
 		)
 
 		attention_output = self.output(self_outputs[0], hidden_states)
@@ -621,6 +587,15 @@ class RobertaLayer(nn.Module):
 			self.intermediate = RobertaIntermediate(config, robertaSharedLayerModules)
 			self.output = RobertaOutput(config, robertaSharedLayerModules)
 			self.num_hidden_layers = config.num_hidden_layers
+		if localConceptColumnExperts:
+			self.localConceptColumnExpertsTotal = config.localConceptColumnExpertsTotal
+			# Create a list of "expert MLP" modules, one for each possible concept ID
+			self.expertIntermediates = nn.ModuleList(
+				[TSBNLPpt_transformerConceptColumns.ExpertIntermediate(config) for _ in range(self.localConceptColumnExpertsTotal)]
+			)
+			self.expertOutputs = nn.ModuleList(
+				[TSBNLPpt_transformerConceptColumns.ExpertOutput(config) for _ in range(self.localConceptColumnExpertsTotal)]
+			)
 
 	def forward(
 		self,
@@ -634,6 +609,8 @@ class RobertaLayer(nn.Module):
 		layerIndex=None,
 		conceptColumnStartIndices=None,
 		conceptColumnEndIndices=None,
+		conceptColumnIDsPrev=None,
+		conceptColumnIDsNext=None,
 	) -> Tuple[torch.Tensor]:
 		# decoder uni-directional self-attention cached key/values tuple is at positions 1,2
 		self_attn_past_key_value = past_key_value[:2] if past_key_value is not None else None
@@ -646,6 +623,8 @@ class RobertaLayer(nn.Module):
 			layerIndex=layerIndex,
 			conceptColumnStartIndices=conceptColumnStartIndices,
 			conceptColumnEndIndices=conceptColumnEndIndices,
+			conceptColumnIDsPrev=conceptColumnIDsPrev,
+			conceptColumnIDsNext=conceptColumnIDsNext,
 		)
 		attention_output = self_attention_outputs[0]
 
@@ -678,6 +657,8 @@ class RobertaLayer(nn.Module):
 				layerIndex,
 				conceptColumnStartIndices=conceptColumnStartIndices,
 				conceptColumnEndIndices=conceptColumnEndIndices,
+				conceptColumnIDsPrev=conceptColumnIDsPrev,
+				conceptColumnIDsNext=conceptColumnIDsNext,
 			)
 			attention_output = cross_attention_outputs[0]
 			outputs = outputs + cross_attention_outputs[1:-1]  # add cross attentions if we output attention weights
@@ -686,12 +667,21 @@ class RobertaLayer(nn.Module):
 			cross_attn_present_key_value = cross_attention_outputs[-1]
 			present_key_value = present_key_value + cross_attn_present_key_value
 
+		# 1) Normal feed-forward
 		if transformerBlockMLPlayer or (transformerBlockMLPlayerLast and (layerIndex == self.num_hidden_layers)):
 			layer_output = apply_chunking_to_forward(
 				self.feed_forward_chunk, self.chunk_size_feed_forward, self.seq_len_dim, attention_output
 			)
 		else:
 			layer_output = attention_output
+		
+		# 2) Concept Experts feed-forward (one additional pass)
+		if localConceptColumnExperts:
+			if conceptColumnIDsPrev is not None:
+				layer_output_exp1 = TSBNLPpt_transformerConceptColumns.feed_forward_experts(self, layer_output, conceptColumnIDsPrev)
+				layer_output_exp2 = TSBNLPpt_transformerConceptColumns.feed_forward_experts(self, layer_output, conceptColumnIDsNext)
+				layer_output = (layer_output_exp1 + layer_output_exp2) / 2
+
 		outputs = (layer_output,) + outputs
 
 		# if decoder, return the attn key/values as the last output
@@ -732,6 +722,8 @@ class RobertaEncoder(nn.Module):
 		return_dict: Optional[bool] = True,
 		conceptColumnStartIndices=None,
 		conceptColumnEndIndices=None,
+		conceptColumnIDsPrev=None,
+		conceptColumnIDsNext=None,
 	) -> Union[Tuple[torch.Tensor], BaseModelOutputWithPastAndCrossAttentions]:
 		all_hidden_states = () if output_hidden_states else None
 		all_self_attentions = () if output_attentions else None
@@ -778,6 +770,8 @@ class RobertaEncoder(nn.Module):
 								# i,
 								conceptColumnStartIndices,
 								conceptColumnEndIndices,
+								conceptColumnIDsPrev,
+								conceptColumnIDsNext,
 							)
 						else:
 							layer_outputs = layer_module(
@@ -791,6 +785,8 @@ class RobertaEncoder(nn.Module):
 								i,
 								conceptColumnStartIndices=conceptColumnStartIndices,
 								conceptColumnEndIndices=conceptColumnEndIndices,
+								conceptColumnIDsPrev=conceptColumnIDsPrev,
+								conceptColumnIDsNext=conceptColumnIDsNext,
 							)
 
 						hidden_states = layer_outputs[0]
@@ -1021,6 +1017,8 @@ class RobertaModel(RobertaPreTrainedModel):
 		return_dict: Optional[bool] = None,
 		conceptColumnStartIndices=None,
 		conceptColumnEndIndices=None,
+		conceptColumnIDsPrev=None,
+		conceptColumnIDsNext=None,
 	) -> Union[Tuple[torch.Tensor], BaseModelOutputWithPoolingAndCrossAttentions]:
 		output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
 		output_hidden_states = (
@@ -1109,6 +1107,8 @@ class RobertaModel(RobertaPreTrainedModel):
 			return_dict=return_dict,
 			conceptColumnStartIndices=conceptColumnStartIndices,
 			conceptColumnEndIndices=conceptColumnEndIndices,
+			conceptColumnIDsPrev=conceptColumnIDsPrev,
+			conceptColumnIDsNext=conceptColumnIDsNext,
 		)
 		sequence_output = encoder_outputs[0]
 		pooled_output = self.pooler(sequence_output) if self.pooler is not None else None
@@ -1174,6 +1174,8 @@ class RobertaForCausalLM(RobertaPreTrainedModel):
 		return_dict: Optional[bool] = None,
 		conceptColumnStartIndices=None,
 		conceptColumnEndIndices=None,
+		conceptColumnIDsPrev=None,
+		conceptColumnIDsNext=None,
 	) -> Union[Tuple[torch.Tensor], CausalLMOutputWithCrossAttentions]:
 		"""
 		encoder_hidden_states  (`torch.FloatTensor` of shape `(batch_size, sequence_length, hidden_size)`, *optional*):
@@ -1223,6 +1225,8 @@ class RobertaForCausalLM(RobertaPreTrainedModel):
 			return_dict=return_dict,
 			conceptColumnStartIndices=conceptColumnStartIndices,
 			conceptColumnEndIndices=conceptColumnEndIndices,
+			conceptColumnIDsPrev=conceptColumnIDsPrev,
+			conceptColumnIDsNext=conceptColumnIDsNext,
 		)
 
 		sequence_output = outputs[0]
@@ -1314,6 +1318,8 @@ class RobertaForMaskedLM(RobertaPreTrainedModel):
 		return_dict: Optional[bool] = None,
 		conceptColumnStartIndices=None,
 		conceptColumnEndIndices=None,
+		conceptColumnIDsPrev=None,
+		conceptColumnIDsNext=None,
 	) -> Union[Tuple[torch.Tensor], MaskedLMOutput]:
 		"""
 		labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
@@ -1337,6 +1343,8 @@ class RobertaForMaskedLM(RobertaPreTrainedModel):
 			return_dict=return_dict,
 			conceptColumnStartIndices=conceptColumnStartIndices,
 			conceptColumnEndIndices=conceptColumnEndIndices,
+			conceptColumnIDsPrev=conceptColumnIDsPrev,
+			conceptColumnIDsNext=conceptColumnIDsNext,
 		)
 		sequence_output = outputs[0]
 		prediction_scores = self.lm_head(sequence_output)

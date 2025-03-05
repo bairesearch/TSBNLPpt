@@ -1,7 +1,7 @@
 """TSBNLPpt_transformer.py
 
 # Author:
-Richard Bruce Baxter - Copyright (c) 2022-2024 Baxter AI (baxterai.com)
+Richard Bruce Baxter - Copyright (c) 2022-2025 Baxter AI (baxterai.com)
 
 # License:
 MIT License
@@ -42,9 +42,8 @@ import TSBNLPpt_transformerModel
 import TSBNLPpt_transformerTokenMemoryBank
 if(transformerPOSembeddings):
 	import TSBNLPpt_POSwordLists
-if(attendToLocalConceptColumns):
-	import spacy
-	nlp = spacy.load('en_core_web_md')	#spacy.load('en_core_web_lg')
+if(detectLocalConceptColumns):
+	import TSBNLPpt_transformerConceptColumns
 	
 if(transformerPOSembeddings):
 	def preparePOSdictionary():
@@ -77,6 +76,11 @@ if(useMultipleModels):
 			saveTokenMemoryBankStorageSelectionModel(model, modelStoreIndex)
 		
 def createModel(vocabularySize):	
+	localConceptColumnExpertsTotal = None
+	localConceptColumnExpertsIntermediateSize = None
+	if(detectLocalConceptColumns):
+		localConceptColumnExpertsTotal = TSBNLPpt_transformerConceptColumns.initialise_dictionary()
+		
 	print("creating new model")	
 	config = RobertaConfig(
 		vocab_size=vocabularySize,  #sync with tokenizer vocab_size
@@ -88,6 +92,8 @@ def createModel(vocabularySize):
 		type_vocab_size=1,
 		position_embedding_type=positionEmbeddingType,
 		is_decoder=True,
+		localConceptColumnExpertsTotal=localConceptColumnExpertsTotal,
+		expert_intermediate_size=localConceptColumnExpertsIntermediateSize,
 	)
 	model = RobertaLM(config)
 	return model
@@ -118,123 +124,22 @@ def propagate(device, model, tokenizer, batch):
 		attentionMask = pt.cat((attentionMask, attentionMaskMemoryBank), dim=1)
 	
 	conceptColumnStartIndices = conceptColumnEndIndices = None
-	if(attendToLocalConceptColumns):
+	conceptColumnIDsPrev = conceptColumnIDsNext = None
+	if(detectLocalConceptColumns):
 		offsets = batch['offsets']	#List of tuples (start, end), not tensor
-		conceptColumnStartIndices, conceptColumnEndIndices = generateConceptColumnIndices(device, tokenizer, inputIDs, offsets)
+		if(localConceptColumnExperts):
+			conceptColumnStartIndicesPrev, conceptColumnEndIndicesPrev, conceptColumnIDsPrev = TSBNLPpt_transformerConceptColumns.generateConceptColumnIndices(device, tokenizer, inputIDs, offsets, identify_type="identify_previous_column")
+			conceptColumnStartIndicesNext, conceptColumnEndIndicesNext, conceptColumnIDsNext = TSBNLPpt_transformerConceptColumns.generateConceptColumnIndices(device, tokenizer, inputIDs, offsets, identify_type="identify_next_column")
+		elif(localConceptColumnAttention):
+			#this is not a perfect implementation (will not strictly/technically attend to both column tokens as they are defined in the GIAANN specification but uses an offset rule instead); localConceptColumnAttention could be upgraded to use both identify_previous_column and identify_next_column in future
+			conceptColumnStartIndices, conceptColumnEndIndices, conceptColumnIDs = TSBNLPpt_transformerConceptColumns.generateConceptColumnIndices(device, tokenizer, inputIDs, offsets, identify_type="identify_both_columns")
 	
-	outputs = model(inputIDs, attention_mask=attentionMask, labels=labels, conceptColumnStartIndices=conceptColumnStartIndices, conceptColumnEndIndices=conceptColumnEndIndices)
+	outputs = model(inputIDs, attention_mask=attentionMask, labels=labels, conceptColumnStartIndices=conceptColumnStartIndices, conceptColumnEndIndices=conceptColumnEndIndices, conceptColumnIDsPrev=conceptColumnIDsPrev, conceptColumnIDsNext=conceptColumnIDsNext)
 
 	accuracy = TSBNLPpt_data.getAccuracy(inputIDs, attentionMask, labels, outputs)
 	loss = outputs.loss
 	
 	return loss, accuracy
-
-def generateConceptColumnIndices(device, tokenizer, batch_input_ids, batch_offsets):
-	noun_pos_tags = {'NOUN', 'PROPN'}
-	non_noun_pos_tags = {'ADJ', 'ADV', 'VERB', 'ADP', 'AUX', 'CCONJ', 'DET', 'INTJ', 'NUM', 'PART', 'PRON', 'SCONJ', 'SYM', 'X'}
-
-	batch_concept_start_indices = []
-	batch_concept_end_indices = []
-	
-	batch_size = len(batch_input_ids)
-	for batch_index in range(batch_size):
-		input_ids_sample = batch_input_ids[batch_index]
-		offsets_sample = batch_offsets[batch_index]
-		
-		tokens = tokenizer.decode(input_ids_sample, skip_special_tokens=True)	
-	
-		  # Process the text with spaCy
-		doc = nlp(tokens)
-
-		# Create a mapping from character positions to spaCy tokens
-		char_to_token = []
-		for idx, (start_char, end_char) in enumerate(offsets_sample):
-			if start_char == end_char:
-				# Special tokens (e.g., <s>, </s>)
-				char_to_token.append(None)
-			else:
-				# Find the corresponding spaCy token
-				for token in doc:
-					if token.idx <= start_char and token.idx + len(token) >= end_char:
-						char_to_token.append(token)
-						break
-				else:
-					char_to_token.append(None)
-
-		# Initialize lists for concept columns
-		conceptColumnStartIndexList = []
-		conceptColumnEndIndexList = []
-
-		# Initialize variables
-		seq_length = input_ids_sample.shape[0]
-		conceptColumnStartIndexList.append(0)
-		concept_indices = []  # Indices of concept words in tokens
-
-		for idx in range(seq_length):
-			token = char_to_token[idx]
-			if token is not None:
-				pos = token.pos_
-				if pos in noun_pos_tags:
-					concept_indices.append(idx)
-					if len(conceptColumnStartIndexList) > 1:
-						conceptColumnEndIndexList.append(idx - 1)
-					conceptColumnStartIndexList.append(idx + 1)
-
-		# get first_pad_index;
-		pad_token_id = tokenizer.pad_token_id	#default=1 #https://huggingface.co/transformers/v2.11.0/model_doc/roberta.html 
-		pad_indices = (input_ids_sample == pad_token_id).nonzero(as_tuple=True)[0]
-		if len(pad_indices) > 0:
-			first_pad_index = pad_indices[0].item()
-		else:
-			first_pad_index = (seq_length - 1)
-			
-		conceptColumnEndIndexList.append(first_pad_index)
-
-		# Remove the last start index as per the pseudocode
-		if(len(conceptColumnStartIndexList) > 1):
-			conceptColumnStartIndexList.pop()
-		
-		assert len(conceptColumnStartIndexList) == len(conceptColumnEndIndexList)
-		#print("conceptColumnStartIndexList = ", conceptColumnStartIndexList)
-		#print("conceptColumnEndIndexList = ", conceptColumnEndIndexList)
-		
-		# For each token, assign its concept column start and end indices
-		token_concept_start_indices = pt.zeros(seq_length, dtype=pt.long)
-		token_concept_end_indices = pt.zeros(seq_length, dtype=pt.long)
-
-		# Assign concept columns to tokens
-		current_concept_idx = 0
-		for idx in range(seq_length):
-			if current_concept_idx < len(conceptColumnStartIndexList):
-				start_idx = conceptColumnStartIndexList[current_concept_idx]
-				end_idx = conceptColumnEndIndexList[current_concept_idx]
-				token_concept_start_indices[idx] = start_idx
-				token_concept_end_indices[idx] = end_idx
-				if idx == end_idx:
-					current_concept_idx += 1
-			else:
-				# For tokens after the last concept column
-				token_concept_start_indices[idx] = conceptColumnStartIndexList[-1]
-				token_concept_end_indices[idx] = conceptColumnEndIndexList[-1]
-
-		batch_concept_start_indices.append(token_concept_start_indices)
-		batch_concept_end_indices.append(token_concept_end_indices)
-
-
-	# Stack tensors to create batch tensors
-	conceptColumnStartIndices = pt.stack(batch_concept_start_indices)  # Shape: [batch_size, seq_length]
-	conceptColumnEndIndices = pt.stack(batch_concept_end_indices)	  # Shape: [batch_size, seq_length]
-
-	conceptColumnStartIndices = conceptColumnStartIndices.to(device)
-	conceptColumnEndIndices = conceptColumnEndIndices.to(device)
-
-	'''
-	print("batch_input_ids = ", batch_input_ids)
-	print("conceptColumnStartIndices = ", conceptColumnStartIndices)
-	print("conceptColumnEndIndices = ", conceptColumnEndIndices)
-	'''
-	
-	return conceptColumnStartIndices, conceptColumnEndIndices
 
 
 if(tokenMemoryBankStorageSelectionAlgorithmAuto):

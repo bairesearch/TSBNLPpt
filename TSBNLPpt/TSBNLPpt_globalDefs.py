@@ -1,7 +1,7 @@
 """TSBNLPpt_globalDefs.py
 
 # Author:
-Richard Bruce Baxter - Copyright (c) 2022-2024 Baxter AI (baxterai.com)
+Richard Bruce Baxter - Copyright (c) 2022-2025 Baxter AI (baxterai.com)
 
 # License:
 MIT License
@@ -27,15 +27,8 @@ else:
 import math
 import pynvml
 
-useGPU = True
-
-attendToLocalConceptColumns = False
-
-#recent tokenizer options;
-useSubwordTokenizerFast = False
-if(attendToLocalConceptColumns):
-	useSubwordTokenizerFast = True	#required to obtain offsets during tokenization
-usePretrainedRobertaTokenizer = False	#incomplete #do not use pretrained tokenizer
+#GPU parameters;
+useGPU = True	#default: True
 
 #prosody delimiters;
 prosodyDelimitedData = False
@@ -166,13 +159,14 @@ else:
 	sequenceMaxNumTokensDefault = 512
 
 #initialise (dependent vars);
+detectLocalConceptColumns = False
 useMultipleModels = False	
 createOrderedDataset = False	
 tokenMemoryBank = False	
 tokenMemoryBankStorageSelectionAlgorithmAuto = False	
 relativeTimeEmbeddings = False	
 useGIAwordEmbeddings = False	
-GIAsemanticRelationVectorSpaces = False 	
+GIAsemanticRelationVectorSpaces = False
 transformerPOSembeddings = False
 transformerAttentionHeadPermutations = False	
 transformerAttentionHeadPermutationsType = "none"	
@@ -183,12 +177,14 @@ transformerSuperblocks = False
 if(useAlgorithmTransformer):
 
 	#syntactic bias selection (part 1):
-	recursiveLayers = False	#optional
+	recursiveLayers = False	#optional	#recursive transformer layers (reuse transformer blocks)
 	memoryTraceBias = False	 #optional	#nncustom.Linear adjusts training/inference based on network prior activations
 	simulatedDendriticBranches = False	#optional #nncustom.Linear simulates multiple independent fully connected weights per neuron
 
 	#syntactic bias selection (part 2):
-	transformerPOSembeddings = False
+	localConceptColumnExperts = False	#apply MLP experts in each transformer block depending on sequence token local concept column
+	localConceptColumnAttention = False	#performs standard (global) attention for each query token and only the tokens contained within the token's local concept column
+	transformerPOSembeddings = False	#add POS embeddings to trainable embeddings
 	transformerAttentionHeadPermutations = False	#calculates KQ for all attention head permutations
 	GIAsemanticRelationVectorSpaces = False	#use pretrained GIA word embeddings instead of nn.Embedding exclusively (transformer supports multiple embedding vectors)
 	tokenMemoryBank = False	#apply attention to all tokens in sequenceRegister (standard contextualWindow + memoryBank), where memoryBank is updated based on recently attended tokens
@@ -216,6 +212,15 @@ if(useAlgorithmTransformer):
 	recursiveLayersOrigImplementation = False	#execute orig codebase with orig implementation so that archived models can be reloaded
 	recursiveLayersEmulateOrigImplementation2 = False
 	
+	if(localConceptColumnExperts or localConceptColumnAttention):
+		detectLocalConceptColumns = True
+		localConceptColumnExpertsNoColumnID = -1
+		localConceptColumnExpertsNoDictionaryNounID = 0
+		localConceptColumnExpertsIntermediateSize = 2	#default: 10	#GPU RAM dependent #requires chunking implementation
+		debugDetectLocalConceptColumns = True
+		if(debugDetectLocalConceptColumns):
+			debugDetectLocalConceptColumnsMaxExperts = 100	#default: 100	#GPU RAM dependent
+			
 	if(transformerSuperblocks):
 		transformerSuperblocksNumber = 2	#segregate nlp and logic layers
 		transformerSuperblocksLayerNorm = True
@@ -335,6 +340,12 @@ if(debugCompareTokenMemoryBankPerformance):
 	createOrderedDataset = True
 if(debugCreateOrderedDatasetFiles):
 	createOrderedDataset = True
+
+#recent tokenizer options;
+useSubwordTokenizerFast = False
+if(detectLocalConceptColumns):
+	useSubwordTokenizerFast = True	#required to obtain offsets during tokenization
+usePretrainedRobertaTokenizer = False	#incomplete #do not use pretrained tokenizer
 
 useTrainedTokenizer = True	#initialise (dependent var)
 useFullwordTokenizer = False	#initialise (dependent var)

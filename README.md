@@ -2,11 +2,11 @@
 
 ### Author
 
-Richard Bruce Baxter - Copyright (c) 2022-2024 Baxter AI (baxterai.com)
+Richard Bruce Baxter - Copyright (c) 2022-2025 Baxter AI (baxterai.com)
 
 ### Description
 
-Transformer Syntactic Bias natural language processing (TSBNLP) for PyTorch - transformer with various syntactic inductive biases (recursiveLayers, tokenMemoryBank, memoryTraceBias, semanticRelationVectorSpaces/transformerPOSembeddings, transformerAttentionHeadPermutations, simulatedDendriticBranches, prosodyDelimitedData, attendToLocalConceptColumns) - experimental
+Transformer Syntactic Bias natural language processing (TSBNLP) for PyTorch - transformer with various syntactic inductive biases (recursiveLayers, tokenMemoryBank, memoryTraceBias, semanticRelationVectorSpaces/transformerPOSembeddings, transformerAttentionHeadPermutations, simulatedDendriticBranches, prosodyDelimitedData, localConceptColumnAttention/Experts) - experimental
 
 ### License
 
