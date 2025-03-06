@@ -119,6 +119,8 @@ else:
 	
 dataDrive = '/datasets/'
 workingDrive = '/large/source/ANNpython/TSBNLPpt/'
+ssdDrive = '/extssd/'
+
 
 downloadCacheFolderName = 'cache'
 if(prosodyDelimitedData):
@@ -130,16 +132,20 @@ else:
 		dataFolderName = 'dataOSCAR2201preprocessed'
 modelFolderName = 'model'
 LRPfolderName = 'LRPdata/' + LRPdatabaseName
+conceptExpertsFolderName = 'conceptExperts'
 if(relativeFolderLocations):
 	downloadCachePathName = downloadCacheFolderName
 	dataPathName = dataFolderName
 	modelPathName = modelFolderName
 	LRPpathName = LRPfolderName
+	conceptExpertsPathName = conceptExpertsFolderName
 else:	
 	downloadCachePathName = '/media/' + userName + dataDrive + downloadCacheFolderName
 	dataPathName = '/media/' + userName + dataDrive + dataFolderName
 	modelPathName = '/media/' + userName + workingDrive + modelFolderName
 	LRPpathName = '/media/' + userName + workingDrive + LRPfolderName
+	conceptExpertsPathName = '/media/' + userName + ssdDrive + conceptExpertsFolderName
+
 if(debugCreateOrderedDatasetFiles):
 	dataFolderNameLargeDocuments = 'dataLargeDocuments'
 dataPreprocessedFileNameStart = "/text_"
@@ -152,6 +158,7 @@ if(prosodyDelimitedData):
 		dataPreprocessedFileNameEnd = ".txtptu"
 else:
 	dataPreprocessedFileNameEnd = ".txt"
+pytorchTensorFileExtension = ".pt"
 
 if(prosodyDelimitedData):
 	sequenceMaxNumTokensDefault = 256
@@ -216,11 +223,16 @@ if(useAlgorithmTransformer):
 		detectLocalConceptColumns = True
 		localConceptColumnExpertsNoColumnID = -1
 		localConceptColumnExpertsNoDictionaryNounID = 0
-		localConceptColumnExpertsIntermediateSize = 2	#default: 10	#GPU RAM dependent #requires chunking implementation
-		debugDetectLocalConceptColumns = True
-		if(debugDetectLocalConceptColumns):
-			debugDetectLocalConceptColumnsMaxExperts = 100	#default: 100	#GPU RAM dependent
-			
+		localConceptColumnExpertsIntermediateSize = 2	#default: 2	#ideal: 512	#GPU/CPU RAM dependent	#requires chunking implementation
+		debugDetectLocalConceptColumns = False
+		localConceptColumnExpertsApplyToAllTokens = False
+		if(localConceptColumnExperts):
+			numerOfRecentlyAccessedExperts = 4000	#default: 4000	#needs to be higher than the max number of experts required to process a batch (est approx =~400 = sequence length 512 / 5 concepts per sequence * 8 batch size)
+			localConceptColumnExpertsApplyToAllTokens = False	#else restrict to nouns: only apply experts to concept features (nouns), not contextual features (non-nouns)	#reduces RAM usage
+		debugLocalConceptColumnExpertsFileIO = False
+		#ratioOfGPUtoCPUramAvailableForExperts = 0.1	#ratio of GPU to CPU ram available for experts
+		ratioOfGPUtoCPUramAvailableForExperts = 1.0	#clear all experts from cpu before processing batch for debug
+		
 	if(transformerSuperblocks):
 		transformerSuperblocksNumber = 2	#segregate nlp and logic layers
 		transformerSuperblocksLayerNorm = True

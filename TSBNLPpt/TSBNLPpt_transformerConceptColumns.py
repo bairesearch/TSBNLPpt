@@ -19,7 +19,10 @@ TSBNLPpt transformer Concept Columns
 
 import torch as pt
 from torch import nn
+import torch.nn.functional as F
 import nncustom
+from sortedcontainers import SortedDict
+import os
 
 from transformers.activations import ACT2FN 
 
@@ -67,14 +70,7 @@ def build_noun_dictionary():
 def get_concept_id(token):
 	lemma_lower = token.lemma_.lower()
 	if lemma_lower in noun_dict:
-		if(debugDetectLocalConceptColumns):
-			index = list(noun_dict.keys()).index(lemma_lower)
-			if(index < debugDetectLocalConceptColumnsMaxExperts):
-				concept_id = noun_dict[lemma_lower] + 1	#assumes localConceptColumnExpertsNoDictionaryNounID==0
-			else:
-				concept_id = localConceptColumnExpertsNoColumnID
-		else:
-			concept_id = noun_dict[lemma_lower] + 1	#assumes localConceptColumnExpertsNoDictionaryNounID==0
+		concept_id = noun_dict[lemma_lower] + 1	#assumes localConceptColumnExpertsNoDictionaryNounID==0
 	else:
 		concept_id = localConceptColumnExpertsNoDictionaryNounID
 	return concept_id
@@ -97,9 +93,9 @@ def generateConceptColumnIndices(device, tokenizer, batch_input_ids, batch_offse
 	batch_concept_ids = []
 	
 	batch_size = len(batch_input_ids)
-	for batch_index in range(batch_size):
-		input_ids_sample = batch_input_ids[batch_index]
-		offsets_sample = batch_offsets[batch_index]
+	for sample_index in range(batch_size):
+		input_ids_sample = batch_input_ids[sample_index]
+		offsets_sample = batch_offsets[sample_index]
 		seq_length = input_ids_sample.shape[0]
 		
 		tokens = tokenizer.decode(input_ids_sample, skip_special_tokens=True)	
@@ -133,7 +129,7 @@ def generateConceptColumnIndices(device, tokenizer, batch_input_ids, batch_offse
 
 		# Track conceptColumnIDs for each token
 		concept_indices_list = []  # Indices of concept words in tokens
-		token_concept_ids = pt.zeros(seq_length, dtype=pt.long)
+		token_concept_ids = pt.ones(seq_length, dtype=pt.long)*localConceptColumnExpertsNoColumnID
 		first_noun_idx = 0
 		
 		for idx in range(seq_length):
@@ -219,20 +215,21 @@ def generateConceptColumnIndices(device, tokenizer, batch_input_ids, batch_offse
 				token_concept_start_indices[idx] = idx	#attend to self only	#orig: conceptColumnStartIndexList[-1]
 				token_concept_end_indices[idx] = idx	#attend to self only	#orig: conceptColumnEndIndexList[-1]
 
-		# Fill in concept IDs for non-noun tokens using the noun in their column.
-		for idx in range(seq_length):
-			# If it's still 0, we need to propagate from the column's noun
-			if token_concept_ids[idx] == 0:
-				s = token_concept_start_indices[idx].item()
-				e = token_concept_end_indices[idx].item()
-				# Within s..e, there should be exactly one noun token (or none).
-				# We'll take the first noun we find there:
-				column_id = localConceptColumnExpertsNoColumnID
-				for col_idx in range(s, e + 1):
-					if token_concept_ids[col_idx] != 0:
-						column_id = token_concept_ids[col_idx].item()
-						break
-				token_concept_ids[idx] = column_id
+		if(localConceptColumnExpertsApplyToAllTokens):
+			# Fill in concept IDs for non-noun tokens using the noun in their column.
+			for idx in range(seq_length):
+				# If it's still localConceptColumnExpertsNoColumnID, we need to propagate from the column's noun
+				if token_concept_ids[idx] == localConceptColumnExpertsNoColumnID:
+					s = token_concept_start_indices[idx].item()
+					e = token_concept_end_indices[idx].item()
+					# Within s..e, there should be exactly one noun token (or none).
+					# We'll take the first noun we find there:
+					column_id = localConceptColumnExpertsNoColumnID
+					for col_idx in range(s, e + 1):
+						if token_concept_ids[col_idx] != 0:
+							column_id = token_concept_ids[col_idx].item()
+							break
+					token_concept_ids[idx] = column_id
 				
 		batch_concept_start_indices.append(token_concept_start_indices)
 		batch_concept_end_indices.append(token_concept_end_indices)
@@ -248,18 +245,18 @@ def generateConceptColumnIndices(device, tokenizer, batch_input_ids, batch_offse
 	conceptColumnIDs = conceptColumnIDs.to(device)
 
 	'''
-	if(debugDetectLocalConceptColumns):
-		print("batch_input_ids = ", batch_input_ids)
-		print("conceptColumnStartIndices = ", conceptColumnStartIndices)
-		print("conceptColumnEndIndices = ", conceptColumnEndIndices)
-		print("conceptColumnIDs = ", conceptColumnIDs)
+	#if(debugDetectLocalConceptColumns):
+	print("batch_input_ids = ", batch_input_ids)
+	print("conceptColumnStartIndices = ", conceptColumnStartIndices)
+	print("conceptColumnEndIndices = ", conceptColumnEndIndices)
+	print("conceptColumnIDs = ", conceptColumnIDs)
 	'''
 	
 	return conceptColumnStartIndices, conceptColumnEndIndices, conceptColumnIDs
 
 if(localConceptColumnAttention):
 
-	def applyLocalConceptColumnAttention(self, hidden_states, attention_mask, head_mask, query_layer, key_layer, value_layer, conceptColumnStartIndices, conceptColumnEndIndices, conceptColumnIDsPrev, conceptColumnIDsNext):
+	def applyLocalConceptColumnAttention(self, hidden_states, attention_mask, head_mask, query_layer, key_layer, value_layer, conceptColumnStartIndices, conceptColumnEndIndices):
 		# Compute attention scores
 		attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
 
@@ -303,81 +300,313 @@ if(localConceptColumnAttention):
 		
 if(localConceptColumnExperts):
 
-	class ExpertIntermediate(nn.Module):
+	class ParallelExpertsMLP(nn.Module):
 		"""
-		Similar to RobertaIntermediate, except it uses a small intermediate size.
+		A 'parallel' expert MLP block that contains multiple experts' parameters in a single tensor.
+		All tokens are processed in one batched pass using advanced indexing.
+
+		Args:
+			num_experts: number of experts
+			num_experts_cpu: max number of experts available in cpu ram
+			hidden_size: original model hidden size
+			expert_intermediate_size: the small intermediate dimension of each expert
+			no_expert_id: the special ID (e.g. -1) that indicates 'no expert' / skip
+			activation: activation function for intermediate layer (e.g. GELU, ReLU)
+		
+		Description:
+			The code applies a concept expert MLPs to the tokens, where each expert comprise two linear layers (emulating ordinary transformer MLP). It uses expert_ids (of shape [batch_size, seq_length]) to determine which expert MLP to use for each token in the sequence. 
+			There are num_experts total expert MLPs stored on disk (num_experts_cpu recently accessed experts available in CPU ram), each with their own unique parameters. The expert MLP layers have a standard input/output size (of hidden_size features), and an intermediate layer size (of expert_intermediate_size features). 
+			All tokens in the sequence are executed in parallel (the necessary experts are loaded from cpu parameters experts_weight_1/experts_weight_2/experts_bias_1/experts_bias_2 to W1, b1, W2, b2 and are executed in parallel on the gpu).
+
+			1) Assume approximately 1TB of SSD storage space to store all experts (indexed by expert id). These experts will be created and accessed on demand. The location of the SSD folder is called conceptExpertsPathName. Each expert is saved to SSD for a particular transformer block (use layer_index).
+			2) Assume approximately 64GB of CPU ram to store the most recently accessed expert MLP parameters (experts_weight_1, experts_weight_2, experts_bias_1, experts_bias_2), where each MLP parameter tensor contains num_experts_cpu experts. 
+				The most recently accessed experts are the last numerOfRecentlyAccessedExperts (eg last 1000 experts) that were brought into GPU ram to process the sequence token experts, thus num_experts_cpu = numerOfRecentlyAccessedExperts. 
+				Each expert stored in CPU ram uses last_access_time to indicate the last time it was brought into GPU ram (where last_access_time is derived from conceptColumnData['batchIndex']). 
+
+			To manage the CPU ram memory the code creates i) a tensor called experts_cpu_map, ii) a multi SortedDict from sortedcontainers called last_access_time_experts, and iii) a dictionary called expert_ids_in_cpu, iv) a variable called num_experts_cpu_currently_loaded, and a dictionary called expert_id_cpu_available;
+			i) a pytorch tensor called experts_cpu_map of shape [num_experts_cpu, 2] to record the original expert_id and last_access_time of each cpu expert. experts_cpu_map should be initialised to -1 in all its elements. If there is no expert loaded at a particular row (ie expert_id_cpu) of experts_cpu_map, then assign an expert_id of -1 and a last_access_time of -1.
+			ii) a multi SortedDict from sortedcontainers called last_access_time_experts (key: last_access_time, value:[list of expert_id_cpu]). Note that a "multi" dictionary uses a list structure for its value, such that it can contain more than one element for a given key. The value of any given last_access_time key will be a list of expert_id_cpu. last_access_time_experts should be initialised as empty.
+			iii) a standard python dict called expert_ids_in_cpu (key: expert_id, value: expert_id_cpu). expert_ids_in_cpu should be initialised as empty.
+			iv) a python variable called num_experts_cpu_currently_loaded, which designates the number of cpu experts are currently loaded. num_experts_cpu_currently_loaded should be initialised to 0.
+			v) a standard python dict called expert_id_cpu_available (key: expert_id_cpu, value: True). expert_id_cpu_available should be initialised as filled with value True, of size num_experts_cpu.
 		"""
-		def __init__(self, config):
+		def __init__(
+			self,
+			num_experts: int,
+			num_experts_cpu: int,
+			hidden_size: int,
+			expert_intermediate_size: int,
+			no_expert_id: int = -1,
+			activation = F.gelu
+		):
 			super().__init__()
-			# Use a small intermediate dimension, e.g. 10
-			# (Assumes config.expert_intermediate_size is set to 10 or similar)
-			self.dense = nncustom.Linear(config.hidden_size, config.expert_intermediate_size)
-			if isinstance(config.hidden_act, str):
-				self.intermediate_act_fn = ACT2FN[config.hidden_act]
-			else:
-				self.intermediate_act_fn = config.hidden_act
+			self.num_experts = num_experts
+			self.num_experts_cpu = num_experts_cpu
+			self.hidden_size = hidden_size
+			self.expert_intermediate_size = expert_intermediate_size
+			self.no_expert_id = no_expert_id
+			self.activation = activation
 
-		def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-			hidden_states = self.dense(hidden_states)
-			hidden_states = self.intermediate_act_fn(hidden_states)
-			return hidden_states
+			# 1) For the first linear: (out_dim = expert_intermediate_size, in_dim = hidden_size)
+			# We store all experts in one big tensor of shape: (num_experts_cpu, expert_intermediate_size, hidden_size)
+			self.experts_weight_1 = nn.Parameter(torch.empty(num_experts_cpu, expert_intermediate_size, hidden_size))
+			self.experts_bias_1 = nn.Parameter(torch.empty(num_experts_cpu, expert_intermediate_size))
+			 
+			# 2) For the second linear: (out_dim = hidden_size, in_dim = expert_intermediate_size)
+			# Stacked in shape: (num_experts_cpu, hidden_size, expert_intermediate_size)
+			self.experts_weight_2 = nn.Parameter(torch.empty(num_experts_cpu, hidden_size, expert_intermediate_size))
+			self.experts_bias_2 = nn.Parameter(torch.empty(num_experts_cpu, hidden_size))
+			
+			# Force them onto CPU right away
+			# (In case someone calls model.to('cuda'), these should remain on CPU.)
+			self.experts_weight_1.data = self.experts_weight_1.data.cpu()
+			self.experts_bias_1.data = self.experts_bias_1.data.cpu()
+			self.experts_weight_2.data = self.experts_weight_2.data.cpu()
+			self.experts_bias_2.data = self.experts_bias_2.data.cpu()
+			
+			# Initialize parameters
+			self.reset_parameters()
 
+			# Optionally, we could add LayerNorm parameters for each expert, or a single LN, etc.
+			# but here we only do a final residual + dropout, or you can do LN if you like.
 
-	class ExpertOutput(nn.Module):
-		"""
-		Similar to RobertaOutput, but from expert_intermediate_size back to hidden_size.
-		"""
-		def __init__(self, config):
-			super().__init__()
-			self.dense = nncustom.Linear(config.expert_intermediate_size, config.hidden_size)
-			self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
-			self.dropout = nn.Dropout(config.hidden_dropout_prob)
+			self.dropout = nn.Dropout(0.1)
+			self.layer_norm = nn.LayerNorm(hidden_size)
 
-		def forward(self, hidden_states: torch.Tensor, input_tensor: torch.Tensor) -> torch.Tensor:
-			hidden_states = self.dense(hidden_states)
-			hidden_states = self.dropout(hidden_states)
-			hidden_states = self.LayerNorm(hidden_states + input_tensor)
-			return hidden_states
+			# memory manangement structures
+			self.experts_cpu_map = torch.ones((num_experts_cpu, 2), dtype=torch.long) * -1
+			self.last_access_time_experts = SortedDict()
+			self.expert_ids_in_cpu = {}
+			self.num_experts_cpu_currently_loaded = 0
+			self.expert_id_cpu_available = {i: True for i in range(num_experts_cpu)}
 
-	def feed_forward_experts(self, hidden_states: torch.Tensor, conceptColumnIDs: torch.LongTensor) -> torch.Tensor:
-		"""
-		hidden_states: (batch_size, seq_len, hidden_dim)
-		conceptColumnIDs: (batch_size, seq_len) with values in [0 .. localConceptColumnExpertsTotal-1]
-		"""
-		bsz, seq_len, hidden_dim = hidden_states.size()
+		def reset_parameters(self):
+			# A simple initialization scheme (like xavier) for demonstration
+			nn.init.xavier_uniform_(self.experts_weight_1)
+			nn.init.zeros_(self.experts_bias_1)
+			nn.init.xavier_uniform_(self.experts_weight_2)
+			nn.init.zeros_(self.experts_bias_2)
 
-		# Flatten over batch and sequence so we have shape (B*S, hidden_dim)
-		flat_hidden_states = hidden_states.view(-1, hidden_dim)
-		flat_concepts = conceptColumnIDs.view(-1)  # (B*S,)
+		def forward(self, hidden_states: torch.Tensor, expert_ids: torch.LongTensor, layer_index, batchIndex):
+			"""
+			hidden_states: shape (batch_size, seq_len, hidden_size)
+			expert_ids:	shape (batch_size, seq_len), integer in [0..num_experts-1], or = no_expert_id (-1)
+			"""
+			
+			self.offloadLeastRecentlyAccessedExpertsToSSD(layer_index, batchIndex)
+			expert_ids_cpu = self.loadRequiredExpertsFromSSD(expert_ids, layer_index, batchIndex)
+			
+			bsz, seq_len, hdim = hidden_states.shape
+			N = bsz * seq_len  # Flatten
+			
+			# Flatten the hidden states to (N, hidden_size)
+			hidden_states_flat = hidden_states.view(N, hdim)
+			expert_ids_cpu_flat = expert_ids.view(-1)  # (N,)
 
-		# Prepare an output buffer of the same shape
-		output_buffer = torch.empty_like(flat_hidden_states)
+			# We'll create an output buffer of shape (N, hidden_size)
+			output_flat = hidden_states_flat.clone()
 
-		# 1) Bypass tokens that have conceptColumnIDs == localConceptColumnExpertsNoColumnID
-		skip_mask = (flat_concepts == localConceptColumnExpertsNoColumnID)
-		# Those tokens will simply copy input -> output
-		output_buffer[skip_mask] = flat_hidden_states[skip_mask]
+			# ============== 1) Identify tokens to skip vs. tokens to process  ==============
+			skip_mask = (expert_ids_cpu_flat == self.no_expert_id)
+			process_mask = ~skip_mask  # Invert
 
-		# 2) Route the remaining tokens to the appropriate expert
-		for expert_id in range(self.localConceptColumnExpertsTotal):
-			expert_mask = (flat_concepts == expert_id)
-			if not expert_mask.any():
-				continue  # Skip if no tokens go to this expert
+			if process_mask.any():
+				# Indices of tokens that go to *some* expert
+				process_indices = process_mask.nonzero(as_tuple=True)[0]  # shape ~ (num_process_tokens,)
 
-			# Indices of tokens that go to this expert
-			expert_indices = expert_mask.nonzero(as_tuple=True)[0]
+				# Gather the expert IDs for just those tokens
+				token_expert_ids = expert_ids_cpu_flat[process_indices]  # shape (num_process_tokens,)
 
-			# Extract those token embeddings
-			expert_input = flat_hidden_states[expert_indices]
+				# Gather the input states that need processing
+				x = hidden_states_flat[process_indices]  # shape (num_process_tokens, hidden_size)
+				num_process_tokens = x.size(0)
 
-			# Forward through expert MLP
-			# ExpertIntermediate -> ExpertOutput (with residual in the output)
-			intermediate_out = self.expertIntermediates[expert_id](expert_input)
-			expert_out = self.expertOutputs[expert_id](intermediate_out, expert_input)
+				# ~~~~~~~~~~~~~ 2) First Linear (Parallel) ~~~~~~~~~~~~~
+				# We want W1 per token, shape (num_process_tokens, expert_intermediate_size, hidden_size)
+				# so we do advanced indexing into self.experts_weight_1 with [token_expert_ids].
+				W1_cpu = self.experts_weight_1[token_expert_ids]  # shape (num_process_tokens, EIS, H)
+				b1_cpu = self.experts_bias_1[token_expert_ids]	# shape (num_process_tokens, EIS)
+				W1 = W1_cpu.to(device=hidden_states.device, non_blocking=True)
+				b1 = b1_cpu.to(device=hidden_states.device, non_blocking=True)
+			
+				# We'll do a batched matmul: (N, 1, H) x (N, H, EIS) -> (N, 1, EIS)
+				x_3d = x.unsqueeze(1)	  # (num_process_tokens, 1, hidden_size)
+				W1_3d = W1.transpose(1, 2) # (num_process_tokens, hidden_size, expert_intermediate_size)
 
-			# Place the expert output back into the correct positions
-			output_buffer[expert_indices] = expert_out
+				mm1 = torch.bmm(x_3d, W1_3d).squeeze(1)  # (num_process_tokens, expert_intermediate_size)
+				mm1 = mm1 + b1
 
-		# Reshape back to (batch_size, seq_len, hidden_dim)
-		layer_output = output_buffer.view(bsz, seq_len, hidden_dim)
-		return layer_output
+				# Apply activation
+				mm1 = self.activation(mm1)
+
+				# ~~~~~~~~~~~~~ 3) Second Linear (Parallel) ~~~~~~~~~~~~~
+				# Gather second-layer params similarly
+				W2_cpu = self.experts_weight_2[token_expert_ids]  # (num_process_tokens, hidden_size, EIS)
+				b2_cpu = self.experts_bias_2[token_expert_ids]	# (num_process_tokens, hidden_size)
+				W2 = W2_cpu.to(device=hidden_states.device, non_blocking=True)
+				b2 = b2_cpu.to(device=hidden_states.device, non_blocking=True)
+			
+				mm1_3d = mm1.unsqueeze(1)	 # (num_process_tokens, 1, EIS)
+				W2_3d = W2.transpose(1, 2)	# (num_process_tokens, EIS, hidden_size)
+
+				mm2 = torch.bmm(mm1_3d, W2_3d).squeeze(1)  # (num_process_tokens, hidden_size)
+				mm2 = mm2 + b2
+
+				# ~~~~~~~~~~~~~ 4) Residual + LN ~~~~~~~~~~~~~
+				# Compare with the original x (the residual). We can use a fresh residual from hidden_states_flat.
+				# But usually in a Transformer block, the "input_tensor" is the pre-FFN output. Let's do that:
+				residual = x
+				mm2 = self.dropout(mm2)
+				mm2 = self.layer_norm(mm2 + residual)
+
+				# ~~~~~~~~~~~~~ 5) Scatter results back ~~~~~~~~~~~~~
+				output_flat[process_indices] = mm2
+
+			# Meanwhile, tokens with skip_mask==True remain as their original input (no change).
+			# (We initialized output_flat as a copy of hidden_states_flat, so it\u2019s already \u201cunchanged\u201d for those.)
+			
+			# Reshape output back
+			output = output_flat.view(bsz, seq_len, hdim)
+			return output
+
+		def loadRequiredExpertsFromSSD(self, expert_ids, layer_index, last_access_time):
+			'''
+			function loadRequiredExpertsFromSSD(): every expert_id in expert_ids is checked to see whether it is currently available in CPU ram (ie check if expert_id in expert_ids_in_cpu). If the expert is not currently available in CPU ram, then;
+			- assign a new expert_id_cpu index using expert_id_cpu_available
+			- update all the memory management structures experts_cpu_map, last_access_time_experts, expert_ids_in_cpu, num_experts_cpu_currently_loaded, expert_id_cpu_available. Here is python code to achieve the required functionality (use this);
+			- check if the expert is available on SSD (expert_id and layer_index);
+			 * If the expert is not available on SSD, initialise the expert parameters (see ParallelExpertsMLP to infer the correct initialisation shapes).
+			 * If the expert is available on SSD, execute loadExpertFromSSD(expert_id) to load the expert from SSD (at expert_id) to CPU ram (at expert_id_cpu). Note that expert must be loaded from SSD for a particular expert_id and layer_index (transformer block). 
+			- update the parameters; expert_weight_1[expert_id_cpu], expert_weight_2[expert_id_cpu], expert_bias_1[expert_id_cpu], expert_bias_2[expert_id_cpu].
+			'''
+			
+			batch_size = expert_ids.shape[0]
+			seq_length = expert_ids.shape[1]
+			
+			expert_ids_cpu_list = []
+			for sample_index in range(batch_size):
+				expert_ids_cpu_sample_list = []
+				#print("\t sample_index = ", sample_index)
+				for expert_id_index in range(seq_length):
+					expert_id = expert_ids[sample_index, expert_id_index].item()
+					#print("\t\t expert_id_index = ", expert_id_index)
+					#print("\t\t expert_id = ", expert_id)
+					if expert_id == self.no_expert_id:
+						expert_id_cpu = expert_id
+					else:
+						if expert_id in self.expert_ids_in_cpu:
+							expert_id_cpu = self.expert_ids_in_cpu[expert_id]
+							if(debugLocalConceptColumnExpertsFileIO):
+								#print("debugLocalConceptColumnExpertsFileIO: loadExpertFromSSD")
+								self.loadExpertFromSSD(expert_id_cpu, expert_id, layer_index)
+						else:
+							expert_id_cpu = self.getFirstKeyInDict(self.expert_id_cpu_available)	#assign a new expert_id_cpu index (first key in expert_id_cpu_available)
+							#update all the memory management structures experts_cpu_map, last_access_time_experts, expert_ids_in_cpu, num_experts_cpu_currently_loaded, expert_id_cpu_available;
+							#print("expert_id = ", expert_id)
+							assert expert_id_cpu < numerOfRecentlyAccessedExperts
+							self.experts_cpu_map[expert_id_cpu][0] = expert_id
+							self.experts_cpu_map[expert_id_cpu][1] = last_access_time
+							if not last_access_time in self.last_access_time_experts: 
+								self.last_access_time_experts[last_access_time] = []	#assign value to an empty list
+							self.last_access_time_experts[last_access_time].append(expert_id_cpu)
+							self.expert_ids_in_cpu[expert_id] = expert_id_cpu
+							self.num_experts_cpu_currently_loaded += 1
+							self.expert_id_cpu_available.pop(expert_id_cpu)
+							if(self.isExpertAvailableOnSSD(expert_id, layer_index)):
+								self.loadExpertFromSSD(expert_id_cpu, expert_id, layer_index)
+							else:
+								self.initialiseExpertCPU(expert_id_cpu)
+								if(debugLocalConceptColumnExpertsFileIO):
+									#print("debugLocalConceptColumnExpertsFileIO: saveExpertToSSD")
+									self.saveExpertToSSD(expert_id_cpu, expert_id, layer_index)
+								
+					expert_ids_cpu_sample_list.append(expert_id_cpu)
+				expert_ids_cpu_sample = torch.tensor(expert_ids_cpu_sample_list)
+				expert_ids_cpu_list.append(expert_ids_cpu_sample)
+			expert_ids_cpu = torch.stack(expert_ids_cpu_list, dim=0)
+			return expert_ids_cpu
+			
+		def offloadLeastRecentlyAccessedExpertsToSSD(self, layer_index, last_access_time):
+			'''
+			function offloadLeastRecentlyAccessedExpertsToSSD():
+			- identify the least recently accessed experts, which are contained at the start of multi SortedDict last_access_time_experts (note the lowest value keys are stored at the start of a SortedDict). The number of access time keys (containing lists of expert_id_cpu) to offload depends on the amount of CPU ram currently available. Ensure that there is always enough CPU ram to load the required number of new experts for a given batch (its sequences); i.e. num_experts_cpu_currently_loaded/num_experts_cpu < 0.9 (where 1.0-0.9 = 6GB GPU ram / 60GB CPU ram).
+			- save these experts to SSD via function saveExpertToSSD. Note that experts must be saved to SSD for a particular expert_id and layer_index (transformer block).
+			- clear these experts from the memory management structures experts_cpu_map, last_access_time_experts, expert_ids_in_cpu, num_experts_cpu_currently_loaded, expert_id_cpu_available;
+			- there is no need to clear the parameters; expert_weight_1[expert_id_cpu], expert_weight_2[expert_id_cpu], expert_bias_1[expert_id_cpu], expert_bias_2[expert_id_cpu] (these will be overwritten in the future).
+			'''
+			while(self.num_experts_cpu_currently_loaded/self.num_experts_cpu > 1-ratioOfGPUtoCPUramAvailableForExperts and self.num_experts_cpu_currently_loaded > 0): 	#depends on ratio of GPU to CPU ram available for experts
+				oldest_expert_id_cpu_list_key = self.getFirstKeyInDict(self.last_access_time_experts)
+				oldest_expert_id_cpu_list = self.getFirstValueInDict(self.last_access_time_experts)
+				atLeastOneElementInList = False
+				for old_expert_id_cpu in oldest_expert_id_cpu_list:
+					atLeastOneElementInList = True
+					#print("offloadLeastRecentlyAccessedExpertsToSSD: old_expert_id_cpu = ", old_expert_id_cpu)
+					old_expert_id = self.experts_cpu_map[old_expert_id_cpu][0].item()
+					#print("old_expert_id = ", old_expert_id)
+					self.saveExpertToSSD(old_expert_id_cpu, old_expert_id, layer_index)
+					self.experts_cpu_map[old_expert_id_cpu][0] = -1
+					self.experts_cpu_map[old_expert_id_cpu][1] = -1
+					self.expert_ids_in_cpu.pop(old_expert_id)
+					self.num_experts_cpu_currently_loaded -= 1
+					self.expert_id_cpu_available[old_expert_id_cpu] = True
+				self.last_access_time_experts.pop(oldest_expert_id_cpu_list_key)
+
+		def isExpertAvailableOnSSD(self, expert_id, layer_index):
+			file_exists = False
+			file_name = self.generateExpertSSDfileName(expert_id, layer_index, 0)
+			if os.path.exists(file_name):
+				file_exists = True
+			return file_exists
+			
+		def generateExpertSSDfileName(self, expert_id, layer_index, parameter_id):
+			if(isinstance(expert_id, torch.Tensor)):
+				expert_id = expert_id.item()
+			file_name = "conceptColumnMLPexpertTensor_" + "parameter_id_" + str(parameter_id) + "_expert_id_" + str(expert_id) + "_layer_index_" + str(layer_index)
+			return file_name
+			
+		def loadExpertFromSSD(self, expert_id_cpu, expert_id, layer_index):
+			expert_weight_1 = self.loadTensor(conceptExpertsPathName, self.generateExpertSSDfileName(expert_id, layer_index, 0))
+			expert_weight_2 = self.loadTensor(conceptExpertsPathName, self.generateExpertSSDfileName(expert_id, layer_index, 1))
+			expert_bias_1 = self.loadTensor(conceptExpertsPathName, self.generateExpertSSDfileName(expert_id, layer_index, 2))
+			expert_bias_2 = self.loadTensor(conceptExpertsPathName, self.generateExpertSSDfileName(expert_id, layer_index, 3))
+			self.updateExpertCPU(expert_id_cpu, expert_weight_1, expert_weight_2, expert_bias_1, expert_bias_2)
+
+		def saveExpertToSSD(self, expert_id_cpu, expert_id, layer_index):
+			self.saveTensor(self.experts_weight_1[expert_id_cpu], conceptExpertsPathName, self.generateExpertSSDfileName(expert_id, layer_index, 0))
+			self.saveTensor(self.experts_weight_2[expert_id_cpu], conceptExpertsPathName, self.generateExpertSSDfileName(expert_id, layer_index, 1))
+			self.saveTensor(self.experts_bias_1[expert_id_cpu], conceptExpertsPathName, self.generateExpertSSDfileName(expert_id, layer_index, 2))
+			self.saveTensor(self.experts_bias_2[expert_id_cpu], conceptExpertsPathName, self.generateExpertSSDfileName(expert_id, layer_index, 3))
+
+		def initialiseExpertCPU(self, expert_id_cpu):
+			expert_weight_1 = torch.empty(self.expert_intermediate_size, self.hidden_size)
+			expert_weight_2 = torch.empty(self.hidden_size, self.expert_intermediate_size)
+			expert_bias_1 = torch.empty(self.expert_intermediate_size)
+			expert_bias_2 = torch.empty(self.hidden_size)
+			self.updateExpertCPU(expert_id_cpu, expert_weight_1, expert_weight_2, expert_bias_1, expert_bias_2)
+			
+		def updateExpertCPU(self, expert_id_cpu, expert_weight_1, expert_weight_2, expert_bias_1, expert_bias_2):
+			'''
+			#probably redundant (ensure paramaters remain on cpu);
+			self.expert_weight_1.data = self.expert_weight_1.data.cpu()
+			self.expert_bias_1.data = self.expert_bias_1.data.cpu()
+			self.expert_weight_2.data = self.expert_weight_2.data.cpu()
+			self.expert_bias_2.data = self.expert_bias_2.data.cpu()
+			'''
+			with torch.no_grad():
+				self.experts_weight_1[expert_id_cpu].copy_(expert_weight_1)
+				self.experts_weight_2[expert_id_cpu].copy_(expert_weight_2)
+				self.experts_bias_1[expert_id_cpu].copy_(expert_bias_1)
+				self.experts_bias_2[expert_id_cpu].copy_(expert_bias_2)
+
+		def saveTensor(self, tensor, folderName, fileName):
+			pt.save(tensor.clone(), os.path.join(folderName, fileName+pytorchTensorFileExtension))
+
+		def loadTensor(self, folderName, fileName):
+			tensor = pt.load(os.path.join(folderName, fileName+pytorchTensorFileExtension))
+			return tensor
+
+		def getFirstKeyInDict(self, dictionary):
+			return next(iter(dictionary.keys()), None)
+			
+		def getFirstValueInDict(self, dictionary):
+			return next(iter(dictionary.values()), None)

@@ -76,10 +76,11 @@ if(useMultipleModels):
 			saveTokenMemoryBankStorageSelectionModel(model, modelStoreIndex)
 		
 def createModel(vocabularySize):	
-	localConceptColumnExpertsTotal = None
-	localConceptColumnExpertsIntermediateSize = None
+	num_experts = num_experts_cpu = expert_intermediate_size = None
 	if(detectLocalConceptColumns):
-		localConceptColumnExpertsTotal = TSBNLPpt_transformerConceptColumns.initialise_dictionary()
+		num_experts = TSBNLPpt_transformerConceptColumns.initialise_dictionary()
+		num_experts_cpu = num_experts	#FUTURE: numerOfRecentlyAccessedExperts
+		expert_intermediate_size = localConceptColumnExpertsIntermediateSize
 		
 	print("creating new model")	
 	config = RobertaConfig(
@@ -92,8 +93,9 @@ def createModel(vocabularySize):
 		type_vocab_size=1,
 		position_embedding_type=positionEmbeddingType,
 		is_decoder=True,
-		localConceptColumnExpertsTotal=localConceptColumnExpertsTotal,
-		expert_intermediate_size=localConceptColumnExpertsIntermediateSize,
+		num_experts=num_experts,
+		num_experts_cpu=num_experts_cpu,
+		expert_intermediate_size=expert_intermediate_size,
 	)
 	model = RobertaLM(config)
 	return model
@@ -106,15 +108,15 @@ def loadModel():
 def saveModel(model):
 	model.save_pretrained(modelPathName)
 
-def propagateIndex(device, model, tokenizer, batch, modelStoreIndex):	
+def propagateIndex(device, model, tokenizer, batch, modelStoreIndex, batchIndex):	
 	if(modelStoreIndex == 0):
-		loss, accuracy = propagate(device, model, tokenizer, batch)
+		loss, accuracy = propagate(device, model, tokenizer, batch, batchIndex)
 		result = True
 	else:
 		loss, accuracy, result = propagateTokenMemoryBankStorageSelection(device, model, tokenizer, batch)
 	return loss, accuracy, result
 			
-def propagate(device, model, tokenizer, batch):	
+def propagate(device, model, tokenizer, batch, batchIndex):	
 	inputIDs = batch['inputIDs'].to(device)
 	attentionMask = batch['attentionMask'].to(device)
 	labels = batch['labels'].to(device)
@@ -128,13 +130,15 @@ def propagate(device, model, tokenizer, batch):
 	if(detectLocalConceptColumns):
 		offsets = batch['offsets']	#List of tuples (start, end), not tensor
 		if(localConceptColumnExperts):
-			conceptColumnStartIndicesPrev, conceptColumnEndIndicesPrev, conceptColumnIDsPrev = TSBNLPpt_transformerConceptColumns.generateConceptColumnIndices(device, tokenizer, inputIDs, offsets, identify_type="identify_previous_column")
+			if(localConceptColumnExpertsApplyToAllTokens):
+				conceptColumnStartIndicesPrev, conceptColumnEndIndicesPrev, conceptColumnIDsPrev = TSBNLPpt_transformerConceptColumns.generateConceptColumnIndices(device, tokenizer, inputIDs, offsets, identify_type="identify_previous_column")
 			conceptColumnStartIndicesNext, conceptColumnEndIndicesNext, conceptColumnIDsNext = TSBNLPpt_transformerConceptColumns.generateConceptColumnIndices(device, tokenizer, inputIDs, offsets, identify_type="identify_next_column")
 		elif(localConceptColumnAttention):
 			#this is not a perfect implementation (will not strictly/technically attend to both column tokens as they are defined in the GIAANN specification but uses an offset rule instead); localConceptColumnAttention could be upgraded to use both identify_previous_column and identify_next_column in future
 			conceptColumnStartIndices, conceptColumnEndIndices, conceptColumnIDs = TSBNLPpt_transformerConceptColumns.generateConceptColumnIndices(device, tokenizer, inputIDs, offsets, identify_type="identify_both_columns")
+	conceptColumnData = {'conceptColumnStartIndices':conceptColumnStartIndices, 'conceptColumnEndIndices':conceptColumnEndIndices, 'conceptColumnIDsPrev':conceptColumnIDsPrev, 'conceptColumnIDsNext':conceptColumnIDsNext, 'batchIndex':batchIndex}
 	
-	outputs = model(inputIDs, attention_mask=attentionMask, labels=labels, conceptColumnStartIndices=conceptColumnStartIndices, conceptColumnEndIndices=conceptColumnEndIndices, conceptColumnIDsPrev=conceptColumnIDsPrev, conceptColumnIDsNext=conceptColumnIDsNext)
+	outputs = model(inputIDs, attention_mask=attentionMask, labels=labels, conceptColumnData=conceptColumnData)
 
 	accuracy = TSBNLPpt_data.getAccuracy(inputIDs, attentionMask, labels, outputs)
 	loss = outputs.loss

@@ -342,9 +342,9 @@ def trainBatch(batchIndex, batch, tokenizer, model, optim, modelStoreIndex=None)
 	
 		result = True
 		if(useMultipleModels):
-			loss, accuracy, result = propagateIndex(device, model, tokenizer, batch, modelStoreIndex)
+			loss, accuracy, result = propagateIndex(device, model, tokenizer, batch, modelStoreIndex, batchIndex)
 		else:
-			loss, accuracy = propagate(device, model, tokenizer, batch)
+			loss, accuracy = propagate(device, model, tokenizer, batch, batchIndex)
 		if(result):
 			loss.backward()
 			optim.step()
