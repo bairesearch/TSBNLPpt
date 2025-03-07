@@ -227,12 +227,18 @@ if(useAlgorithmTransformer):
 		debugDetectLocalConceptColumns = False
 		localConceptColumnExpertsApplyToAllTokens = False
 		if(localConceptColumnExperts):
-			numerOfRecentlyAccessedExperts = 4000	#default: 4000	#needs to be higher than the max number of experts required to process a batch (est approx =~400 = sequence length 512 / 5 concepts per sequence * 8 batch size)
 			localConceptColumnExpertsApplyToAllTokens = False	#else restrict to nouns: only apply experts to concept features (nouns), not contextual features (non-nouns)	#reduces RAM usage
+			approxNumNonNounsPerNoun = 10
+			maxNumExpertsRequiredToProcessBatch = int(sequenceMaxNumTokensDefault / approxNumNonNounsPerNoun * 8)	#max number of experts required to process a batch (est approx =~400 = sequence length 512 / 5 concepts per sequence * 8 batch size)
+			numerOfRecentlyAccessedExperts = 1000	#default: 1000	#needs to be higher than the maxNumExpertsRequiredToProcessBatch
+			assert numerOfRecentlyAccessedExperts > maxNumExpertsRequiredToProcessBatch
+			#ratioOfGPUtoCPUramAvailableForExperts = 1.0	#clear all experts from cpu before processing batch for debug
+			ratioOfGPUtoCPUramAvailableForExperts = maxNumExpertsRequiredToProcessBatch/numerOfRecentlyAccessedExperts
+			print("maxNumExpertsRequiredToProcessBatch = ", maxNumExpertsRequiredToProcessBatch)
+			print("numerOfRecentlyAccessedExperts = ", numerOfRecentlyAccessedExperts)
+			print("ratioOfGPUtoCPUramAvailableForExperts = ", ratioOfGPUtoCPUramAvailableForExperts)
 		debugLocalConceptColumnExpertsFileIO = False
-		#ratioOfGPUtoCPUramAvailableForExperts = 0.1	#ratio of GPU to CPU ram available for experts
-		ratioOfGPUtoCPUramAvailableForExperts = 1.0	#clear all experts from cpu before processing batch for debug
-		
+
 	if(transformerSuperblocks):
 		transformerSuperblocksNumber = 2	#segregate nlp and logic layers
 		transformerSuperblocksLayerNorm = True

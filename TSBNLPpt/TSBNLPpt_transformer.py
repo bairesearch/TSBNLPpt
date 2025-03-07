@@ -79,7 +79,7 @@ def createModel(vocabularySize):
 	num_experts = num_experts_cpu = expert_intermediate_size = None
 	if(detectLocalConceptColumns):
 		num_experts = TSBNLPpt_transformerConceptColumns.initialise_dictionary()
-		num_experts_cpu = num_experts	#FUTURE: numerOfRecentlyAccessedExperts
+		num_experts_cpu = numerOfRecentlyAccessedExperts
 		expert_intermediate_size = localConceptColumnExpertsIntermediateSize
 		
 	print("creating new model")	

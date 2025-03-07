@@ -393,7 +393,9 @@ if(localConceptColumnExperts):
 			expert_ids:	shape (batch_size, seq_len), integer in [0..num_experts-1], or = no_expert_id (-1)
 			"""
 			
+			#print("offloadLeastRecentlyAccessedExpertsToSSD: num_experts_cpu_currently_loaded = ", self.num_experts_cpu_currently_loaded)
 			self.offloadLeastRecentlyAccessedExpertsToSSD(layer_index, batchIndex)
+			#print("loadRequiredExpertsFromSSD: num_experts_cpu_currently_loaded = ", self.num_experts_cpu_currently_loaded)
 			expert_ids_cpu = self.loadRequiredExpertsFromSSD(expert_ids, layer_index, batchIndex)
 			
 			bsz, seq_len, hdim = hidden_states.shape
@@ -401,7 +403,7 @@ if(localConceptColumnExperts):
 			
 			# Flatten the hidden states to (N, hidden_size)
 			hidden_states_flat = hidden_states.view(N, hdim)
-			expert_ids_cpu_flat = expert_ids.view(-1)  # (N,)
+			expert_ids_cpu_flat = expert_ids_cpu.view(-1)  # (N,)
 
 			# We'll create an output buffer of shape (N, hidden_size)
 			output_flat = hidden_states_flat.clone()
@@ -503,7 +505,7 @@ if(localConceptColumnExperts):
 							expert_id_cpu = self.getFirstKeyInDict(self.expert_id_cpu_available)	#assign a new expert_id_cpu index (first key in expert_id_cpu_available)
 							#update all the memory management structures experts_cpu_map, last_access_time_experts, expert_ids_in_cpu, num_experts_cpu_currently_loaded, expert_id_cpu_available;
 							#print("expert_id = ", expert_id)
-							assert expert_id_cpu < numerOfRecentlyAccessedExperts
+							assert expert_id_cpu < self.num_experts_cpu, "expert_id_cpu = " + str(self.expert_id_cpu)
 							self.experts_cpu_map[expert_id_cpu][0] = expert_id
 							self.experts_cpu_map[expert_id_cpu][1] = last_access_time
 							if not last_access_time in self.last_access_time_experts: 
@@ -534,13 +536,12 @@ if(localConceptColumnExperts):
 			- clear these experts from the memory management structures experts_cpu_map, last_access_time_experts, expert_ids_in_cpu, num_experts_cpu_currently_loaded, expert_id_cpu_available;
 			- there is no need to clear the parameters; expert_weight_1[expert_id_cpu], expert_weight_2[expert_id_cpu], expert_bias_1[expert_id_cpu], expert_bias_2[expert_id_cpu] (these will be overwritten in the future).
 			'''
-			while(self.num_experts_cpu_currently_loaded/self.num_experts_cpu > 1-ratioOfGPUtoCPUramAvailableForExperts and self.num_experts_cpu_currently_loaded > 0): 	#depends on ratio of GPU to CPU ram available for experts
+			while((self.num_experts_cpu_currently_loaded/self.num_experts_cpu > 1.0-ratioOfGPUtoCPUramAvailableForExperts) and self.num_experts_cpu_currently_loaded > 0): 	#depends on ratio of GPU to CPU ram available for experts
 				oldest_expert_id_cpu_list_key = self.getFirstKeyInDict(self.last_access_time_experts)
 				oldest_expert_id_cpu_list = self.getFirstValueInDict(self.last_access_time_experts)
 				atLeastOneElementInList = False
 				for old_expert_id_cpu in oldest_expert_id_cpu_list:
 					atLeastOneElementInList = True
-					#print("offloadLeastRecentlyAccessedExpertsToSSD: old_expert_id_cpu = ", old_expert_id_cpu)
 					old_expert_id = self.experts_cpu_map[old_expert_id_cpu][0].item()
 					#print("old_expert_id = ", old_expert_id)
 					self.saveExpertToSSD(old_expert_id_cpu, old_expert_id, layer_index)
