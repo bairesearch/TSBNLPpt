@@ -208,7 +208,8 @@ if(useAlgorithmTransformer):
 	transformerSuperblocksRecursive = False
 	numberOfHiddenLayers = 1	#dynamically assigned: 1 (with recursiveLayers) or 6 (with !recursiveLayers, recursiveLayersOrigImplementation, or recursiveLayersEmulateOrigImplementation)
 	transformerSuperblocksLayerNorm = False
-	
+	localConceptColumnExpertsApplyWithSharedMLPthenResidual = False
+
 	#initialise (default vars);
 	transformerBlockMLPlayer = True	#default: True	#apply all MLP layers
 	transformerBlockMLPlayerLast = False	#default: False	#only apply last MLP layer (requires !transformerBlockMLPlayer)
@@ -223,21 +224,32 @@ if(useAlgorithmTransformer):
 		detectLocalConceptColumns = True
 		localConceptColumnExpertsNoColumnID = -1
 		localConceptColumnExpertsNoDictionaryNounID = 0
-		localConceptColumnExpertsIntermediateSize = 2	#default: 2	#ideal: 512	#GPU/CPU RAM dependent	#requires chunking implementation
 		debugDetectLocalConceptColumns = False
 		localConceptColumnExpertsApplyToAllTokens = False
 		if(localConceptColumnExperts):
+			localConceptColumnExpertsApplyWithSharedMLPthenResidual = False	#apply expert MLPs and shared MLP, and then apply residual to summed output
+			if(localConceptColumnExpertsApplyWithSharedMLPthenResidual):
+				localConceptColumnExpertsSharedMLPratio = 0.5	#default: 0.5 - may be increased depending on training performance (to reduce dependence on expert MLP)	#weight shared MLP over experts MLP
+			else:
+				localConceptColumnExpertsResidualRatio = 0.5	#default: 0.5 - may be increased depending on training performance (to reduce dependence on expert MLP)	#weight residual over experts MLP
 			localConceptColumnExpertsApplyToAllTokens = False	#else restrict to nouns: only apply experts to concept features (nouns), not contextual features (non-nouns)	#reduces RAM usage
+			localConceptColumnExpertsIntermediateSizeMax = 128	#default: 128	#ideal: 512 (sequenceMaxNumTokensDefault)	#GPU/CPU RAM dependent 	#requires chunking implementation
+			localConceptColumnExpertsIntermediateSize = 64		#affects numerOfRecentlyAccessedExperts (GPU ram availability) and speed of processing
 			approxNumNonNounsPerNoun = 10
 			maxNumExpertsRequiredToProcessBatch = int(sequenceMaxNumTokensDefault / approxNumNonNounsPerNoun * 8)	#max number of experts required to process a batch (est approx =~400 = sequence length 512 / 5 concepts per sequence * 8 batch size)
-			numerOfRecentlyAccessedExperts = 1000	#default: 1000	#needs to be higher than the maxNumExpertsRequiredToProcessBatch
-			assert numerOfRecentlyAccessedExperts > maxNumExpertsRequiredToProcessBatch
+			numerOfRecentlyAccessedExpertsMin = 1000	#default: 1000	#needs to be higher than the maxNumExpertsRequiredToProcessBatch*2, where the 2 is a factor used to account for memory management
+			assert numerOfRecentlyAccessedExpertsMin > maxNumExpertsRequiredToProcessBatch*2
+			numerOfRecentlyAccessedExperts = numerOfRecentlyAccessedExpertsMin * int(localConceptColumnExpertsIntermediateSizeMax/localConceptColumnExpertsIntermediateSize)
 			#ratioOfGPUtoCPUramAvailableForExperts = 1.0	#clear all experts from cpu before processing batch for debug
 			ratioOfGPUtoCPUramAvailableForExperts = maxNumExpertsRequiredToProcessBatch/numerOfRecentlyAccessedExperts
+			print("localConceptColumnExperts parameters:")
+			print("localConceptColumnExpertsIntermediateSizeMax = ", localConceptColumnExpertsIntermediateSizeMax)
+			print("localConceptColumnExpertsIntermediateSize = ", localConceptColumnExpertsIntermediateSize)
 			print("maxNumExpertsRequiredToProcessBatch = ", maxNumExpertsRequiredToProcessBatch)
-			print("numerOfRecentlyAccessedExperts = ", numerOfRecentlyAccessedExperts)
+			print("numerOfRecentlyAccessedExpertsMin = ", numerOfRecentlyAccessedExpertsMin)
+			print("numerOfRecentlyAccessedExperts (num_experts_cpu) = ", numerOfRecentlyAccessedExperts)
 			print("ratioOfGPUtoCPUramAvailableForExperts = ", ratioOfGPUtoCPUramAvailableForExperts)
-		debugLocalConceptColumnExpertsFileIO = False
+			debugLocalConceptColumnExpertsFileIO = False
 
 	if(transformerSuperblocks):
 		transformerSuperblocksNumber = 2	#segregate nlp and logic layers

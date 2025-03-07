@@ -374,11 +374,11 @@ if(localConceptColumnExperts):
 			self.layer_norm = nn.LayerNorm(hidden_size)
 
 			# memory manangement structures
-			self.experts_cpu_map = torch.ones((num_experts_cpu, 2), dtype=torch.long) * -1
-			self.last_access_time_experts = SortedDict()
-			self.expert_ids_in_cpu = {}
+			self.experts_cpu_map = torch.ones((num_experts_cpu, 2), dtype=torch.long) * -1	#shape [num_experts_cpu, 2] to record the original expert_id and last_access_time of each cpu expert
+			self.last_access_time_experts = SortedDict()	#key: last_access_time, value:[list of expert_id_cpu]
+			self.expert_ids_in_cpu = {}	#key: expert_id, value: expert_id_cpu
 			self.num_experts_cpu_currently_loaded = 0
-			self.expert_id_cpu_available = {i: True for i in range(num_experts_cpu)}
+			self.expert_id_cpu_available = {i: True for i in range(num_experts_cpu)}	#key: expert_id_cpu, value: True
 
 		def reset_parameters(self):
 			# A simple initialization scheme (like xavier) for demonstration
@@ -386,6 +386,13 @@ if(localConceptColumnExperts):
 			nn.init.zeros_(self.experts_bias_1)
 			nn.init.xavier_uniform_(self.experts_weight_2)
 			nn.init.zeros_(self.experts_bias_2)
+			'''
+			for i in range(self.num_experts_cpu):
+				nn.init.xavier_uniform_(self.experts_weight_1[i])
+				nn.init.zeros_(self.experts_bias_1[i])
+				nn.init.xavier_uniform_(self.experts_weight_2[i])
+				nn.init.zeros_(self.experts_bias_2[i])
+			'''		
 
 		def forward(self, hidden_states: torch.Tensor, expert_ids: torch.LongTensor, layer_index, batchIndex):
 			"""
@@ -457,9 +464,10 @@ if(localConceptColumnExperts):
 				# ~~~~~~~~~~~~~ 4) Residual + LN ~~~~~~~~~~~~~
 				# Compare with the original x (the residual). We can use a fresh residual from hidden_states_flat.
 				# But usually in a Transformer block, the "input_tensor" is the pre-FFN output. Let's do that:
-				residual = x
 				mm2 = self.dropout(mm2)
-				mm2 = self.layer_norm(mm2 + residual)
+				if(not localConceptColumnExpertsApplyWithSharedMLPthenResidual):
+					residual = x
+					mm2 = self.layer_norm(mm2*(1-localConceptColumnExpertsResidualRatio) + residual*localConceptColumnExpertsResidualRatio)
 
 				# ~~~~~~~~~~~~~ 5) Scatter results back ~~~~~~~~~~~~~
 				output_flat[process_indices] = mm2
@@ -583,6 +591,13 @@ if(localConceptColumnExperts):
 			expert_weight_2 = torch.empty(self.hidden_size, self.expert_intermediate_size)
 			expert_bias_1 = torch.empty(self.expert_intermediate_size)
 			expert_bias_2 = torch.empty(self.hidden_size)
+
+			# A simple initialization scheme (like xavier) for demonstration (sync with reset_parameters)
+			nn.init.xavier_uniform_(expert_weight_1)
+			nn.init.zeros_(expert_bias_1)
+			nn.init.xavier_uniform_(expert_weight_2)
+			nn.init.zeros_(expert_bias_2)
+			
 			self.updateExpertCPU(expert_id_cpu, expert_weight_1, expert_weight_2, expert_bias_1, expert_bias_2)
 			
 		def updateExpertCPU(self, expert_id_cpu, expert_weight_1, expert_weight_2, expert_bias_1, expert_bias_2):

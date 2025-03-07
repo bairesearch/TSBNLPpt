@@ -558,7 +558,8 @@ class RobertaOutput(nn.Module):
 	def forward(self, hidden_states: torch.Tensor, input_tensor: torch.Tensor) -> torch.Tensor:
 		hidden_states = self.dense(hidden_states)
 		hidden_states = self.dropout(hidden_states)
-		hidden_states = self.LayerNorm(hidden_states + input_tensor)
+		if(not localConceptColumnExpertsApplyWithSharedMLPthenResidual):
+			hidden_states = self.LayerNorm(hidden_states + input_tensor)	#apply residual
 		return hidden_states
 
 
@@ -584,7 +585,9 @@ class RobertaLayer(nn.Module):
 			self.num_experts_cpu = config.num_experts_cpu
 			intermediate_act_fn = F.gelu
 			self.expert_mlp = TSBNLPpt_transformerConceptColumns.ParallelExpertsMLP(config.num_experts, config.num_experts_cpu, config.hidden_size, config.expert_intermediate_size, localConceptColumnExpertsNoColumnID, intermediate_act_fn)
-
+			if(localConceptColumnExpertsApplyWithSharedMLPthenResidual):
+				self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+			
 	def forward(
 		self,
 		hidden_states: torch.Tensor,
@@ -648,23 +651,13 @@ class RobertaLayer(nn.Module):
 
 		# 1) Normal feed-forward
 		if transformerBlockMLPlayer or (transformerBlockMLPlayerLast and (layerIndex == self.num_hidden_layers)):
-			layer_output = apply_chunking_to_forward(
-				self.feed_forward_chunk, self.chunk_size_feed_forward, self.seq_len_dim, attention_output
-			)
+			mlp_output = apply_chunking_to_forward(self.feed_forward_chunk, self.chunk_size_feed_forward, self.seq_len_dim, attention_output)
 		else:
-			layer_output = attention_output
+			mlp_output = attention_output
 		
-		# 2) Concept Experts feed-forward (one additional pass)
-		if localConceptColumnExperts:
-			if(localConceptColumnExpertsApplyToAllTokens):
-				layer_output_exp1 = self.expert_mlp(layer_output, conceptColumnData['conceptColumnIDsPrev'], layerIndex, conceptColumnData['batchIndex'])
-			layer_output_exp2 = self.expert_mlp(layer_output, conceptColumnData['conceptColumnIDsNext'], layerIndex, conceptColumnData['batchIndex'])
-			if(localConceptColumnExpertsApplyToAllTokens):
-				layer_output = (layer_output_exp1 + layer_output_exp2) / 2
-			else:
-				layer_output = layer_output_exp2
-
-		outputs = (layer_output,) + outputs
+		mlp_output = self.feed_forward_mlp_experts(mlp_output, attention_output, layerIndex, conceptColumnData)
+		
+		outputs = (mlp_output,) + outputs
 
 		# if decoder, return the attn key/values as the last output
 		if self.is_decoder:
@@ -677,7 +670,34 @@ class RobertaLayer(nn.Module):
 		layer_output = self.output(intermediate_output, attention_output)
 		return layer_output
 
-
+	def feed_forward_mlp_experts(self, mlp_output, attention_output, layerIndex, conceptColumnData):
+		# 2) Concept Experts feed-forward
+		if localConceptColumnExperts:
+			if(localConceptColumnExpertsApplyWithSharedMLPthenResidual):
+				mlp_input_exp = attention_output
+			else:
+				mlp_input_exp = mlp_output
+			
+			if(localConceptColumnExpertsApplyToAllTokens):
+				mlp_output_exp1 = self.expert_mlp(mlp_input_exp, conceptColumnData['conceptColumnIDsPrev'], layerIndex, conceptColumnData['batchIndex'])
+			mlp_output_exp2 = self.expert_mlp(mlp_input_exp, conceptColumnData['conceptColumnIDsNext'], layerIndex, conceptColumnData['batchIndex'])
+			if(localConceptColumnExpertsApplyToAllTokens):
+				mlp_output_exp = (mlp_output_exp1 + mlp_output_exp2) / 2
+			else:
+				mlp_output_exp = mlp_output_exp2
+				'''
+				print("conceptColumnData['conceptColumnIDsNext'] = ", conceptColumnData['conceptColumnIDsNext'])
+				print("mlp_output_exp2 = ", mlp_output_exp2)
+				print("mlp_input_exp.shape = ", mlp_input_exp.shape)
+				print("mlp_output_exp2.shape = ", mlp_output_exp2.shape)
+				'''
+				
+			if(localConceptColumnExpertsApplyWithSharedMLPthenResidual):
+				mlp_output = self.LayerNorm(mlp_output*localConceptColumnExpertsSharedMLPratio + mlp_output_exp*(1-localConceptColumnExpertsSharedMLPratio) + attention_output)	#apply residual
+			else:
+				mlp_output = mlp_output_exp
+		return mlp_output
+	
 
 # Copied from transformers.models.bert.modeling_bert.BertEncoder with Bert->Roberta
 class RobertaEncoder(nn.Module):
