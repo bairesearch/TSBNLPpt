@@ -225,7 +225,7 @@ if(useAlgorithmTransformer):
 		localConceptColumnExpertsNoColumnID = -1
 		localConceptColumnExpertsNoDictionaryNounID = 0
 		debugDetectLocalConceptColumns = False
-		localConceptColumnExpertsApplyToAllTokens = False
+		localConceptColumnExpertsApplyToAllTokens = True	#requires higher processing power and GPU RAM (but same CPU RAM and SSD storage) #else only apply concept experts to concept featue (noun) tokens
 		if(localConceptColumnExperts):
 			localConceptColumnExpertsApplyWithSharedMLPthenResidual = False	#apply expert MLPs and shared MLP, and then apply residual to summed output
 			if(localConceptColumnExpertsApplyWithSharedMLPthenResidual):
@@ -243,6 +243,7 @@ if(useAlgorithmTransformer):
 			#ratioOfGPUtoCPUramAvailableForExperts = 1.0	#clear all experts from cpu before processing batch for debug
 			ratioOfGPUtoCPUramAvailableForExperts = maxNumExpertsRequiredToProcessBatch/numerOfRecentlyAccessedExperts
 			print("localConceptColumnExperts parameters:")
+			print("localConceptColumnExpertsApplyToAllTokens = ", localConceptColumnExpertsApplyToAllTokens)
 			print("localConceptColumnExpertsIntermediateSizeMax = ", localConceptColumnExpertsIntermediateSizeMax)
 			print("localConceptColumnExpertsIntermediateSize = ", localConceptColumnExpertsIntermediateSize)
 			print("maxNumExpertsRequiredToProcessBatch = ", maxNumExpertsRequiredToProcessBatch)

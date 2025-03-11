@@ -563,7 +563,8 @@ if(localConceptColumnExperts):
 		def isExpertAvailableOnSSD(self, expert_id, layer_index):
 			file_exists = False
 			file_name = self.generateExpertSSDfileName(expert_id, layer_index, 0)
-			if os.path.exists(file_name):
+			path_name = os.path.join(conceptExpertsPathName, file_name+pytorchTensorFileExtension)
+			if os.path.exists(path_name):
 				file_exists = True
 			return file_exists
 			

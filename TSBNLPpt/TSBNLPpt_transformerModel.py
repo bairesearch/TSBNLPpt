@@ -655,6 +655,7 @@ class RobertaLayer(nn.Module):
 		else:
 			mlp_output = attention_output
 		
+		# 2) Concept Experts feed-forward
 		mlp_output = self.feed_forward_mlp_experts(mlp_output, attention_output, layerIndex, conceptColumnData)
 		
 		outputs = (mlp_output,) + outputs
@@ -671,7 +672,6 @@ class RobertaLayer(nn.Module):
 		return layer_output
 
 	def feed_forward_mlp_experts(self, mlp_output, attention_output, layerIndex, conceptColumnData):
-		# 2) Concept Experts feed-forward
 		if localConceptColumnExperts:
 			if(localConceptColumnExpertsApplyWithSharedMLPthenResidual):
 				mlp_input_exp = attention_output
