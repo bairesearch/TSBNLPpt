@@ -54,14 +54,31 @@ def build_noun_dictionary():
 	noun_dict = {}
 	next_id = 1
 
-	# All synsets for nouns only (pos='n').
-	for synset in wn.all_synsets(pos='n'):
-		for lemma in synset.lemmas():
-			lemma_name = lemma.name().lower()
-			# If we've not seen this lemma before, assign a new ID.
-			if lemma_name not in noun_dict:
-				noun_dict[lemma_name] = next_id
-				next_id += 1
+	if(localConceptColumnExpertsStoreGPU):
+		nounFrequencies = {}
+		
+		for syn in wn.all_synsets('n'):  # 'n' for nouns
+			for lemma in syn.lemmas():
+				nounFrequencies[lemma.name()] = nounFrequencies.get(lemma.name(), 0) + lemma.count()
+
+		# Sort dictionary by frequency count in descending order
+		orderedNounFrequencies = dict(sorted(nounFrequencies.items(), key=lambda item: item[1], reverse=True))
+		
+		mostCommonLemmas = list(orderedNounFrequencies.keys())[:localConceptColumnExpertsNumber]
+		
+		noun_dict = {lemma: i for i, lemma in enumerate(mostCommonLemmas)}
+		
+		print("len(mostCommonLemmas) = ", len(mostCommonLemmas))
+		#print(list(orderedNounFrequencies.items())[:20])
+	else:
+		# All synsets for nouns only (pos='n').
+		for synset in wn.all_synsets(pos='n'):
+			for lemma in synset.lemmas():
+				lemma_name = lemma.name().lower()
+				# If we've not seen this lemma before, assign a new ID.
+				if lemma_name not in noun_dict:
+					noun_dict[lemma_name] = next_id
+					next_id += 1
 
 	return noun_dict
 	
@@ -357,12 +374,13 @@ if(localConceptColumnExperts):
 			self.experts_weight_2 = nn.Parameter(torch.empty(num_experts_cpu, hidden_size, expert_intermediate_size))
 			self.experts_bias_2 = nn.Parameter(torch.empty(num_experts_cpu, hidden_size))
 			
-			# Force them onto CPU right away
-			# (In case someone calls model.to('cuda'), these should remain on CPU.)
-			self.experts_weight_1.data = self.experts_weight_1.data.cpu()
-			self.experts_bias_1.data = self.experts_bias_1.data.cpu()
-			self.experts_weight_2.data = self.experts_weight_2.data.cpu()
-			self.experts_bias_2.data = self.experts_bias_2.data.cpu()
+			if(not localConceptColumnExpertsStoreGPU):
+				# Force them onto CPU right away
+				# (In case someone calls model.to('cuda'), these should remain on CPU.)
+				self.experts_weight_1.data = self.experts_weight_1.data.cpu()
+				self.experts_bias_1.data = self.experts_bias_1.data.cpu()
+				self.experts_weight_2.data = self.experts_weight_2.data.cpu()
+				self.experts_bias_2.data = self.experts_bias_2.data.cpu()
 			
 			# Initialize parameters
 			self.reset_parameters()
@@ -372,13 +390,14 @@ if(localConceptColumnExperts):
 
 			self.dropout = nn.Dropout(0.1)
 			self.layer_norm = nn.LayerNorm(hidden_size)
-
-			# memory manangement structures
-			self.experts_cpu_map = torch.ones((num_experts_cpu, 2), dtype=torch.long) * -1	#shape [num_experts_cpu, 2] to record the original expert_id and last_access_time of each cpu expert
-			self.last_access_time_experts = SortedDict()	#key: last_access_time, value:[list of expert_id_cpu]
-			self.expert_ids_in_cpu = {}	#key: expert_id, value: expert_id_cpu
-			self.num_experts_cpu_currently_loaded = 0
-			self.expert_id_cpu_available = {i: True for i in range(num_experts_cpu)}	#key: expert_id_cpu, value: True
+			
+			if(not localConceptColumnExpertsStoreGPU):
+				# memory manangement structures
+				self.experts_cpu_map = torch.ones((num_experts_cpu, 2), dtype=torch.long) * -1	#shape [num_experts_cpu, 2] to record the original expert_id and last_access_time of each cpu expert
+				self.last_access_time_experts = SortedDict()	#key: last_access_time, value:[list of expert_id_cpu]
+				self.expert_ids_in_cpu = {}	#key: expert_id, value: expert_id_cpu
+				self.num_experts_cpu_currently_loaded = 0
+				self.expert_id_cpu_available = {i: True for i in range(num_experts_cpu)}	#key: expert_id_cpu, value: True
 
 		def reset_parameters(self):
 			# A simple initialization scheme (like xavier) for demonstration
@@ -400,10 +419,13 @@ if(localConceptColumnExperts):
 			expert_ids:	shape (batch_size, seq_len), integer in [0..num_experts-1], or = no_expert_id (-1)
 			"""
 			
-			#print("offloadLeastRecentlyAccessedExpertsToSSD: num_experts_cpu_currently_loaded = ", self.num_experts_cpu_currently_loaded)
-			self.offloadLeastRecentlyAccessedExpertsToSSD(layer_index, batchIndex)
-			#print("loadRequiredExpertsFromSSD: num_experts_cpu_currently_loaded = ", self.num_experts_cpu_currently_loaded)
-			expert_ids_cpu = self.loadRequiredExpertsFromSSD(expert_ids, layer_index, batchIndex)
+			if(localConceptColumnExpertsStoreGPU):
+				expert_ids_cpu = expert_ids
+			else:
+				#print("offloadLeastRecentlyAccessedExpertsToSSD: num_experts_cpu_currently_loaded = ", self.num_experts_cpu_currently_loaded)
+				self.offloadLeastRecentlyAccessedExpertsToSSD(layer_index, batchIndex)
+				#print("loadRequiredExpertsFromSSD: num_experts_cpu_currently_loaded = ", self.num_experts_cpu_currently_loaded)
+				expert_ids_cpu = self.loadRequiredExpertsFromSSD(expert_ids, layer_index, batchIndex)
 			
 			bsz, seq_len, hdim = hidden_states.shape
 			N = bsz * seq_len  # Flatten
@@ -433,10 +455,11 @@ if(localConceptColumnExperts):
 				# ~~~~~~~~~~~~~ 2) First Linear (Parallel) ~~~~~~~~~~~~~
 				# We want W1 per token, shape (num_process_tokens, expert_intermediate_size, hidden_size)
 				# so we do advanced indexing into self.experts_weight_1 with [token_expert_ids].
-				W1_cpu = self.experts_weight_1[token_expert_ids]  # shape (num_process_tokens, EIS, H)
-				b1_cpu = self.experts_bias_1[token_expert_ids]	# shape (num_process_tokens, EIS)
-				W1 = W1_cpu.to(device=hidden_states.device, non_blocking=True)
-				b1 = b1_cpu.to(device=hidden_states.device, non_blocking=True)
+				W1 = self.experts_weight_1[token_expert_ids]  # shape (num_process_tokens, EIS, H)
+				b1 = self.experts_bias_1[token_expert_ids]	# shape (num_process_tokens, EIS)
+				if(not localConceptColumnExpertsStoreGPU):
+					W1 = W1.to(device=hidden_states.device, non_blocking=True)
+					b1 = b1.to(device=hidden_states.device, non_blocking=True)
 			
 				# We'll do a batched matmul: (N, 1, H) x (N, H, EIS) -> (N, 1, EIS)
 				x_3d = x.unsqueeze(1)	  # (num_process_tokens, 1, hidden_size)
@@ -450,10 +473,11 @@ if(localConceptColumnExperts):
 
 				# ~~~~~~~~~~~~~ 3) Second Linear (Parallel) ~~~~~~~~~~~~~
 				# Gather second-layer params similarly
-				W2_cpu = self.experts_weight_2[token_expert_ids]  # (num_process_tokens, hidden_size, EIS)
-				b2_cpu = self.experts_bias_2[token_expert_ids]	# (num_process_tokens, hidden_size)
-				W2 = W2_cpu.to(device=hidden_states.device, non_blocking=True)
-				b2 = b2_cpu.to(device=hidden_states.device, non_blocking=True)
+				W2 = self.experts_weight_2[token_expert_ids]  # (num_process_tokens, hidden_size, EIS)
+				b2 = self.experts_bias_2[token_expert_ids]	# (num_process_tokens, hidden_size)
+				if(not localConceptColumnExpertsStoreGPU):
+					W2 = W2.to(device=hidden_states.device, non_blocking=True)
+					b2 = b2.to(device=hidden_states.device, non_blocking=True)
 			
 				mm1_3d = mm1.unsqueeze(1)	 # (num_process_tokens, 1, EIS)
 				W2_3d = W2.transpose(1, 2)	# (num_process_tokens, EIS, hidden_size)

@@ -225,32 +225,41 @@ if(useAlgorithmTransformer):
 		localConceptColumnExpertsNoColumnID = -1
 		localConceptColumnExpertsNoDictionaryNounID = 0
 		debugDetectLocalConceptColumns = False
-		localConceptColumnExpertsApplyToAllTokens = True	#requires higher processing power and GPU RAM (but same CPU RAM and SSD storage) #else only apply concept experts to concept featue (noun) tokens
+		localConceptColumnExpertsApplyToAllTokens = True	#requires higher processing power and GPU RAM (but same CPU RAM and SSD storage) #else restrict to nouns: else only apply concept experts to concept features (noun) tokens, not contextual features (non-nouns)
 		if(localConceptColumnExperts):
 			localConceptColumnExpertsApplyWithSharedMLPthenResidual = False	#apply expert MLPs and shared MLP, and then apply residual to summed output
 			if(localConceptColumnExpertsApplyWithSharedMLPthenResidual):
 				localConceptColumnExpertsSharedMLPratio = 0.5	#default: 0.5 - may be increased depending on training performance (to reduce dependence on expert MLP)	#weight shared MLP over experts MLP
 			else:
 				localConceptColumnExpertsResidualRatio = 0.5	#default: 0.5 - may be increased depending on training performance (to reduce dependence on expert MLP)	#weight residual over experts MLP
-			localConceptColumnExpertsApplyToAllTokens = False	#else restrict to nouns: only apply experts to concept features (nouns), not contextual features (non-nouns)	#reduces RAM usage
-			localConceptColumnExpertsIntermediateSizeMax = 128	#default: 128	#ideal: 512 (sequenceMaxNumTokensDefault)	#GPU/CPU RAM dependent 	#requires chunking implementation
-			localConceptColumnExpertsIntermediateSize = 64		#affects numerOfRecentlyAccessedExperts (GPU ram availability) and speed of processing
-			approxNumNonNounsPerNoun = 10
-			maxNumExpertsRequiredToProcessBatch = int(sequenceMaxNumTokensDefault / approxNumNonNounsPerNoun * 8)	#max number of experts required to process a batch (est approx =~400 = sequence length 512 / 5 concepts per sequence * 8 batch size)
-			numerOfRecentlyAccessedExpertsMin = 1000	#default: 1000	#needs to be higher than the maxNumExpertsRequiredToProcessBatch*2, where the 2 is a factor used to account for memory management
-			assert numerOfRecentlyAccessedExpertsMin > maxNumExpertsRequiredToProcessBatch*2
-			numerOfRecentlyAccessedExperts = numerOfRecentlyAccessedExpertsMin * int(localConceptColumnExpertsIntermediateSizeMax/localConceptColumnExpertsIntermediateSize)
-			#ratioOfGPUtoCPUramAvailableForExperts = 1.0	#clear all experts from cpu before processing batch for debug
-			ratioOfGPUtoCPUramAvailableForExperts = maxNumExpertsRequiredToProcessBatch/numerOfRecentlyAccessedExperts
-			print("localConceptColumnExperts parameters:")
-			print("localConceptColumnExpertsApplyToAllTokens = ", localConceptColumnExpertsApplyToAllTokens)
-			print("localConceptColumnExpertsIntermediateSizeMax = ", localConceptColumnExpertsIntermediateSizeMax)
-			print("localConceptColumnExpertsIntermediateSize = ", localConceptColumnExpertsIntermediateSize)
-			print("maxNumExpertsRequiredToProcessBatch = ", maxNumExpertsRequiredToProcessBatch)
-			print("numerOfRecentlyAccessedExpertsMin = ", numerOfRecentlyAccessedExpertsMin)
-			print("numerOfRecentlyAccessedExperts (num_experts_cpu) = ", numerOfRecentlyAccessedExperts)
-			print("ratioOfGPUtoCPUramAvailableForExperts = ", ratioOfGPUtoCPUramAvailableForExperts)
-			debugLocalConceptColumnExpertsFileIO = False
+			localConceptColumnExpertsStoreGPU = True	#save all experts to GPU (GH200 96GB)	#method requires optimisation
+			if(localConceptColumnExpertsStoreGPU):
+				debugLocalConceptColumnExpertsStoreGPU = False	#local debug (low GPU ram);
+				if(debugLocalConceptColumnExpertsStoreGPU):
+					localConceptColumnExpertsNumber = 1000
+					localConceptColumnExpertsIntermediateSize = 64	#128
+				else:
+					localConceptColumnExpertsNumber = 8000 	#default: 8000	#20000	#40000	#~2MB/4MB required per expert with localConceptColumnExpertsIntermediateSize=64/128		#heuristic; ~96GB/200GB * 120000 nouns = 60000 experts	
+					localConceptColumnExpertsIntermediateSize = 64		#default: 64		#affects GPU ram availability and speed of processing	#64expertUnits * 768hiddenUnits * 2linears * 4bytes * 6layers = 64 * 768 * 2 * 4 * 6 layers = 2359296 bytes ~= ~2MB per expert	#assume 32bit=4*8byte parameters)	#
+			else:
+				localConceptColumnExpertsIntermediateSizeMax = 128	#default: 128	#ideal: 512 (sequenceMaxNumTokensDefault)	#GPU/CPU RAM dependent 	#requires chunking implementation
+				localConceptColumnExpertsIntermediateSize = 64		#affects numerOfRecentlyAccessedExperts (GPU ram availability) and speed of processing
+				approxNumNonNounsPerNoun = 10
+				maxNumExpertsRequiredToProcessBatch = int(sequenceMaxNumTokensDefault / approxNumNonNounsPerNoun * 8)	#max number of experts required to process a batch (est approx =~400 = sequence length 512 / 5 concepts per sequence * 8 batch size)
+				numerOfRecentlyAccessedExpertsMin = 1000	#default: 1000	#needs to be higher than the maxNumExpertsRequiredToProcessBatch*2, where the 2 is a factor used to account for memory management
+				assert numerOfRecentlyAccessedExpertsMin > maxNumExpertsRequiredToProcessBatch*2
+				numerOfRecentlyAccessedExperts = numerOfRecentlyAccessedExpertsMin * int(localConceptColumnExpertsIntermediateSizeMax/localConceptColumnExpertsIntermediateSize)
+				#ratioOfGPUtoCPUramAvailableForExperts = 1.0	#clear all experts from cpu before processing batch for debug
+				ratioOfGPUtoCPUramAvailableForExperts = maxNumExpertsRequiredToProcessBatch/numerOfRecentlyAccessedExperts
+				print("localConceptColumnExperts parameters:")
+				print("localConceptColumnExpertsApplyToAllTokens = ", localConceptColumnExpertsApplyToAllTokens)
+				print("localConceptColumnExpertsIntermediateSizeMax = ", localConceptColumnExpertsIntermediateSizeMax)
+				print("localConceptColumnExpertsIntermediateSize = ", localConceptColumnExpertsIntermediateSize)
+				print("maxNumExpertsRequiredToProcessBatch = ", maxNumExpertsRequiredToProcessBatch)
+				print("numerOfRecentlyAccessedExpertsMin = ", numerOfRecentlyAccessedExpertsMin)
+				print("numerOfRecentlyAccessedExperts (num_experts_cpu) = ", numerOfRecentlyAccessedExperts)
+				print("ratioOfGPUtoCPUramAvailableForExperts = ", ratioOfGPUtoCPUramAvailableForExperts)
+				debugLocalConceptColumnExpertsFileIO = False
 
 	if(transformerSuperblocks):
 		transformerSuperblocksNumber = 2	#segregate nlp and logic layers
