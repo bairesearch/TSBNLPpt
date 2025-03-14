@@ -54,7 +54,7 @@ def build_noun_dictionary():
 	noun_dict = {}
 	next_id = 1
 
-	if(localConceptColumnExpertsStoreGPU):
+	if(localConceptColumnExpertsStoreRAM):
 		nounFrequencies = {}
 		
 		for syn in wn.all_synsets('n'):  # 'n' for nouns
@@ -317,6 +317,51 @@ if(localConceptColumnAttention):
 		
 if(localConceptColumnExperts):
 
+	if(localConceptColumnExpertsModuleList):
+		class ExpertMLP(nn.Module):
+			"""
+			Simple feed-forward for one expert:
+			   hidden_size -> intermediate_size -> hidden_size
+			"""
+			def __init__(self, hidden_size, intermediate_size, activation_fn=F.gelu):
+				super().__init__()
+				self.expert_weight_1 = nn.Parameter(torch.empty(intermediate_size, hidden_size))
+				self.expert_bias_1 = nn.Parameter(torch.empty(intermediate_size))
+				self.expert_weight_2 = nn.Parameter(torch.empty(hidden_size, intermediate_size))
+				self.expert_bias_2 = nn.Parameter(torch.empty(hidden_size))
+				#self.dense1 = nn.Linear(hidden_size, intermediate_size)
+				#self.dense2 = nn.Linear(intermediate_size, hidden_size)
+				
+				# Initialize parameters
+				self.reset_parameters()
+
+				self.activation_fn = activation_fn
+				self.layernorm = nn.LayerNorm(hidden_size)
+				self.dropout = nn.Dropout(0.1)
+
+			def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+				# hidden_states: (group_size, hidden_size)
+				
+				x = torch.addmm(self.expert_bias_1, hidden_states, self.expert_weight_1.transpose(0, 1))
+				x = self.activation_fn(x)
+				x = torch.addmm(self.expert_bias_2, x, self.expert_weight_2.transpose(0, 1))
+				#x = self.dense1(hidden_states)
+				#x = self.activation_fn(x)
+				#x = self.dense2(x)
+				
+				x = self.dropout(x)
+				# residual connection + layer norm
+				x = self.layernorm(x + hidden_states)
+				return x
+				
+			def reset_parameters(self):
+				# A simple initialization scheme (like xavier) for demonstration
+				nn.init.xavier_uniform_(self.expert_weight_1)
+				nn.init.zeros_(self.expert_bias_1)
+				nn.init.xavier_uniform_(self.expert_weight_2)
+				nn.init.zeros_(self.expert_bias_2)
+
+	
 	class ParallelExpertsMLP(nn.Module):
 		"""
 		A 'parallel' expert MLP block that contains multiple experts' parameters in a single tensor.
@@ -332,20 +377,25 @@ if(localConceptColumnExperts):
 		
 		Description:
 			The code applies a concept expert MLPs to the tokens, where each expert comprise two linear layers (emulating ordinary transformer MLP). It uses expert_ids (of shape [batch_size, seq_length]) to determine which expert MLP to use for each token in the sequence. 
-			There are num_experts total expert MLPs stored on disk (num_experts_cpu recently accessed experts available in CPU ram), each with their own unique parameters. The expert MLP layers have a standard input/output size (of hidden_size features), and an intermediate layer size (of expert_intermediate_size features). 
-			All tokens in the sequence are executed in parallel (the necessary experts are loaded from cpu parameters experts_weight_1/experts_weight_2/experts_bias_1/experts_bias_2 to W1, b1, W2, b2 and are executed in parallel on the gpu).
+			The expert MLP layers have a standard input/output size (of hidden_size features), and an intermediate layer size (of expert_intermediate_size features). 
+			All tokens in the sequence are executed in parallel (the necessary experts are loaded from [cpu] parameters experts_weight_1/experts_weight_2/experts_bias_1/experts_bias_2 to W1, b1, W2, b2 and are executed in parallel on the gpu).
+			
+			if(localConceptColumnExpertsStoreRAM):
+				1) Assume approximately 96GB of GPU ram 
+			else:
+				There are num_experts total expert MLPs stored on disk (num_experts_cpu recently accessed experts available in CPU ram), each with their own unique parameters. 
 
-			1) Assume approximately 1TB of SSD storage space to store all experts (indexed by expert id). These experts will be created and accessed on demand. The location of the SSD folder is called conceptExpertsPathName. Each expert is saved to SSD for a particular transformer block (use layer_index).
-			2) Assume approximately 64GB of CPU ram to store the most recently accessed expert MLP parameters (experts_weight_1, experts_weight_2, experts_bias_1, experts_bias_2), where each MLP parameter tensor contains num_experts_cpu experts. 
-				The most recently accessed experts are the last numerOfRecentlyAccessedExperts (eg last 1000 experts) that were brought into GPU ram to process the sequence token experts, thus num_experts_cpu = numerOfRecentlyAccessedExperts. 
-				Each expert stored in CPU ram uses last_access_time to indicate the last time it was brought into GPU ram (where last_access_time is derived from conceptColumnData['batchIndex']). 
+				1) Assume approximately 1TB of SSD storage space to store all experts (indexed by expert id). These experts will be created and accessed on demand. The location of the SSD folder is called conceptExpertsPathName. Each expert is saved to SSD for a particular transformer block (use layer_index).
+				2) Assume approximately 64GB of CPU/GPU ram (depending on localConceptColumnExpertsStoreCPU) to store the most recently accessed expert MLP parameters (experts_weight_1, experts_weight_2, experts_bias_1, experts_bias_2), where each MLP parameter tensor contains num_experts_cpu experts. 
+					The most recently accessed experts are the last numerOfRecentlyAccessedExperts (eg last 1000 experts) that were brought into GPU ram to process the sequence token experts, thus num_experts_cpu = numerOfRecentlyAccessedExperts. 
+					Each expert stored in CPU ram uses last_access_time to indicate the last time it was brought into GPU ram (where last_access_time is derived from conceptColumnData['batchIndex']). 
 
-			To manage the CPU ram memory the code creates i) a tensor called experts_cpu_map, ii) a multi SortedDict from sortedcontainers called last_access_time_experts, and iii) a dictionary called expert_ids_in_cpu, iv) a variable called num_experts_cpu_currently_loaded, and a dictionary called expert_id_cpu_available;
-			i) a pytorch tensor called experts_cpu_map of shape [num_experts_cpu, 2] to record the original expert_id and last_access_time of each cpu expert. experts_cpu_map should be initialised to -1 in all its elements. If there is no expert loaded at a particular row (ie expert_id_cpu) of experts_cpu_map, then assign an expert_id of -1 and a last_access_time of -1.
-			ii) a multi SortedDict from sortedcontainers called last_access_time_experts (key: last_access_time, value:[list of expert_id_cpu]). Note that a "multi" dictionary uses a list structure for its value, such that it can contain more than one element for a given key. The value of any given last_access_time key will be a list of expert_id_cpu. last_access_time_experts should be initialised as empty.
-			iii) a standard python dict called expert_ids_in_cpu (key: expert_id, value: expert_id_cpu). expert_ids_in_cpu should be initialised as empty.
-			iv) a python variable called num_experts_cpu_currently_loaded, which designates the number of cpu experts are currently loaded. num_experts_cpu_currently_loaded should be initialised to 0.
-			v) a standard python dict called expert_id_cpu_available (key: expert_id_cpu, value: True). expert_id_cpu_available should be initialised as filled with value True, of size num_experts_cpu.
+				To manage the CPU ram memory the code creates i) a tensor called experts_cpu_map, ii) a multi SortedDict from sortedcontainers called last_access_time_experts, and iii) a dictionary called expert_ids_in_cpu, iv) a variable called num_experts_cpu_currently_loaded, and a dictionary called expert_id_cpu_available;
+				i) a pytorch tensor called experts_cpu_map of shape [num_experts_cpu, 2] to record the original expert_id and last_access_time of each cpu expert. experts_cpu_map should be initialised to -1 in all its elements. If there is no expert loaded at a particular row (ie expert_id_cpu) of experts_cpu_map, then assign an expert_id of -1 and a last_access_time of -1.
+				ii) a multi SortedDict from sortedcontainers called last_access_time_experts (key: last_access_time, value:[list of expert_id_cpu]). Note that a "multi" dictionary uses a list structure for its value, such that it can contain more than one element for a given key. The value of any given last_access_time key will be a list of expert_id_cpu. last_access_time_experts should be initialised as empty.
+				iii) a standard python dict called expert_ids_in_cpu (key: expert_id, value: expert_id_cpu). expert_ids_in_cpu should be initialised as empty.
+				iv) a python variable called num_experts_cpu_currently_loaded, which designates the number of cpu experts are currently loaded. num_experts_cpu_currently_loaded should be initialised to 0.
+				v) a standard python dict called expert_id_cpu_available (key: expert_id_cpu, value: True). expert_id_cpu_available should be initialised as filled with value True, of size num_experts_cpu.
 		"""
 		def __init__(
 			self,
@@ -364,26 +414,40 @@ if(localConceptColumnExperts):
 			self.no_expert_id = no_expert_id
 			self.activation = activation
 
-			# 1) For the first linear: (out_dim = expert_intermediate_size, in_dim = hidden_size)
-			# We store all experts in one big tensor of shape: (num_experts_cpu, expert_intermediate_size, hidden_size)
-			self.experts_weight_1 = nn.Parameter(torch.empty(num_experts_cpu, expert_intermediate_size, hidden_size))
-			self.experts_bias_1 = nn.Parameter(torch.empty(num_experts_cpu, expert_intermediate_size))
-			 
-			# 2) For the second linear: (out_dim = hidden_size, in_dim = expert_intermediate_size)
-			# Stacked in shape: (num_experts_cpu, hidden_size, expert_intermediate_size)
-			self.experts_weight_2 = nn.Parameter(torch.empty(num_experts_cpu, hidden_size, expert_intermediate_size))
-			self.experts_bias_2 = nn.Parameter(torch.empty(num_experts_cpu, hidden_size))
-			
-			if(not localConceptColumnExpertsStoreGPU):
-				# Force them onto CPU right away
-				# (In case someone calls model.to('cuda'), these should remain on CPU.)
-				self.experts_weight_1.data = self.experts_weight_1.data.cpu()
-				self.experts_bias_1.data = self.experts_bias_1.data.cpu()
-				self.experts_weight_2.data = self.experts_weight_2.data.cpu()
-				self.experts_bias_2.data = self.experts_bias_2.data.cpu()
-			
-			# Initialize parameters
-			self.reset_parameters()
+			if(localConceptColumnExpertsModuleList):
+				self.experts = nn.ModuleList([ExpertMLP(hidden_size, expert_intermediate_size) for _ in range(num_experts_cpu)])
+
+				'''				
+				#old implementation;
+				if(localConceptColumnExpertsStoreCPU):
+					# Force them onto CPU right away (TODO: correct this implementation)
+					# (In case someone calls model.to('cuda'), these should remain on CPU.)
+					self.experts.data = self.experts.data.cpu()
+				'''
+			else:
+				# 1) For the first linear: (out_dim = expert_intermediate_size, in_dim = hidden_size)
+				# We store all experts in one big tensor of shape: (num_experts_cpu, expert_intermediate_size, hidden_size)
+				self.experts_weight_1 = nn.Parameter(torch.empty(num_experts_cpu, expert_intermediate_size, hidden_size))
+				self.experts_bias_1 = nn.Parameter(torch.empty(num_experts_cpu, expert_intermediate_size))
+
+				# 2) For the second linear: (out_dim = hidden_size, in_dim = expert_intermediate_size)
+				# Stacked in shape: (num_experts_cpu, hidden_size, expert_intermediate_size)
+				self.experts_weight_2 = nn.Parameter(torch.empty(num_experts_cpu, hidden_size, expert_intermediate_size))
+				self.experts_bias_2 = nn.Parameter(torch.empty(num_experts_cpu, hidden_size))
+
+				'''
+				if(localConceptColumnExpertsStoreCPU):
+					#old implementation;
+					# Force them onto CPU right away (TODO: correct this implementation)
+					# (In case someone calls model.to('cuda'), these should remain on CPU.)
+					self.experts_weight_1.data = self.experts_weight_1.data.cpu()
+					self.experts_bias_1.data = self.experts_bias_1.data.cpu()
+					self.experts_weight_2.data = self.experts_weight_2.data.cpu()
+					self.experts_bias_2.data = self.experts_bias_2.data.cpu()
+				'''
+				
+				# Initialize parameters
+				self.reset_parameters()
 
 			# Optionally, we could add LayerNorm parameters for each expert, or a single LN, etc.
 			# but here we only do a final residual + dropout, or you can do LN if you like.
@@ -391,7 +455,7 @@ if(localConceptColumnExperts):
 			self.dropout = nn.Dropout(0.1)
 			self.layer_norm = nn.LayerNorm(hidden_size)
 			
-			if(not localConceptColumnExpertsStoreGPU):
+			if(not localConceptColumnExpertsStoreRAM):
 				# memory manangement structures
 				self.experts_cpu_map = torch.ones((num_experts_cpu, 2), dtype=torch.long) * -1	#shape [num_experts_cpu, 2] to record the original expert_id and last_access_time of each cpu expert
 				self.last_access_time_experts = SortedDict()	#key: last_access_time, value:[list of expert_id_cpu]
@@ -399,6 +463,21 @@ if(localConceptColumnExperts):
 				self.num_experts_cpu_currently_loaded = 0
 				self.expert_id_cpu_available = {i: True for i in range(num_experts_cpu)}	#key: expert_id_cpu, value: True
 
+		if(localConceptColumnExpertsStoreCPU):
+			def to(self, *args, **kwargs):
+				# First, apply the default `.to(...)` behavior to everything
+				super_result = super().to(*args, **kwargs)
+				# Then force all experts back on CPU
+				if(localConceptColumnExpertsModuleList):
+					for expert in self.experts:
+						expert.to('cpu')
+				else:
+					self.experts_weight_1.to('cpu')
+					self.experts_weight_2.to('cpu')
+					self.experts_bias_1.to('cpu')
+					self.experts_bias_2.to('cpu')
+				return super_result
+		
 		def reset_parameters(self):
 			# A simple initialization scheme (like xavier) for demonstration
 			nn.init.xavier_uniform_(self.experts_weight_1)
@@ -412,24 +491,70 @@ if(localConceptColumnExperts):
 				nn.init.xavier_uniform_(self.experts_weight_2[i])
 				nn.init.zeros_(self.experts_bias_2[i])
 			'''		
+		
+		if(localConceptColumnExpertsGroupTokensByExpert):
+		
+			if(localConceptColumnExpertsModuleList):
+				def forward_single_expert(self, x_e: torch.Tensor, expert_id: int) -> torch.Tensor:
+					"""
+					x_e:	  (group_size, hidden_size)
+					expert_id is an integer in [0..num_experts-1]
+					"""
+					# Simply forward through that expert's MLP
+					out_e = self.experts[expert_id](x_e)
+					return out_e
+			else:
+				def forward_single_expert(self, x_e: torch.Tensor, expert_id: int) -> torch.Tensor:
+					"""
+					x_e: (group_size, hidden_size)
+					expert_id: integer in [0..num_experts-1]
+					"""
+					# Extract that expert's parameters
+					# w1_e shape: (intermediate_size, hidden_size)
+					w1_e = self.experts_weight_1[expert_id]
+					b1_e = self.experts_bias_1[expert_id]
+					if(localConceptColumnExpertsStoreCPU):
+						w1_e = w1_e.to(device=x_e.device, non_blocking=True)
+						b1_e = b1_e.to(device=x_e.device, non_blocking=True)
+						
+					# w2_e shape: (hidden_size, intermediate_size)
+					w2_e = self.experts_weight_2[expert_id]
+					b2_e = self.experts_bias_2[expert_id]
+					if(localConceptColumnExpertsStoreCPU):
+						w2_e = w2_e.to(device=x_e.device, non_blocking=True)
+						b2_e = b2_e.to(device=x_e.device, non_blocking=True)
+						
+					# First matmul: out1 = x_e @ w1_e^T + b1_e
+					out1 = torch.addmm(b1_e, x_e, w1_e.transpose(0, 1))
+					out1 = self.activation(out1)
 
+					# Second matmul: out2 = out1 @ w2_e^T + b2_e
+					out2 = torch.addmm(b2_e, out1, w2_e.transpose(0, 1))
+
+					# Residual + LN
+					out2 = self.dropout(out2)
+					out2 = self.layer_norm(out2 + x_e)
+
+					return out2
+
+		
 		def forward(self, hidden_states: torch.Tensor, expert_ids: torch.LongTensor, layer_index, batchIndex):
 			"""
 			hidden_states: shape (batch_size, seq_len, hidden_size)
 			expert_ids:	shape (batch_size, seq_len), integer in [0..num_experts-1], or = no_expert_id (-1)
 			"""
-			
-			if(localConceptColumnExpertsStoreGPU):
+
+			if(localConceptColumnExpertsStoreRAM):
 				expert_ids_cpu = expert_ids
 			else:
 				#print("offloadLeastRecentlyAccessedExpertsToSSD: num_experts_cpu_currently_loaded = ", self.num_experts_cpu_currently_loaded)
 				self.offloadLeastRecentlyAccessedExpertsToSSD(layer_index, batchIndex)
 				#print("loadRequiredExpertsFromSSD: num_experts_cpu_currently_loaded = ", self.num_experts_cpu_currently_loaded)
 				expert_ids_cpu = self.loadRequiredExpertsFromSSD(expert_ids, layer_index, batchIndex)
-			
+
 			bsz, seq_len, hdim = hidden_states.shape
 			N = bsz * seq_len  # Flatten
-			
+
 			# Flatten the hidden states to (N, hidden_size)
 			hidden_states_flat = hidden_states.view(N, hdim)
 			expert_ids_cpu_flat = expert_ids_cpu.view(-1)  # (N,)
@@ -442,6 +567,7 @@ if(localConceptColumnExperts):
 			process_mask = ~skip_mask  # Invert
 
 			if process_mask.any():
+
 				# Indices of tokens that go to *some* expert
 				process_indices = process_mask.nonzero(as_tuple=True)[0]  # shape ~ (num_process_tokens,)
 
@@ -450,55 +576,91 @@ if(localConceptColumnExperts):
 
 				# Gather the input states that need processing
 				x = hidden_states_flat[process_indices]  # shape (num_process_tokens, hidden_size)
-				num_process_tokens = x.size(0)
+					
+				if(localConceptColumnExpertsGroupTokensByExpert):
 
-				# ~~~~~~~~~~~~~ 2) First Linear (Parallel) ~~~~~~~~~~~~~
-				# We want W1 per token, shape (num_process_tokens, expert_intermediate_size, hidden_size)
-				# so we do advanced indexing into self.experts_weight_1 with [token_expert_ids].
-				W1 = self.experts_weight_1[token_expert_ids]  # shape (num_process_tokens, EIS, H)
-				b1 = self.experts_bias_1[token_expert_ids]	# shape (num_process_tokens, EIS)
-				if(not localConceptColumnExpertsStoreGPU):
-					W1 = W1.to(device=hidden_states.device, non_blocking=True)
-					b1 = b1.to(device=hidden_states.device, non_blocking=True)
-			
-				# We'll do a batched matmul: (N, 1, H) x (N, H, EIS) -> (N, 1, EIS)
-				x_3d = x.unsqueeze(1)	  # (num_process_tokens, 1, hidden_size)
-				W1_3d = W1.transpose(1, 2) # (num_process_tokens, hidden_size, expert_intermediate_size)
+					sorted_expert_ids, sort_order = torch.sort(token_expert_ids)
 
-				mm1 = torch.bmm(x_3d, W1_3d).squeeze(1)  # (num_process_tokens, expert_intermediate_size)
-				mm1 = mm1 + b1
+					x_sorted = x[sort_order]
 
-				# Apply activation
-				mm1 = self.activation(mm1)
+					expert_outputs = torch.empty_like(x_sorted)
+					current_start = 0
 
-				# ~~~~~~~~~~~~~ 3) Second Linear (Parallel) ~~~~~~~~~~~~~
-				# Gather second-layer params similarly
-				W2 = self.experts_weight_2[token_expert_ids]  # (num_process_tokens, hidden_size, EIS)
-				b2 = self.experts_bias_2[token_expert_ids]	# (num_process_tokens, hidden_size)
-				if(not localConceptColumnExpertsStoreGPU):
-					W2 = W2.to(device=hidden_states.device, non_blocking=True)
-					b2 = b2.to(device=hidden_states.device, non_blocking=True)
-			
-				mm1_3d = mm1.unsqueeze(1)	 # (num_process_tokens, 1, EIS)
-				W2_3d = W2.transpose(1, 2)	# (num_process_tokens, EIS, hidden_size)
+					# We'll iterate over contiguous blocks of x_sorted that share the same expert_id
+					import itertools
+					for expert_id, group_iter in itertools.groupby(sorted_expert_ids, lambda e: e.item()):
+						group_size = len(list(group_iter))
+						start = current_start
+						end = start + group_size
+						current_start = end
 
-				mm2 = torch.bmm(mm1_3d, W2_3d).squeeze(1)  # (num_process_tokens, hidden_size)
-				mm2 = mm2 + b2
+						# Subset of tokens for this expert
+						x_e = x_sorted[start:end]  # shape (group_size, hidden_size)
 
-				# ~~~~~~~~~~~~~ 4) Residual + LN ~~~~~~~~~~~~~
-				# Compare with the original x (the residual). We can use a fresh residual from hidden_states_flat.
-				# But usually in a Transformer block, the "input_tensor" is the pre-FFN output. Let's do that:
-				mm2 = self.dropout(mm2)
-				if(not localConceptColumnExpertsApplyWithSharedMLPthenResidual):
-					residual = x
-					mm2 = self.layer_norm(mm2*(1-localConceptColumnExpertsResidualRatio) + residual*localConceptColumnExpertsResidualRatio)
+						# Single forward pass for these tokens
+						out_e = self.forward_single_expert(x_e, expert_id)
 
-				# ~~~~~~~~~~~~~ 5) Scatter results back ~~~~~~~~~~~~~
-				output_flat[process_indices] = mm2
+						# Place in the final buffer
+						expert_outputs[start:end] = out_e
 
-			# Meanwhile, tokens with skip_mask==True remain as their original input (no change).
-			# (We initialized output_flat as a copy of hidden_states_flat, so it\u2019s already \u201cunchanged\u201d for those.)
-			
+					# unsort to the original order among the processed tokens
+					_, unsort_order = torch.sort(sort_order)
+					process_output = expert_outputs[unsort_order]
+
+					# scatter back
+					output_flat[process_indices] = process_output
+
+				else:
+
+					num_process_tokens = x.size(0)
+
+					# ~~~~~~~~~~~~~ 2) First Linear (Parallel) ~~~~~~~~~~~~~
+					# We want W1 per token, shape (num_process_tokens, expert_intermediate_size, hidden_size)
+					# so we do advanced indexing into self.experts_weight_1 with [token_expert_ids].
+					W1 = self.experts_weight_1[token_expert_ids]  # shape (num_process_tokens, EIS, H)
+					b1 = self.experts_bias_1[token_expert_ids]	# shape (num_process_tokens, EIS)
+					if(localConceptColumnExpertsStoreCPU):
+						W1 = W1.to(device=hidden_states.device, non_blocking=True)
+						b1 = b1.to(device=hidden_states.device, non_blocking=True)
+
+					# We'll do a batched matmul: (N, 1, H) x (N, H, EIS) -> (N, 1, EIS)
+					x_3d = x.unsqueeze(1)	  # (num_process_tokens, 1, hidden_size)
+					W1_3d = W1.transpose(1, 2) # (num_process_tokens, hidden_size, expert_intermediate_size)
+
+					mm1 = torch.bmm(x_3d, W1_3d).squeeze(1)  # (num_process_tokens, expert_intermediate_size)
+					mm1 = mm1 + b1
+
+					# Apply activation
+					mm1 = self.activation(mm1)
+
+					# ~~~~~~~~~~~~~ 3) Second Linear (Parallel) ~~~~~~~~~~~~~
+					# Gather second-layer params similarly
+					W2 = self.experts_weight_2[token_expert_ids]  # (num_process_tokens, hidden_size, EIS)
+					b2 = self.experts_bias_2[token_expert_ids]	# (num_process_tokens, hidden_size)
+					if(localConceptColumnExpertsStoreCPU):
+						W2 = W2.to(device=hidden_states.device, non_blocking=True)
+						b2 = b2.to(device=hidden_states.device, non_blocking=True)
+
+					mm1_3d = mm1.unsqueeze(1)	 # (num_process_tokens, 1, EIS)
+					W2_3d = W2.transpose(1, 2)	# (num_process_tokens, EIS, hidden_size)
+
+					mm2 = torch.bmm(mm1_3d, W2_3d).squeeze(1)  # (num_process_tokens, hidden_size)
+					mm2 = mm2 + b2
+
+					# ~~~~~~~~~~~~~ 4) Residual + LN ~~~~~~~~~~~~~
+					# Compare with the original x (the residual). We can use a fresh residual from hidden_states_flat.
+					# But usually in a Transformer block, the "input_tensor" is the pre-FFN output. Let's do that:
+					mm2 = self.dropout(mm2)
+					if(not localConceptColumnExpertsApplyWithSharedMLPthenResidual):
+						residual = x
+						mm2 = self.layer_norm(mm2*(1-localConceptColumnExpertsResidualRatio) + residual*localConceptColumnExpertsResidualRatio)
+
+					# ~~~~~~~~~~~~~ 5) Scatter results back ~~~~~~~~~~~~~
+					output_flat[process_indices] = mm2
+
+					# Meanwhile, tokens with skip_mask==True remain as their original input (no change).
+					# (We initialized output_flat as a copy of hidden_states_flat, so it\u2019s already \u201cunchanged\u201d for those.)
+
 			# Reshape output back
 			output = output_flat.view(bsz, seq_len, hdim)
 			return output
@@ -606,10 +768,20 @@ if(localConceptColumnExperts):
 			self.updateExpertCPU(expert_id_cpu, expert_weight_1, expert_weight_2, expert_bias_1, expert_bias_2)
 
 		def saveExpertToSSD(self, expert_id_cpu, expert_id, layer_index):
-			self.saveTensor(self.experts_weight_1[expert_id_cpu], conceptExpertsPathName, self.generateExpertSSDfileName(expert_id, layer_index, 0))
-			self.saveTensor(self.experts_weight_2[expert_id_cpu], conceptExpertsPathName, self.generateExpertSSDfileName(expert_id, layer_index, 1))
-			self.saveTensor(self.experts_bias_1[expert_id_cpu], conceptExpertsPathName, self.generateExpertSSDfileName(expert_id, layer_index, 2))
-			self.saveTensor(self.experts_bias_2[expert_id_cpu], conceptExpertsPathName, self.generateExpertSSDfileName(expert_id, layer_index, 3))
+			if(localConceptColumnExpertsModuleList):
+				expert_weight_1 = self.experts[expert_id_cpu].expert_weight_1
+				expert_weight_2 = self.experts[expert_id_cpu].expert_weight_2
+				expert_bias_1 = self.experts[expert_id_cpu].expert_bias_1
+				expert_bias_2 = self.experts[expert_id_cpu].expert_bias_2
+			else:
+				expert_weight_1 = self.experts_weight_1[expert_id_cpu]
+				expert_weight_2 = self.experts_weight_2[expert_id_cpu]
+				expert_bias_1 = self.experts_bias_1[expert_id_cpu]
+				expert_bias_2 = self.experts_bias_2[expert_id_cpu]
+			self.saveTensor(expert_weight_1, conceptExpertsPathName, self.generateExpertSSDfileName(expert_id, layer_index, 0))
+			self.saveTensor(expert_weight_2, conceptExpertsPathName, self.generateExpertSSDfileName(expert_id, layer_index, 1))
+			self.saveTensor(expert_bias_1, conceptExpertsPathName, self.generateExpertSSDfileName(expert_id, layer_index, 2))
+			self.saveTensor(expert_bias_2, conceptExpertsPathName, self.generateExpertSSDfileName(expert_id, layer_index, 3))
 
 		def initialiseExpertCPU(self, expert_id_cpu):
 			expert_weight_1 = torch.empty(self.expert_intermediate_size, self.hidden_size)
@@ -634,10 +806,16 @@ if(localConceptColumnExperts):
 			self.expert_bias_2.data = self.expert_bias_2.data.cpu()
 			'''
 			with torch.no_grad():
-				self.experts_weight_1[expert_id_cpu].copy_(expert_weight_1)
-				self.experts_weight_2[expert_id_cpu].copy_(expert_weight_2)
-				self.experts_bias_1[expert_id_cpu].copy_(expert_bias_1)
-				self.experts_bias_2[expert_id_cpu].copy_(expert_bias_2)
+				if(localConceptColumnExpertsModuleList):
+					self.experts[expert_id_cpu].expert_weight_1.copy_(expert_weight_1)
+					self.experts[expert_id_cpu].expert_weight_2.copy_(expert_weight_2)
+					self.experts[expert_id_cpu].expert_bias_1.copy_(expert_bias_1)
+					self.experts[expert_id_cpu].expert_bias_2.copy_(expert_bias_2)
+				else:
+					self.experts_weight_1[expert_id_cpu].copy_(expert_weight_1)
+					self.experts_weight_2[expert_id_cpu].copy_(expert_weight_2)
+					self.experts_bias_1[expert_id_cpu].copy_(expert_bias_1)
+					self.experts_bias_2[expert_id_cpu].copy_(expert_bias_2)
 
 		def saveTensor(self, tensor, folderName, fileName):
 			pt.save(tensor.clone(), os.path.join(folderName, fileName+pytorchTensorFileExtension))

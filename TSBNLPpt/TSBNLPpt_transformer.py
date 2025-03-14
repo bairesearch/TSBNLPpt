@@ -80,7 +80,7 @@ def createModel(vocabularySize):
 	if(localConceptColumnExperts):
 		num_experts = TSBNLPpt_transformerConceptColumns.initialise_dictionary()
 		print("num_experts = ", num_experts)
-		if(localConceptColumnExpertsStoreGPU):
+		if(localConceptColumnExpertsStoreRAM):
 			num_experts_cpu = num_experts
 		else:
 			num_experts_cpu = numerOfRecentlyAccessedExperts
