@@ -228,7 +228,7 @@ if(useAlgorithmTransformer):
 		localConceptColumnExpertsApplyToAllTokens = True	#requires higher processing power and GPU RAM (but same CPU RAM and SSD storage) #else restrict to nouns: else only apply concept experts to concept features (noun) tokens, not contextual features (non-nouns)
 		if(localConceptColumnExperts):
 			if(localConceptColumnExpertsApplyToAllTokens):
-				localConceptColumnExpertsGroupTokensByExpert = True	#default: True	#optimisation to execute experts on grouped tokens (rather than gathering experts for individual tokens)
+				localConceptColumnExpertsGroupTokensByExpert = False	#default: False	#optimisation to execute experts on grouped tokens (rather than gathering experts for individual tokens). optimisation only works when number of grouped tokens is large (condition not held)
 			else:
 				localConceptColumnExpertsGroupTokensByExpert = False	#default: Fale	#tokens cannot be efficiently grouped by expert as only concept feature (nouns) tokens are processed with expert
 			if(localConceptColumnExpertsGroupTokensByExpert):
@@ -584,7 +584,7 @@ datasetNumberOfDataFiles =	math.ceil(datasetNumberOfDocuments/numberOfDocumentsP
 datasetNumberOfSamplesPerDataFileLast = datasetNumberOfDocuments%numberOfDocumentsPerDataFile	#423
 dataFileLastIndex = datasetNumberOfDataFiles-1
 
-modelSaveNumberOfBatches = 1000	#resave model after x training batches
+modelSaveNumberOfBatches = numberOfDocumentsPerDataFile//batchSize #1250	#OLD: 1000	#resave model after x training batches
 
 
 #transformer only;

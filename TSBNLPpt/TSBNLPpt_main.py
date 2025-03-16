@@ -350,7 +350,14 @@ def trainBatch(batchIndex, batch, tokenizer, model, optim, modelStoreIndex=None)
 			loss.backward()
 			optim.step()
 
+		save = False       
 		if(batchIndex % modelSaveNumberOfBatches == 0):
+			save = True
+		if(batchIndex == 0):
+			if(continueTrainingModel()):
+				save = False  #if continueTrainingModel then do not overwrite model during first batch
+		if(save):
+			print("saveModel: batchIndex = ", batchIndex, ", batchIndex//modelSaveNumberOfBatches = ", batchIndex//modelSaveNumberOfBatches)
 			if(useMultipleModels):
 				saveModelIndex(model, modelStoreIndex)
 			else:

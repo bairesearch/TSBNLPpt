@@ -106,7 +106,11 @@ def createModel(vocabularySize):
 
 def loadModel():
 	print("loading existing model")
-	model = RobertaForMaskedLM.from_pretrained(modelPathName, local_files_only=True)
+	
+	if(localConceptColumnExperts):
+		num_experts = TSBNLPpt_transformerConceptColumns.initialise_dictionary()
+		
+	model = RobertaLM.from_pretrained(modelPathName, local_files_only=True)
 	return model
 	
 def saveModel(model):
