@@ -37,11 +37,15 @@ from nltk.corpus import wordnet as wn
 def initialise_dictionary():
 	global noun_dict
 	noun_dict = build_noun_dictionary()
-	if(debugDetectLocalConceptColumns):
-		localConceptColumnExpertsTotal = 1000	#use small number of experts
+	if(localConceptColumnExpertsStoreRAM):
+		localConceptColumnExpertsTotal = localConceptColumnExpertsNumber
+		print(f"Number of noun lemmas: {len(noun_dict)}")
 	else:
-		localConceptColumnExpertsTotal = len(noun_dict)
-	print(f"Number of noun lemmas: {localConceptColumnExpertsTotal}")
+		if(debugDetectLocalConceptColumns):
+			localConceptColumnExpertsTotal = 1000	#use small number of experts
+		else:
+			localConceptColumnExpertsTotal = len(noun_dict)
+		print(f"Number of noun lemmas: {localConceptColumnExpertsTotal}")
 	#sample_items = list(noun_dict.items())[:20]	# Inspect a few random entries:
 	#print(sample_items)
 	return localConceptColumnExpertsTotal
@@ -64,7 +68,8 @@ def build_noun_dictionary():
 		# Sort dictionary by frequency count in descending order
 		orderedNounFrequencies = dict(sorted(nounFrequencies.items(), key=lambda item: item[1], reverse=True))
 		
-		mostCommonLemmas = list(orderedNounFrequencies.keys())[:localConceptColumnExpertsNumber]
+		mostCommonLemmasLen = localConceptColumnExpertsNumber-1
+		mostCommonLemmas = list(orderedNounFrequencies.keys())[:mostCommonLemmasLen]
 		
 		noun_dict = {lemma: i for i, lemma in enumerate(mostCommonLemmas)}
 		

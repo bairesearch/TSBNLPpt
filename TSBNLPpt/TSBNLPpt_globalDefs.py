@@ -183,12 +183,10 @@ transformerSuperblocks = False
 
 if(useAlgorithmTransformer):
 
-	#syntactic bias selection (part 1):
+	#syntactic bias algorithm selection:
 	recursiveLayers = False	#optional	#recursive transformer layers (reuse transformer blocks)
 	memoryTraceBias = False	 #optional	#nncustom.Linear adjusts training/inference based on network prior activations
 	simulatedDendriticBranches = False	#optional #nncustom.Linear simulates multiple independent fully connected weights per neuron
-
-	#syntactic bias selection (part 2):
 	localConceptColumnExperts = False	#apply MLP experts in each transformer block depending on sequence token local concept column
 	localConceptColumnAttention = False	#performs standard (global) attention for each query token and only the tokens contained within the token's local concept column
 	transformerPOSembeddings = False	#add POS embeddings to trainable embeddings
