@@ -1129,7 +1129,15 @@ class RobertaForCausalLM(RobertaPreTrainedModel):
 			logger.warning("If you want to use `RobertaForCausalLM` as a standalone, add `is_decoder=True.`")
 
 		self.roberta = RobertaModel(config, add_pooling_layer=False)
-		self.lm_head = RobertaLMHead(config)
+		
+		self.multi_token_prediction = multiTokenPrediction
+		if(self.multi_token_prediction):
+			self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+			self.num_future_tokens = config.num_future_tokens	# Extra dimension for the k future tokens
+			# Tying weights if appropriate (just like normal LM head weight tying)
+			self.tie_weights()
+		else:
+			self.lm_head = RobertaLMHead(config)
 
 		# The LM head weights require special treatment only when they are tied with the word embeddings
 		self.update_keys_to_ignore(config, ["lm_head.decoder.weight"])
@@ -1138,10 +1146,24 @@ class RobertaForCausalLM(RobertaPreTrainedModel):
 		self.post_init()
 
 	def get_output_embeddings(self):
-		return self.lm_head.decoder
+		# For the multi-token case, we used a plain nn.Linear, which does not have
+		# a .decoder attribute. If you *need* tying or direct access, you can handle that here.
+		# For the single-token case, RobertaLMHead has .decoder.
+		if self.multi_token_prediction:
+			# In the multi-token scenario, we might not have `lm_head.decoder`. 
+			# You can either return None or store a pointer to embeddings on the linear layer.
+			return None
+		else:
+			return self.lm_head.decoder
 
 	def set_output_embeddings(self, new_embeddings):
-		self.lm_head.decoder = new_embeddings
+		# Same note as above about tying. Only do this if you\u2019re actually tying weights
+		# for the single-token scenario:
+		if not self.multi_token_prediction:
+			self.lm_head.decoder = new_embeddings
+		else:
+			# For multi_token, you'd manually tie the linear layer weights if needed
+			pass
 
 	def forward(
 		self,
@@ -1210,16 +1232,42 @@ class RobertaForCausalLM(RobertaPreTrainedModel):
 			conceptColumnData=conceptColumnData,
 		)
 
-		sequence_output = outputs[0]
-		prediction_scores = self.lm_head(sequence_output)
+		sequence_output = outputs[0]	# (batch, seq_len, hidden_size)
+			
+		if self.multi_token_prediction:
+			bsz, seqlen, hidden_dim = sequence_output.shape
+			# Expand hidden states so that each position can project to K future-token distributions
+			# shape => (batch * seq_len * K, hidden_dim)
+			expanded = sequence_output.unsqueeze(2).expand(bsz, seqlen, self.num_future_tokens, hidden_dim).reshape(bsz * seqlen * self.num_future_tokens, hidden_dim)
 
-		lm_loss = None
-		if labels is not None:
-			# We are doing next-token prediction; shift prediction scores and input ids by one
-			shifted_prediction_scores = prediction_scores[:, :-1, :].contiguous()
-			labels = labels[:, 1:].contiguous()
-			loss_fct = CrossEntropyLoss()
-			lm_loss = loss_fct(shifted_prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
+			# Apply linear projection
+			prediction_scores = self.lm_head(expanded)  # shape => (bsz*seq_len*K, vocab_size)
+
+			# Reshape back to (batch, seq_len, K, vocab_size)
+			prediction_scores = prediction_scores.view(bsz, seqlen, self.num_future_tokens, -1)
+
+			lm_loss = None
+			if labels is not None:
+				# Expect labels to be shape: (batch, seq_len, K)
+				# You do NOT shift by 1 here. Each position t directly predicts tokens t+1..t+K.
+				loss_fct = CrossEntropyLoss(ignore_index=crossEntropyLossIgnoreIndex)
+				
+				# Flatten predictions to 2D: (batch*seq_len*K, vocab_size)
+				prediction_scores_flat = prediction_scores.view(-1, self.config.vocab_size)
+				# Flatten labels: (batch*seq_len*K)
+				labels_flat = labels.view(-1)
+
+				lm_loss = loss_fct(prediction_scores_flat, labels_flat)
+		else:
+			prediction_scores = self.lm_head(sequence_output)
+
+			lm_loss = None
+			if labels is not None:
+				# We are doing next-token prediction; shift prediction scores and input ids by one
+				shifted_prediction_scores = prediction_scores[:, :-1, :].contiguous()
+				labels = labels[:, 1:].contiguous()
+				loss_fct = CrossEntropyLoss()
+				lm_loss = loss_fct(shifted_prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
 
 		if not return_dict:
 			output = (prediction_scores,) + outputs[2:]

@@ -140,7 +140,10 @@ def getSampleEncodings(useMLM, input_ids, attention_mask, offset_mapping, batche
 	inputIDs.append(sampleInputIDsMasked)
 	inputIDs = torch.cat(inputIDs)
 	mask = torch.cat(mask)
-	labels = torch.cat(labels)
+	if(multiTokenPrediction):
+		labels = build_multi_token_labels_matrix(inputIDs, multiTokenPredictionNumFutureTokens)
+	else:
+		labels = torch.cat(labels)
 	if(useSubwordTokenizerFast):
 		offsets = []
 		offsets.append(offset_mapping)
@@ -149,6 +152,52 @@ def getSampleEncodings(useMLM, input_ids, attention_mask, offset_mapping, batche
 		offsets = torch.zeros_like(inputIDs)	#'None' is not supported	#not used
 	encodings = {'inputIDs': inputIDs, 'attentionMask': mask, 'labels': labels, 'offsets': offsets}
 	return encodings
+
+
+def build_multi_token_labels_matrix(input_ids: torch.LongTensor, num_future_tokens: int) -> torch.LongTensor:
+    """
+    Create multi-token labels of shape (B, S, K) from input_ids (B, S).
+    For each position t, store the tokens [t+1, t+2, ..., t+K],
+    or -100 if out of range.
+    """
+    device = input_ids.device
+    B, S = input_ids.size()
+    
+    # 1) Build positions[t, j] = t+1+j
+    #    shape => (S, K)
+    row_indices = torch.arange(S, device=device).unsqueeze(1)  # => [S, 1]
+    col_offsets = torch.arange(num_future_tokens, device=device)  # => [K]
+    positions = row_indices + 1 + col_offsets  # => [S, K]
+    
+    # 2) Identify out-of-range positions
+    out_of_range_mask = positions >= S  # => [S, K]
+    
+    # 3) Clamp positions so we can index them safely. We'll set out-of-range to S-1
+    positions_clamped = positions.clone()
+    positions_clamped[out_of_range_mask] = S - 1
+    
+    # 4) Expand positions to shape (B, S, K) so we can index input_ids
+    positions_clamped = positions_clamped.unsqueeze(0).expand(B, -1, -1) 
+    # => [B, S, K]
+    out_of_range_mask = out_of_range_mask.unsqueeze(0).expand(B, -1, -1)
+    # => [B, S, K]
+    
+    # 5) Make a "batch index" array => shape [B, S, K]
+    #    For each (b, t, j), we want to pick from input_ids[b, positions_clamped[b,t,j]]
+    batch_arange = torch.arange(B, device=device).unsqueeze(1).unsqueeze(2)
+    batch_arange = batch_arange.expand(-1, S, num_future_tokens)
+    # => [B, S, K]
+    
+    # 6) Advanced indexing: 
+    #    multi_labels[b, t, j] = input_ids[b, positions_clamped[b, t, j]]
+    multi_labels = input_ids[batch_arange, positions_clamped]
+    # => shape [B, S, K]
+    
+    # 7) Replace out-of-range positions with -100
+    multi_labels[out_of_range_mask] = crossEntropyLossIgnoreIndex
+    return multi_labels
+
+
 
 def addLabelsPredictionMaskTokens(input_ids):
 	mask_arr = (input_ids == paddingTokenID)

@@ -78,7 +78,12 @@ def removeProsodyTokensFromPredictionMask(predictionMask, labels, excluded_token
 			for token in excluded_token_set:
 				predictionMask &= (labels != token)
 	return predictionMask
-				
+
+import torch
+
+accuracyTopN = 1  # example, can be 1 or more
+
+
 def getAccuracyMaskedLM(inputIDs, labels, outputs):
 	predictionMask = torch.where(inputIDs==customMaskTokenID, 1.0, 0.0)	#maskTokenIndexFloat = maskTokenIndex.float()	#orig: maskTokenIndex
 	###predictionMask = removeProsodyTokensFromPredictionMask(predictionMask, labels, excluded_token_set)
@@ -88,10 +93,13 @@ def getAccuracyMaskedLM(inputIDs, labels, outputs):
 	return accuracy
 
 def getAccuracyCausalLM(inputs, outputs, attention_mask):	
+
 	#based on TSBNLPpt_data:getAccuracyMaskedLM
 	predictionMask = attention_mask[:, 1:]
 	logits = outputs.logits.detach()
-	logits = outputs.logits.detach()
+	if(multiTokenPrediction):
+		logits = outputs.logits[:, :, 0, :]  # shape [B, seqLen, multiTokenPredictionNumFutureTokens, vocab_size] => [B, seqLen, vocab_size]
+
 	# Shift so that tokens < n predict n
 	shift_labels = inputs[..., 1:].contiguous()
 	shift_logits = logits[..., :-1, :].contiguous()
@@ -100,7 +108,7 @@ def getAccuracyCausalLM(inputs, outputs, attention_mask):
 	accuracy = accuracy.item()
 	#print("accuracy = ", accuracy)
 	return accuracy
-	
+
 def getAccuracyWithPredictionMask(labels, tokenLogits, predictionMask):	
 	tokenLogitsTopIndex = torch.topk(tokenLogits, accuracyTopN).indices	#get highest n scored entries from dictionary	#tokenLogitsTopIndex.shape = batchSize, sequenceMaxNumTokens, accuracyTopN
 	if(accuracyTopN == 1):
@@ -117,3 +125,4 @@ def getAccuracyWithPredictionMask(labels, tokenLogits, predictionMask):
 		comparisonMasked = torch.multiply(comparison, predictionMaskExpanded)	#predictionMask broadcasted to [batchSize, sequenceMaxNumTokens, accuracyTopN]
 		accuracy = (torch.sum(comparisonMasked)/torch.sum(predictionMask)).cpu().numpy() 	#or torch.sum(comparisonMasked)/(torch.sum(predictionMaskExpanded)/accuracyTopN)	#accuracy.item()
 	return accuracy
+

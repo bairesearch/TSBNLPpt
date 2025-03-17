@@ -187,6 +187,7 @@ if(useAlgorithmTransformer):
 	recursiveLayers = False	#optional	#recursive transformer layers (reuse transformer blocks)
 	memoryTraceBias = False	 #optional	#nncustom.Linear adjusts training/inference based on network prior activations
 	simulatedDendriticBranches = False	#optional #nncustom.Linear simulates multiple independent fully connected weights per neuron
+	multiTokenPrediction = False	#final layer predicts multiple tokens into the future (however only use the first predicted token during inference)
 	localConceptColumnExperts = False	#apply MLP experts in each transformer block depending on sequence token local concept column
 	localConceptColumnAttention = False	#performs standard (global) attention for each query token and only the tokens contained within the token's local concept column
 	transformerPOSembeddings = False	#add POS embeddings to trainable embeddings
@@ -217,6 +218,10 @@ if(useAlgorithmTransformer):
 	positionEmbeddingType = "relative_key"	#default:"relative_key"	#orig (Nov 2022):"absolute"
 	recursiveLayersOrigImplementation = False	#execute orig codebase with orig implementation so that archived models can be reloaded
 	recursiveLayersEmulateOrigImplementation2 = False
+	
+	if(multiTokenPrediction):
+		multiTokenPredictionNumFutureTokens = 5
+		crossEntropyLossIgnoreIndex = -100
 	
 	if(localConceptColumnExperts or localConceptColumnAttention):
 		detectLocalConceptColumns = True

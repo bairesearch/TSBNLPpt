@@ -85,6 +85,9 @@ def createModel(vocabularySize):
 		else:
 			num_experts_cpu = numerOfRecentlyAccessedExperts
 		expert_intermediate_size = localConceptColumnExpertsIntermediateSize
+	num_future_tokens = 1
+	if(multiTokenPrediction):
+		num_future_tokens = multiTokenPredictionNumFutureTokens
 		
 	print("creating new model")	
 	config = RobertaConfig(
@@ -100,6 +103,7 @@ def createModel(vocabularySize):
 		num_experts=num_experts,
 		num_experts_cpu=num_experts_cpu,
 		expert_intermediate_size=expert_intermediate_size,
+		num_future_tokens=num_future_tokens,
 	)
 	model = RobertaLM(config)
 	return model
