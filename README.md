@@ -40,6 +40,11 @@ source activate pytorchsenv
 python TSBNLPpt_main.py
 ```
 
+## localConceptColumnExperts
+
+![RobertaCausalTransformerLocalConceptColumnExperts.png](https://github.com/bairesearch/TSBpt/blob/master/graph/localConceptColumnExperts/RobertaCausalTransformerLocalConceptColumnExperts.png?raw=true)
+- [RobertaCausalTransformerLocalConceptColumnExperts-loss.png](https://github.com/bairesearch/TSBpt/blob/master/graph/localConceptColumnExperts/RobertaCausalTransformerLocalConceptColumnExperts-loss.png?raw=true)
+
 ## recursiveLayers
 
 ![recursiveLayers1a.drawio.png](https://github.com/bairesearch/TSBpt/blob/master/graph/recursiveLayers/implementations/recursiveLayersOrigImplementation/recursiveLayers1a.drawio.png?raw=true)

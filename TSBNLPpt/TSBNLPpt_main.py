@@ -371,7 +371,7 @@ def testBatch(batchIndex, batch, tokenizer, model, modelStoreIndex=None):
 	if(useMultipleModels):
 		loss, accuracy = propagateIndex(device, model, tokenizer, batch, modelStoreIndex)
 	else:
-		loss, accuracy = propagate(device, model, tokenizer, batch)
+		loss, accuracy = propagate(device, model, tokenizer, batch, batchIndex)
 
 	loss = loss.detach().cpu().numpy()
 	

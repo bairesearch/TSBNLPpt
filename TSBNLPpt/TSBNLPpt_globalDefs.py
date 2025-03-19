@@ -60,7 +60,7 @@ useAlgorithmGIA = False
 statePreprocessDataset = False	#only required once
 stateTrainTokeniser = False	#only required once
 stateTrainDataset = True
-stateTestDataset = False	#requires reserveValidationSet
+stateTestDataset = True	#requires reserveValidationSet
 
 #training data selection;
 trainStartEpoch = 0	#start epoch of training (if continuing a training regime set accordingly >0)	#if trainStartEpoch=0 and trainStartDataFile=0 will recreate model, if trainStartEpoch>0 or trainStartDataFile>0 will load existing model
