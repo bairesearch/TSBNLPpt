@@ -228,32 +228,38 @@ if(useAlgorithmTransformer):
 		localConceptColumnExpertsNoColumnID = -1
 		localConceptColumnExpertsNoDictionaryNounID = 0
 		debugDetectLocalConceptColumns = False
-		localConceptColumnExpertsApplyToAllTokens = True	#requires higher processing power and GPU RAM (but same CPU RAM and SSD storage) #else restrict to nouns: else only apply concept experts to concept features (noun) tokens, not contextual features (non-nouns)
+		localConceptColumnExpertsApplyToAllTokens = False	#requires higher processing power and GPU RAM (but same CPU RAM and SSD storage) #else restrict to nouns: else only apply concept experts to concept features (noun) tokens, not contextual features (non-nouns)
 		if(localConceptColumnExperts):
+			localConceptColumnExpertsStructure = "nnParameterList"	#default	#measure no significant performance advantage over nnParameter
+			#localConceptColumnExpertsStructure = "nnParameter"	#orig
+			
 			if(localConceptColumnExpertsApplyToAllTokens):
 				localConceptColumnExpertsGroupTokensByExpert = False	#default: False	#optimisation to execute experts on grouped tokens (rather than gathering experts for individual tokens). optimisation only works when number of grouped tokens is large (condition not held)
 			else:
-				localConceptColumnExpertsGroupTokensByExpert = False	#default: Fale	#tokens cannot be efficiently grouped by expert as only concept feature (nouns) tokens are processed with expert
+				localConceptColumnExpertsGroupTokensByExpert = False	#mandatory: False	#tokens cannot be efficiently grouped by expert as only concept feature (nouns) tokens are processed with expert
 			if(localConceptColumnExpertsGroupTokensByExpert):
-				localConceptColumnExpertsModuleList = True	#default: True	#module lists (localConceptColumnExpertsModuleList) do not support advanced indexing and so requires localConceptColumnExpertsGroupTokensByExpert
-			else:
-				localConceptColumnExpertsModuleList = False	#mandatory
-				
+				localConceptColumnExpertsStructure = "ModuleList"	#default: True	#module lists (localConceptColumnExpertsStructure=="nnModuleList") do not support advanced indexing and so requires localConceptColumnExpertsGroupTokensByExpert
+		
 			localConceptColumnExpertsApplyWithSharedMLPthenResidual = False	#apply expert MLPs and shared MLP, and then apply residual to summed output
 			if(localConceptColumnExpertsApplyWithSharedMLPthenResidual):
 				localConceptColumnExpertsSharedMLPratio = 0.5	#default: 0.5 - may be increased depending on training performance (to reduce dependence on expert MLP)	#weight shared MLP over experts MLP
 			else:
 				localConceptColumnExpertsResidualRatio = 0.5	#default: 0.5 - may be increased depending on training performance (to reduce dependence on expert MLP)	#weight residual over experts MLP
+			
 			localConceptColumnExpertsStoreRAM = True	#save all experts to RAM (~96GB CPU or GPU ram)
 			if(localConceptColumnExpertsStoreRAM):
-				localConceptColumnExpertsStoreCPU = True	#default: True	#else save all experts to GPU RAM (GH200 96GB)
+				localConceptColumnExpertsStoreCPU = True	#default: True	#else save all experts to GPU RAM (GH200 96GB)	#measure no significant performance advantage of !localConceptColumnExpertsStoreCPU
 				debugLocalConceptColumnExpertsStoreRAM = False	#local debug (low GPU ram);
 				if(debugLocalConceptColumnExpertsStoreRAM):
 					localConceptColumnExpertsNumber = 1000
 					localConceptColumnExpertsIntermediateSize = 64	#128
 				else:
-					localConceptColumnExpertsNumber = 8000 	#default: 8000		#inference: ~2MB/4MB required per expert with localConceptColumnExpertsIntermediateSize=64/128	#train memory requirements are higher for optimisation/backward pass parameters		#heuristic; ~96GB/200GB * 120000 nouns = 60000 experts	
-					localConceptColumnExpertsIntermediateSize = 64		#default: 64		#affects GPU ram availability and speed of processing	#inference: 64expertUnits * 768hiddenUnits * 2linears * 4bytes * 6layers = 64 * 768 * 2 * 4 * 6 layers = 2359296 bytes ~= ~2MB per expert	#assume 32bit=4*8byte parameters)	#train memory requirements are higher for optimisation/backward pass parameters
+					if(localConceptColumnExpertsStoreCPU):
+						localConceptColumnExpertsNumber = 8000 	#default: 8000	#optional 16000	#inference: ~2MB/4MB required per expert with localConceptColumnExpertsIntermediateSize=64/128	#train memory requirements are higher for optimisation/backward pass parameters		#heuristic; ~96GB/200GB * 120000 nouns = 60000 experts	
+						localConceptColumnExpertsIntermediateSize = 64		#default: 64		#affects GPU ram availability and speed of processing	#inference: 64expertUnits * 768hiddenUnits * 2linears * 4bytes * 6layers = 64 * 768 * 2 * 4 * 6 layers = 2359296 bytes ~= ~2MB per expert	#assume 32bit=4*8byte parameters)	#train memory requirements are higher for optimisation/backward pass parameters
+					else:
+						localConceptColumnExpertsNumber = 8000	#default: 8000	#optional 16000
+						localConceptColumnExpertsIntermediateSize = 64
 			else:
 				localConceptColumnExpertsStoreCPU = True	#default: True	#stores recent experts on CPU (else stores recent experts on CPU)
 				localConceptColumnExpertsIntermediateSizeMax = 128	#default: 128	#ideal: 512 (sequenceMaxNumTokensDefault)	#GPU/CPU RAM dependent 	#requires chunking implementation

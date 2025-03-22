@@ -294,7 +294,7 @@ def prepareModelTrain(vocabSize, modelStoreIndex=None):
 			if(continueTrainingModel()):
 				model = loadModel()
 			else:
-				model = createModel(vocabSize)		
+				model = createModel(vocabSize)
 
 		model.to(device)
 
@@ -357,7 +357,10 @@ def trainBatch(batchIndex, batch, tokenizer, model, optim, modelStoreIndex=None)
 			if(continueTrainingModel()):
 				save = False  #if continueTrainingModel then do not overwrite model during first batch
 		if(save):
-			print("saveModel: batchIndex = ", batchIndex, ", batchIndex//modelSaveNumberOfBatches = ", batchIndex//modelSaveNumberOfBatches)
+			fileIndex = batchIndex//modelSaveNumberOfBatches
+			formattedLoss = f"{loss.item():.3f}"
+			formattedAccuracy = f"{accuracy:.3f}"
+			print("saveMod: bat=", batchIndex, ",file=", fileIndex, ",loss=", formattedLoss, ",acc=", formattedAccuracy)	#shortened print line required for Jupyter notebook with output cutoff
 			if(useMultipleModels):
 				saveModelIndex(model, modelStoreIndex)
 			else:

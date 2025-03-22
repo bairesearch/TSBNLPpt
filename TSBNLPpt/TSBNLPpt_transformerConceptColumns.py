@@ -322,7 +322,7 @@ if(localConceptColumnAttention):
 		
 if(localConceptColumnExperts):
 
-	if(localConceptColumnExpertsModuleList):
+	if(localConceptColumnExpertsStructure=="nnModuleList"):
 		class ExpertMLP(nn.Module):
 			"""
 			Simple feed-forward for one expert:
@@ -419,17 +419,12 @@ if(localConceptColumnExperts):
 			self.no_expert_id = no_expert_id
 			self.activation = activation
 
-			if(localConceptColumnExpertsModuleList):
-				self.experts = nn.ModuleList([ExpertMLP(hidden_size, expert_intermediate_size) for _ in range(num_experts_cpu)])
-
-				'''				
-				#old implementation;
-				if(localConceptColumnExpertsStoreCPU):
-					# Force them onto CPU right away (TODO: correct this implementation)
-					# (In case someone calls model.to('cuda'), these should remain on CPU.)
-					self.experts.data = self.experts.data.cpu()
-				'''
-			else:
+			if(localConceptColumnExpertsStructure=="nnParameterList"):
+				self.experts_weight_1 = nn.ParameterList([nn.Parameter(nn.init.xavier_uniform_(torch.empty(expert_intermediate_size, hidden_size))) for _ in range(num_experts_cpu)])
+				self.experts_bias_1 = nn.ParameterList([nn.Parameter(nn.init.zeros_(torch.empty(expert_intermediate_size))) for _ in range(num_experts_cpu)])
+				self.experts_weight_2 = nn.ParameterList([nn.Parameter(nn.init.xavier_uniform_(torch.empty(hidden_size, expert_intermediate_size))) for _ in range(num_experts_cpu)])
+				self.experts_bias_2 = nn.ParameterList([nn.Parameter(nn.init.zeros_(torch.empty(hidden_size))) for _ in range(num_experts_cpu)])
+			elif(localConceptColumnExpertsStructure=="nnParameter"):
 				# 1) For the first linear: (out_dim = expert_intermediate_size, in_dim = hidden_size)
 				# We store all experts in one big tensor of shape: (num_experts_cpu, expert_intermediate_size, hidden_size)
 				self.experts_weight_1 = nn.Parameter(torch.empty(num_experts_cpu, expert_intermediate_size, hidden_size))
@@ -439,20 +434,11 @@ if(localConceptColumnExperts):
 				# Stacked in shape: (num_experts_cpu, hidden_size, expert_intermediate_size)
 				self.experts_weight_2 = nn.Parameter(torch.empty(num_experts_cpu, hidden_size, expert_intermediate_size))
 				self.experts_bias_2 = nn.Parameter(torch.empty(num_experts_cpu, hidden_size))
-
-				'''
-				if(localConceptColumnExpertsStoreCPU):
-					#old implementation;
-					# Force them onto CPU right away (TODO: correct this implementation)
-					# (In case someone calls model.to('cuda'), these should remain on CPU.)
-					self.experts_weight_1.data = self.experts_weight_1.data.cpu()
-					self.experts_bias_1.data = self.experts_bias_1.data.cpu()
-					self.experts_weight_2.data = self.experts_weight_2.data.cpu()
-					self.experts_bias_2.data = self.experts_bias_2.data.cpu()
-				'''
 				
 				# Initialize parameters
-				self.reset_parameters()
+				self.reset_parameters()	
+			elif(localConceptColumnExpertsStructure=="nnModuleList"):
+				self.experts = nn.ModuleList([ExpertMLP(hidden_size, expert_intermediate_size) for _ in range(num_experts_cpu)])
 
 			# Optionally, we could add LayerNorm parameters for each expert, or a single LN, etc.
 			# but here we only do a final residual + dropout, or you can do LN if you like.
@@ -473,7 +459,7 @@ if(localConceptColumnExperts):
 				# First, apply the default `.to(...)` behavior to everything
 				super_result = super().to(*args, **kwargs)
 				# Then force all experts back on CPU
-				if(localConceptColumnExpertsModuleList):
+				if(localConceptColumnExpertsStructure=="nnModuleList"):
 					for expert in self.experts:
 						expert.to('cpu')
 				else:
@@ -483,23 +469,16 @@ if(localConceptColumnExperts):
 					self.experts_bias_2.to('cpu')
 				return super_result
 		
-		def reset_parameters(self):
-			# A simple initialization scheme (like xavier) for demonstration
-			nn.init.xavier_uniform_(self.experts_weight_1)
-			nn.init.zeros_(self.experts_bias_1)
-			nn.init.xavier_uniform_(self.experts_weight_2)
-			nn.init.zeros_(self.experts_bias_2)
-			'''
-			for i in range(self.num_experts_cpu):
-				nn.init.xavier_uniform_(self.experts_weight_1[i])
-				nn.init.zeros_(self.experts_bias_1[i])
-				nn.init.xavier_uniform_(self.experts_weight_2[i])
-				nn.init.zeros_(self.experts_bias_2[i])
-			'''		
+		if(localConceptColumnExpertsStructure=="nnParameter"):
+			def reset_parameters(self):
+				# A simple initialization scheme (like xavier) for demonstration
+				nn.init.xavier_uniform_(self.experts_weight_1)
+				nn.init.zeros_(self.experts_bias_1)
+				nn.init.xavier_uniform_(self.experts_weight_2)
+				nn.init.zeros_(self.experts_bias_2)
 		
 		if(localConceptColumnExpertsGroupTokensByExpert):
-		
-			if(localConceptColumnExpertsModuleList):
+			if(localConceptColumnExpertsStructure=="nnModuleList"):
 				def forward_single_expert(self, x_e: torch.Tensor, expert_id: int) -> torch.Tensor:
 					"""
 					x_e:	  (group_size, hidden_size)
@@ -619,14 +598,31 @@ if(localConceptColumnExperts):
 
 					num_process_tokens = x.size(0)
 
-					# ~~~~~~~~~~~~~ 2) First Linear (Parallel) ~~~~~~~~~~~~~
-					# We want W1 per token, shape (num_process_tokens, expert_intermediate_size, hidden_size)
-					# so we do advanced indexing into self.experts_weight_1 with [token_expert_ids].
-					W1 = self.experts_weight_1[token_expert_ids]  # shape (num_process_tokens, EIS, H)
-					b1 = self.experts_bias_1[token_expert_ids]	# shape (num_process_tokens, EIS)
+					if(localConceptColumnExpertsStructure=="nnParameterList"):
+						token_expert_ids_list = token_expert_ids.tolist()
+						W1list = [self.experts_weight_1[i] for i in token_expert_ids_list]
+						b1list = [self.experts_bias_1[i] for i in token_expert_ids_list]
+						W2list = [self.experts_weight_2[i] for i in token_expert_ids_list]
+						b2list = [self.experts_bias_2[i] for i in token_expert_ids_list]
+						W1 = torch.stack(W1list, dim=0)  # shape (num_process_tokens, EIS, H)
+						b1 = torch.stack(b1list, dim=0)	# shape (num_process_tokens, EIS)
+						W2 = torch.stack(W2list, dim=0) # shape (num_process_tokens, hidden_size, EIS)
+						b2 = torch.stack(b2list, dim=0)	# shape (num_process_tokens, hidden_size)
+					elif(localConceptColumnExpertsStructure=="nnParameter"):
+						# We want W1 per token, of shape (num_process_tokens, expert_intermediate_size, hidden_size)
+						# so we do advanced indexing into self.experts_weight_1 with [token_expert_ids].
+						W1 = self.experts_weight_1[token_expert_ids]  # shape (num_process_tokens, EIS, H)
+						b1 = self.experts_bias_1[token_expert_ids]	# shape (num_process_tokens, EIS)
+						W2 = self.experts_weight_2[token_expert_ids]  # shape (num_process_tokens, hidden_size, EIS)
+						b2 = self.experts_bias_2[token_expert_ids]	# shape (num_process_tokens, hidden_size)
+					else:
+						printe("!localConceptColumnExpertsGroupTokensByExpert does not support any other method of localConceptColumnExpertsStructure")
+
 					if(localConceptColumnExpertsStoreCPU):
 						W1 = W1.to(device=hidden_states.device, non_blocking=True)
 						b1 = b1.to(device=hidden_states.device, non_blocking=True)
+						W2 = W2.to(device=hidden_states.device, non_blocking=True)
+						b2 = b2.to(device=hidden_states.device, non_blocking=True)
 
 					# We'll do a batched matmul: (N, 1, H) x (N, H, EIS) -> (N, 1, EIS)
 					x_3d = x.unsqueeze(1)	  # (num_process_tokens, 1, hidden_size)
@@ -638,13 +634,6 @@ if(localConceptColumnExperts):
 					# Apply activation
 					mm1 = self.activation(mm1)
 
-					# ~~~~~~~~~~~~~ 3) Second Linear (Parallel) ~~~~~~~~~~~~~
-					# Gather second-layer params similarly
-					W2 = self.experts_weight_2[token_expert_ids]  # (num_process_tokens, hidden_size, EIS)
-					b2 = self.experts_bias_2[token_expert_ids]	# (num_process_tokens, hidden_size)
-					if(localConceptColumnExpertsStoreCPU):
-						W2 = W2.to(device=hidden_states.device, non_blocking=True)
-						b2 = b2.to(device=hidden_states.device, non_blocking=True)
 
 					mm1_3d = mm1.unsqueeze(1)	 # (num_process_tokens, 1, EIS)
 					W2_3d = W2.transpose(1, 2)	# (num_process_tokens, EIS, hidden_size)
@@ -773,7 +762,7 @@ if(localConceptColumnExperts):
 			self.updateExpertCPU(expert_id_cpu, expert_weight_1, expert_weight_2, expert_bias_1, expert_bias_2)
 
 		def saveExpertToSSD(self, expert_id_cpu, expert_id, layer_index):
-			if(localConceptColumnExpertsModuleList):
+			if(localConceptColumnExpertsStructure=="nnModuleList"):
 				expert_weight_1 = self.experts[expert_id_cpu].expert_weight_1
 				expert_weight_2 = self.experts[expert_id_cpu].expert_weight_2
 				expert_bias_1 = self.experts[expert_id_cpu].expert_bias_1
@@ -811,7 +800,7 @@ if(localConceptColumnExperts):
 			self.expert_bias_2.data = self.expert_bias_2.data.cpu()
 			'''
 			with torch.no_grad():
-				if(localConceptColumnExpertsModuleList):
+				if(localConceptColumnExpertsStructure=="nnModuleList"):
 					self.experts[expert_id_cpu].expert_weight_1.copy_(expert_weight_1)
 					self.experts[expert_id_cpu].expert_weight_2.copy_(expert_weight_2)
 					self.experts[expert_id_cpu].expert_bias_1.copy_(expert_bias_1)
