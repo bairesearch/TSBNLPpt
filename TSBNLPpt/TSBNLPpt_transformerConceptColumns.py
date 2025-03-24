@@ -248,11 +248,11 @@ def generateConceptColumnIndices(device, tokenizer, batch_input_ids, batch_offse
 					# We'll take the first noun we find there:
 					column_id = localConceptColumnExpertsNoColumnID
 					for col_idx in range(s, e + 1):
-						if token_concept_ids[col_idx] != 0:
+						if token_concept_ids[col_idx] != localConceptColumnExpertsNoColumnID:
 							column_id = token_concept_ids[col_idx].item()
 							break
 					token_concept_ids[idx] = column_id
-				
+		
 		batch_concept_start_indices.append(token_concept_start_indices)
 		batch_concept_end_indices.append(token_concept_end_indices)
 		batch_concept_ids.append(token_concept_ids)
@@ -594,8 +594,7 @@ if(localConceptColumnExperts):
 					# scatter back
 					output_flat[process_indices] = process_output
 
-				else:
-
+				else:					
 					num_process_tokens = x.size(0)
 
 					if(localConceptColumnExpertsStructure=="nnParameterList"):
