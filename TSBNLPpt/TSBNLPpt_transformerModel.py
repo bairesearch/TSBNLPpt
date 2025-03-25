@@ -42,6 +42,7 @@ derived from modeling_roberta.py
 
 import math
 from typing import List, Optional, Tuple, Union
+import time
 
 import torch
 import torch.utils.checkpoint
@@ -680,7 +681,12 @@ class RobertaLayer(nn.Module):
 			
 			if(localConceptColumnExpertsApplyToAllTokens):
 				mlp_output_exp1 = self.expert_mlp(mlp_input_exp, conceptColumnData['conceptColumnIDsPrev'], layerIndex, conceptColumnData['batchIndex'])
+			if(debugDetectLocalConceptColumnsTime):
+				start_time = time.time()
 			mlp_output_exp2 = self.expert_mlp(mlp_input_exp, conceptColumnData['conceptColumnIDsNext'], layerIndex, conceptColumnData['batchIndex'])
+			if(debugDetectLocalConceptColumnsTime):
+				end_time = time.time()
+				print(f"expert_mlp execution time: {end_time - start_time:.6f} seconds")
 			if(localConceptColumnExpertsApplyToAllTokens):
 				mlp_output_exp = (mlp_output_exp1 + mlp_output_exp2) / 2
 			else:

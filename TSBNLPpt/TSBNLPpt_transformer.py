@@ -24,6 +24,7 @@ See RobertaForMaskedLM tutorial;
 """
 
 import torch as pt
+import time
 
 from TSBNLPpt_globalDefs import *
 import TSBNLPpt_data
@@ -43,7 +44,7 @@ import TSBNLPpt_transformerTokenMemoryBank
 if(transformerPOSembeddings):
 	import TSBNLPpt_POSwordLists
 if(detectLocalConceptColumns):
-	import TSBNLPpt_transformerConceptColumns
+	import TSBNLPpt_transformerConceptColumnsGenerate
 	
 if(transformerPOSembeddings):
 	def preparePOSdictionary():
@@ -78,7 +79,7 @@ if(useMultipleModels):
 def createModel(vocabularySize):	
 	num_experts = num_experts_cpu = expert_intermediate_size = None
 	if(localConceptColumnExperts):
-		num_experts = TSBNLPpt_transformerConceptColumns.initialise_dictionary()
+		num_experts = TSBNLPpt_transformerConceptColumnsGenerate.initialise_dictionary()
 		print("num_experts = ", num_experts)
 		if(localConceptColumnExpertsStoreRAM):
 			num_experts_cpu = num_experts
@@ -112,7 +113,7 @@ def loadModel():
 	print("loading existing model")
 	
 	if(localConceptColumnExperts):
-		num_experts = TSBNLPpt_transformerConceptColumns.initialise_dictionary()
+		num_experts = TSBNLPpt_transformerConceptColumnsGenerate.initialise_dictionary()
 		
 	model = RobertaLM.from_pretrained(modelPathName, local_files_only=True)
 	return model
@@ -143,11 +144,17 @@ def propagate(device, model, tokenizer, batch, batchIndex):
 		offsets = batch['offsets']	#List of tuples (start, end), not tensor
 		if(localConceptColumnExperts):
 			if(localConceptColumnExpertsApplyToAllTokens):
-				conceptColumnStartIndicesPrev, conceptColumnEndIndicesPrev, conceptColumnIDsPrev = TSBNLPpt_transformerConceptColumns.generateConceptColumnIndices(device, tokenizer, inputIDs, offsets, identify_type="identify_previous_column")
-			conceptColumnStartIndicesNext, conceptColumnEndIndicesNext, conceptColumnIDsNext = TSBNLPpt_transformerConceptColumns.generateConceptColumnIndices(device, tokenizer, inputIDs, offsets, identify_type="identify_next_column")
+				conceptColumnStartIndicesPrev, conceptColumnEndIndicesPrev, conceptColumnIDsPrev = TSBNLPpt_transformerConceptColumnsGenerate.generateConceptColumnIndicesParallel(device, tokenizer, inputIDs, offsets, identify_type="identify_previous_column")
+			if(debugDetectLocalConceptColumnsTime):
+				start_time = time.time()
+			conceptColumnStartIndicesNext, conceptColumnEndIndicesNext, conceptColumnIDsNext = TSBNLPpt_transformerConceptColumnsGenerate.generateConceptColumnIndicesParallel(device, tokenizer, inputIDs, offsets, identify_type="identify_next_column")
+			#conceptColumnStartIndicesNext, conceptColumnEndIndicesNext, conceptColumnIDsNext = TSBNLPpt_transformerConceptColumnsGenerate.generateConceptColumnIndicesSerial(device, tokenizer, inputIDs, offsets, identify_type="identify_next_column")
+			if(debugDetectLocalConceptColumnsTime):
+				end_time = time.time()
+				print(f"generateConceptColumnIndices execution time: {end_time - start_time:.6f} seconds")
 		elif(localConceptColumnAttention):
 			#this is not a perfect implementation (will not strictly/technically attend to both column tokens as they are defined in the GIAANN specification but uses an offset rule instead); localConceptColumnAttention could be upgraded to use both identify_previous_column and identify_next_column in future
-			conceptColumnStartIndices, conceptColumnEndIndices, conceptColumnIDs = TSBNLPpt_transformerConceptColumns.generateConceptColumnIndices(device, tokenizer, inputIDs, offsets, identify_type="identify_both_columns")
+			conceptColumnStartIndices, conceptColumnEndIndices, conceptColumnIDs = TSBNLPpt_transformerConceptColumnsGenerate.generateConceptColumnIndicesParallel(device, tokenizer, inputIDs, offsets, identify_type="identify_both_columns")
 	conceptColumnData = {'conceptColumnStartIndices':conceptColumnStartIndices, 'conceptColumnEndIndices':conceptColumnEndIndices, 'conceptColumnIDsPrev':conceptColumnIDsPrev, 'conceptColumnIDsNext':conceptColumnIDsNext, 'batchIndex':batchIndex}
 	
 	outputs = model(inputIDs, attention_mask=attentionMask, labels=labels, conceptColumnData=conceptColumnData)

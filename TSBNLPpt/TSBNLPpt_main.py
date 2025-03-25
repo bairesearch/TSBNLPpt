@@ -39,12 +39,14 @@ TSBNLPpt main - Transformer Syntactic Bias natural language processing (TSBNLP):
 
 import torch
 from tqdm.auto import tqdm
-
-from transformers import AdamW
 import math 
 import os
 
 from TSBNLPpt_globalDefs import *
+if(newAdamLibrary):
+	from torch.optim import AdamW
+else:
+	from transformers import AdamW
 import TSBNLPpt_data
 if(useAlgorithmTransformer):
 	from TSBNLPpt_transformer import createModel, loadModel, saveModel, propagate

@@ -49,6 +49,7 @@ if(useTrainWarmup):
 #legacy implementation;
 legacyDataloaderCode2 = False	#wo patch TSBNLPpt_dataTokeniser:getSampleEncodings to calculate labels = addLabelsPredictionMaskTokens (convert paddingTokenID [1] to labelPredictionMaskTokenID [-100])	#orig; True
 sortDataFilesByName = True	#orig; False	#only stateTrainTokeniser and legacyDataloaderCode1 uses sortDataFilesByName (!legacyDataloaderCode1 assumes sortDataFilesByName=True)
+newAdamLibrary = False
 
 #recursive algorithm selection:
 useAlgorithmTransformer = True
@@ -228,6 +229,7 @@ if(useAlgorithmTransformer):
 		localConceptColumnExpertsNoColumnID = -1
 		localConceptColumnExpertsNoDictionaryNounID = 0
 		debugDetectLocalConceptColumns = False
+		debugDetectLocalConceptColumnsTime = False
 		localConceptColumnExpertsApplyToAllTokens = False	#requires higher processing power and GPU RAM (but same CPU RAM and SSD storage) #else restrict to nouns: else only apply concept experts to concept features (noun) tokens, not contextual features (non-nouns)
 		if(localConceptColumnExperts):
 			localConceptColumnExpertsStructure = "nnParameterList"	#default	#measure no significant performance advantage over nnParameter
@@ -857,3 +859,18 @@ def printCUDAmemory(tag):
 def printe(str):
 	print(str)
 	exit()
+
+# Define POS tag sets for nouns and non-nouns
+noun_pos_tags = {'NOUN', 'PROPN'}
+non_noun_pos_tags = {'ADJ', 'ADV', 'VERB', 'ADP', 'AUX', 'CCONJ', 'DET', 'INTJ', 'NUM', 'PART', 'PRON', 'SCONJ', 'SYM', 'X'}
+
+def posIntToPosString(nlp, posInt):
+	if posInt in nlp.vocab.strings:
+		return nlp.vocab[posInt].text
+	else:
+		return ''
+		
+def posStringToPosInt(nlp, posString):
+	return nlp.vocab.strings[posString]
+		
+		
