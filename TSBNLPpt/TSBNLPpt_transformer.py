@@ -144,17 +144,16 @@ def propagate(device, model, tokenizer, batch, batchIndex):
 		offsets = batch['offsets']	#List of tuples (start, end), not tensor
 		if(localConceptColumnExperts):
 			if(localConceptColumnExpertsApplyToAllTokens):
-				conceptColumnStartIndicesPrev, conceptColumnEndIndicesPrev, conceptColumnIDsPrev = TSBNLPpt_transformerConceptColumnsGenerate.generateConceptColumnIndicesParallel(device, tokenizer, inputIDs, offsets, identify_type="identify_previous_column")
+				conceptColumnStartIndicesPrev, conceptColumnEndIndicesPrev, conceptColumnIDsPrev = generateConceptColumnIndices(device, tokenizer, inputIDs, offsets, identify_type="identify_previous_column")
 			if(debugDetectLocalConceptColumnsTime):
 				start_time = time.time()
-			conceptColumnStartIndicesNext, conceptColumnEndIndicesNext, conceptColumnIDsNext = TSBNLPpt_transformerConceptColumnsGenerate.generateConceptColumnIndicesParallel(device, tokenizer, inputIDs, offsets, identify_type="identify_next_column")
-			#conceptColumnStartIndicesNext, conceptColumnEndIndicesNext, conceptColumnIDsNext = TSBNLPpt_transformerConceptColumnsGenerate.generateConceptColumnIndicesSerial(device, tokenizer, inputIDs, offsets, identify_type="identify_next_column")
+			conceptColumnStartIndicesNext, conceptColumnEndIndicesNext, conceptColumnIDsNext = generateConceptColumnIndices(device, tokenizer, inputIDs, offsets, identify_type="identify_next_column")
 			if(debugDetectLocalConceptColumnsTime):
 				end_time = time.time()
 				print(f"generateConceptColumnIndices execution time: {end_time - start_time:.6f} seconds")
 		elif(localConceptColumnAttention):
 			#this is not a perfect implementation (will not strictly/technically attend to both column tokens as they are defined in the GIAANN specification but uses an offset rule instead); localConceptColumnAttention could be upgraded to use both identify_previous_column and identify_next_column in future
-			conceptColumnStartIndices, conceptColumnEndIndices, conceptColumnIDs = TSBNLPpt_transformerConceptColumnsGenerate.generateConceptColumnIndicesParallel(device, tokenizer, inputIDs, offsets, identify_type="identify_both_columns")
+			conceptColumnStartIndices, conceptColumnEndIndices, conceptColumnIDs = generateConceptColumnIndices(device, tokenizer, inputIDs, offsets, identify_type="identify_both_columns")
 	conceptColumnData = {'conceptColumnStartIndices':conceptColumnStartIndices, 'conceptColumnEndIndices':conceptColumnEndIndices, 'conceptColumnIDsPrev':conceptColumnIDsPrev, 'conceptColumnIDsNext':conceptColumnIDsNext, 'batchIndex':batchIndex}
 	
 	outputs = model(inputIDs, attention_mask=attentionMask, labels=labels, conceptColumnData=conceptColumnData)
@@ -163,6 +162,14 @@ def propagate(device, model, tokenizer, batch, batchIndex):
 	loss = outputs.loss
 	
 	return loss, accuracy
+
+def generateConceptColumnIndices(device, tokenizer, inputIDs, offsets, identify_type="identify_previous_column"):
+	if(detectLocalConceptColumnsMethod=="Serial"):
+		return TSBNLPpt_transformerConceptColumnsGenerate.generateConceptColumnIndicesSerial(device, tokenizer, inputIDs, offsets, identify_type="identify_previous_column")
+	elif(detectLocalConceptColumnsMethod=="OptimisedSample"):
+		return TSBNLPpt_transformerConceptColumnsGenerate.generateConceptColumnIndicesOptimisedSample(device, tokenizer, inputIDs, offsets, identify_type="identify_previous_column")
+	elif(detectLocalConceptColumnsMethod=="OptimisedBatch"):		
+		return TSBNLPpt_transformerConceptColumnsGenerate.generateConceptColumnIndicesOptimisedBatch(device, tokenizer, inputIDs, offsets, identify_type="identify_previous_column")
 
 
 if(tokenMemoryBankStorageSelectionAlgorithmAuto):

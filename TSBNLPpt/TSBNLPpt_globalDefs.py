@@ -228,6 +228,7 @@ if(useAlgorithmTransformer):
 		detectLocalConceptColumns = True
 		localConceptColumnExpertsNoColumnID = -1
 		localConceptColumnExpertsNoDictionaryNounID = 0
+		detectLocalConceptColumnsMethod = "OptimisedSample"	#options: Serial, OptimisedSample, OptimisedBatch	#orig: Serial
 		debugDetectLocalConceptColumns = False
 		debugDetectLocalConceptColumnsTime = False
 		localConceptColumnExpertsApplyToAllTokens = False	#requires higher processing power and GPU RAM (but same CPU RAM and SSD storage) #else restrict to nouns: else only apply concept experts to concept features (noun) tokens, not contextual features (non-nouns)
