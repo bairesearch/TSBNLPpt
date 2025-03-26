@@ -121,10 +121,6 @@ def generateConceptColumnIndicesOptimisedBatch(device, tokenizer, batch_input_id
 	conceptColumnEndIndices   = batch_token_concept_end_indices	# [batch_size, seq_length]
 	conceptColumnIDs		  = batch_concept_ids			# [batch_size, seq_length]
 
-	conceptColumnStartIndices = conceptColumnStartIndices.to(device)
-	conceptColumnEndIndices   = conceptColumnEndIndices.to(device)
-	conceptColumnIDs		  = conceptColumnIDs.to(device)
-
 	return conceptColumnStartIndices, conceptColumnEndIndices, conceptColumnIDs
 
 def getTokens_OptimisedBatch(tokenizer, batch_input_ids):
@@ -191,10 +187,10 @@ def createMappingFromCharacterPositionsToSpacyTokens_OptimisedBatch(batch_doc, b
 	"""
 	# --- Step 1. Build per-doc token tensors (using list comprehensions to extract token info)
 	# For each doc, build lists of token start, token end, lemma id and noun flag.
-	doc_starts = [pt.tensor([tok.idx for tok in doc], dtype=pt.long) for doc in batch_doc]
-	doc_ends   = [pt.tensor([tok.idx + len(tok) for tok in doc], dtype=pt.long) for doc in batch_doc]
-	doc_concept_ids = [pt.tensor([get_concept_id(noun_dict, tok) for tok in doc], dtype=pt.long) for doc in batch_doc]
-	doc_noun   = [pt.tensor([1 if tok.pos_ in noun_pos_tags else 0 for tok in doc], dtype=pt.bool) for doc in batch_doc]
+	doc_starts = [pt.tensor([tok.idx for tok in doc], dtype=pt.long, device=batch_offsets.device) for doc in batch_doc]
+	doc_ends   = [pt.tensor([tok.idx + len(tok) for tok in doc], dtype=pt.long, device=batch_offsets.device) for doc in batch_doc]
+	doc_concept_ids = [pt.tensor([get_concept_id(noun_dict, tok) for tok in doc], dtype=pt.long, device=batch_offsets.device) for doc in batch_doc]
+	doc_noun   = [pt.tensor([1 if tok.pos_ in noun_pos_tags else 0 for tok in doc], dtype=pt.bool, device=batch_offsets.device) for doc in batch_doc]
 
 	# Pad each list to a common maximum length (T_max). Padded values are -1 (or False for booleans).
 	batch_doc_starts = pad_sequence(doc_starts, batch_first=True, padding_value=-1)  # [B, T_max]
@@ -486,63 +482,64 @@ def populateTokenConceptStartAndEndIndices_OptimisedBatch(
 
 
 def updateTokenConceptIds_OptimisedBatch(batch_token_concept_ids,
-                                          batch_token_concept_start_indices,
-                                          batch_token_concept_end_indices):
-    if localConceptColumnExpertsApplyToAllTokens:
-        # Get batch and sequence dimensions.
-        B, T = batch_token_concept_ids.shape
+										  batch_token_concept_start_indices,
+										  batch_token_concept_end_indices):
+	if localConceptColumnExpertsApplyToAllTokens:
+		# Get batch and sequence dimensions.
+		B, T = batch_token_concept_ids.shape
 
-        # Compute a mask for tokens that need updating.
-        update_mask = (batch_token_concept_ids == localConceptColumnExpertsNoColumnID)
+		# Compute a mask for tokens that need updating.
+		update_mask = (batch_token_concept_ids == localConceptColumnExpertsNoColumnID)
 
-        # For every token, get its start and clamped end index.
-        s = batch_token_concept_start_indices            # shape: (B, T)
-        e = batch_token_concept_end_indices.clamp(max=T - 1) # shape: (B, T)
+		# For every token, get its start and clamped end index.
+		s = batch_token_concept_start_indices			# shape: (B, T)
+		e = batch_token_concept_end_indices.clamp(max=T - 1) # shape: (B, T)
 
-        # Compute each token\u2019s span length.
-        span_lengths = e - s + 1  # shape: (B, T)
-        max_length = span_lengths.max().item()  # global maximum span length
+		# Compute each token\u2019s span length.
+		span_lengths = e - s + 1  # shape: (B, T)
+		max_length = span_lengths.max().item()  # global maximum span length
 
-        # Create offsets [0, 1, \u2026, max_length-1].
-        offsets = torch.arange(max_length, device=batch_token_concept_ids.device)  # shape: (max_length,)
+		# Create offsets [0, 1, \u2026, max_length-1].
+		offsets = torch.arange(max_length, device=batch_token_concept_ids.device)  # shape: (max_length,)
 
-        # Compute candidate indices for each token span.
-        # The result is of shape (B, T, max_length): for each batch and token, we list candidate positions.
-        candidate_indices = s.unsqueeze(-1) + offsets.view(1, 1, -1)
-        candidate_indices = candidate_indices.clamp(max=T - 1)
+		# Compute candidate indices for each token span.
+		# The result is of shape (B, T, max_length): for each batch and token, we list candidate positions.
+		candidate_indices = s.unsqueeze(-1) + offsets.view(1, 1, -1)
+		candidate_indices = candidate_indices.clamp(max=T - 1)
 
-        # For each candidate, mark whether it is within the token\u2019s valid span.
-        valid_mask = candidate_indices <= e.unsqueeze(-1)  # shape: (B, T, max_length)
+		# For each candidate, mark whether it is within the token\u2019s valid span.
+		valid_mask = candidate_indices <= e.unsqueeze(-1)  # shape: (B, T, max_length)
 
-        # Gather candidate concept IDs.
-        # Expand token ids to shape (B, T, max_length) so that we can index along dim=1.
-        expanded_ids = batch_token_concept_ids.unsqueeze(-1).expand(-1, -1, max_length)
-        candidate_ids = torch.gather(expanded_ids, 1, candidate_indices)
+		# Gather candidate concept IDs.
+		# Expand token ids to shape (B, T, max_length) so that we can index along dim=1.
+		expanded_ids = batch_token_concept_ids.unsqueeze(-1).expand(-1, -1, max_length)
+		candidate_ids = torch.gather(expanded_ids, 1, candidate_indices)
 
-        # Identify candidates that are valid (i.e. not equal to the no-column marker) and within the span.
-        candidate_valid = (candidate_ids != localConceptColumnExpertsNoColumnID) & valid_mask
+		# Identify candidates that are valid (i.e. not equal to the no-column marker) and within the span.
+		candidate_valid = (candidate_ids != localConceptColumnExpertsNoColumnID) & valid_mask
 
-        # For each token, check if any valid candidate exists.
-        row_has_candidate = candidate_valid.any(dim=-1)  # shape: (B, T)
-        # Find the first valid candidate for each token. (If none exist, argmax returns 0.)
-        first_candidate_pos = candidate_valid.float().argmax(dim=-1)  # shape: (B, T)
+		# For each token, check if any valid candidate exists.
+		row_has_candidate = candidate_valid.any(dim=-1)  # shape: (B, T)
+		# Find the first valid candidate for each token. (If none exist, argmax returns 0.)
+		first_candidate_pos = candidate_valid.float().argmax(dim=-1)  # shape: (B, T)
 
-        # Gather the candidate id corresponding to the first valid candidate.
-        new_values = torch.gather(candidate_ids, 2, first_candidate_pos.unsqueeze(-1)).squeeze(-1)  # shape: (B, T)
-        # For rows with no candidate, set the value to the no-column marker.
-        new_values = torch.where(
-            row_has_candidate,
-            new_values,
-            torch.tensor(localConceptColumnExpertsNoColumnID, device=batch_token_concept_ids.device)
-        )
+		# Gather the candidate id corresponding to the first valid candidate.
+		new_values = torch.gather(candidate_ids, 2, first_candidate_pos.unsqueeze(-1)).squeeze(-1)  # shape: (B, T)
+		# For rows with no candidate, set the value to the no-column marker.
+		new_values = torch.where(
+			row_has_candidate,
+			new_values,
+			torch.tensor(localConceptColumnExpertsNoColumnID, device=batch_token_concept_ids.device)
+		)
 
-        # Update only tokens that need updating.
-        batch_token_concept_ids = torch.where(update_mask, new_values, batch_token_concept_ids)
+		# Update only tokens that need updating.
+		batch_token_concept_ids = torch.where(update_mask, new_values, batch_token_concept_ids)
 
-    if debugDetectLocalConceptColumns:
-        print("batch_token_concept_ids[0] =", batch_token_concept_ids[0])
+	if debugDetectLocalConceptColumns:
+		print("batch_token_concept_ids[0] =", batch_token_concept_ids[0])
 
-    return batch_token_concept_ids
+	return batch_token_concept_ids
+
 
 
 
@@ -637,16 +634,16 @@ def generateConceptColumnIndicesOptimisedSample(device, tokenizer, batch_input_i
 		doc = processTextWithSpacy_OptimisedSample(nlp, tokens)
 		
 		# Step 3
-		char_to_token, pos_t_noun = createMappingFromCharacterPositionsToSpacyTokens_OptimisedSample(doc, offsets_sample)
+		char_to_token, pos_t_noun = createMappingFromCharacterPositionsToSpacyTokens_OptimisedSample(doc, offsets_sample, device)
 
 		# Step 4a
-		conceptColumnStartIndexTensor, conceptColumnEndIndexTensor = populateConceptColumnStartAndEndIndexTensor_OptimisedSample(tokenizer, pos_t_noun, seq_length, identify_type, input_ids_sample)
+		conceptColumnStartIndexTensor, conceptColumnEndIndexTensor = populateConceptColumnStartAndEndIndexTensor_OptimisedSample(tokenizer, pos_t_noun, seq_length, identify_type, input_ids_sample, device)
 
 		# Step 4b
-		token_concept_ids, first_noun_idx = populateTokenConceptIdsAndFirstNounIdx_OptimisedSample(noun_dict, char_to_token, pos_t_noun, seq_length, noun_pos_tags)
+		token_concept_ids, first_noun_idx = populateTokenConceptIdsAndFirstNounIdx_OptimisedSample(noun_dict, char_to_token, pos_t_noun, seq_length, noun_pos_tags, device)
 
 		# Step 5
-		token_concept_start_indices, token_concept_end_indices = populateTokenConceptStartAndEndIndices_OptimisedSample(conceptColumnStartIndexTensor, conceptColumnEndIndexTensor, seq_length, first_noun_idx, identify_type)
+		token_concept_start_indices, token_concept_end_indices = populateTokenConceptStartAndEndIndices_OptimisedSample(conceptColumnStartIndexTensor, conceptColumnEndIndexTensor, seq_length, first_noun_idx, identify_type, device)
 
 		# Step 6
 		final_concept_ids = updateTokenConceptIds_OptimisedSample(token_concept_ids, token_concept_start_indices, token_concept_end_indices)
@@ -664,10 +661,6 @@ def generateConceptColumnIndicesOptimisedSample(device, tokenizer, batch_input_i
 	conceptColumnEndIndices   = pt.stack(batch_concept_end_indices)	# [batch_size, seq_length]
 	conceptColumnIDs		  = pt.stack(batch_concept_ids)			# [batch_size, seq_length]
 
-	conceptColumnStartIndices = conceptColumnStartIndices.to(device)
-	conceptColumnEndIndices   = conceptColumnEndIndices.to(device)
-	conceptColumnIDs		  = conceptColumnIDs.to(device)
-
 	return conceptColumnStartIndices, conceptColumnEndIndices, conceptColumnIDs
 
 
@@ -675,7 +668,7 @@ def generateConceptColumnIndicesOptimisedSample(device, tokenizer, batch_input_i
 # We need a helper that fetches concept IDs given a batch of lemmas
 # We'll vectorize as best we can by looking up many lemmas at once.
 # If the lemma is not in noun_dict, we map it to localConceptColumnExpertsNoDictionaryNounID.
-def vectorized_get_concept_id(noun_dict, lemmas: list):
+def vectorized_get_concept_id(noun_dict, lemmas: list, device):
 	"""
 	lemmas: list of lowercased lemmas (strings).
 	Returns a LongTensor of shape [len(lemmas)] with the concept IDs.
@@ -688,7 +681,7 @@ def vectorized_get_concept_id(noun_dict, lemmas: list):
 			result.append(noun_dict[lm] + 1)
 		else:
 			result.append(localConceptColumnExpertsNoDictionaryNounID)
-	return pt.tensor(result, dtype=pt.long)
+	return pt.tensor(result, dtype=pt.long, device=device)
 
 ########################################
 # Step #1: getTokens
@@ -733,7 +726,7 @@ def processTextWithSpacy_OptimisedSample(nlp, tokens):
 #		  (Vectorized approach)
 ########################################
 
-def createMappingFromCharacterPositionsToSpacyTokens_OptimisedSample(doc, offsets_sample):
+def createMappingFromCharacterPositionsToSpacyTokens_OptimisedSample(doc, offsets_sample, device):
 	"""
 	Original Step 3 is a nested Python loop:
 		for idx, (start_char, end_char) in enumerate(offsets_sample):
@@ -756,8 +749,8 @@ def createMappingFromCharacterPositionsToSpacyTokens_OptimisedSample(doc, offset
 	for t in doc:
 		doc_starts.append(t.idx)
 		doc_ends.append(t.idx + len(t))
-	doc_starts_t = pt.tensor(doc_starts, dtype=pt.long)  # shape [num_doc_tokens]
-	doc_ends_t   = pt.tensor(doc_ends,   dtype=pt.long)  # shape [num_doc_tokens]
+	doc_starts_t = pt.tensor(doc_starts, dtype=pt.long, device=device)  # shape [num_doc_tokens]
+	doc_ends_t   = pt.tensor(doc_ends,   dtype=pt.long, device=device)  # shape [num_doc_tokens]
 
 	# Convert offsets_sample to Tensors, if they aren't already
 	offsets_t = offsets_sample  # shape [seq_length, 2]
@@ -782,7 +775,7 @@ def createMappingFromCharacterPositionsToSpacyTokens_OptimisedSample(doc, offset
 	
 	# If any_match[i] == False, that means no token covers that offset -> map to -1
 	# We can fix that with a simple where:
-	first_true_idx = pt.where(any_match, first_true_idx, pt.tensor(-1))
+	first_true_idx = pt.where(any_match, first_true_idx, pt.tensor(-1, device=device))
 
 	# Now we store these integer indices, and after that we create the final python list:
 	#   [doc[j] if j != -1 else None for j in first_true_idx]
@@ -815,7 +808,7 @@ def createMappingFromCharacterPositionsToSpacyTokens_OptimisedSample(doc, offset
 			pos_list.append(1)
 		else:
 			pos_list.append(0)
-	pos_t_noun = pt.tensor(pos_list, dtype=pt.long)  # shape [seq_length]
+	pos_t_noun = pt.tensor(pos_list, dtype=pt.long, device=device)  # shape [seq_length]
 			
 	return char_to_token, pos_t_noun
 
@@ -832,6 +825,7 @@ def populateConceptColumnStartAndEndIndexTensor_OptimisedSample(
 	seq_length: int, 
 	identify_type: str, 
 	input_ids_sample: torch.Tensor,
+	device,
 ):
 	"""
 	Vectorized approach to build start/end column indices for noun-based slicing,
@@ -851,11 +845,11 @@ def populateConceptColumnStartAndEndIndexTensor_OptimisedSample(
 	
 	# 3) Dispatch to the appropriate vector-building logic
 	if identify_type == "identify_both_columns":
-		starts, ends = _build_both_columns_starts_ends(noun_indices, first_pad_index)
+		starts, ends = _build_both_columns_starts_ends(noun_indices, first_pad_index, device)
 	elif identify_type == "identify_previous_column":
-		starts, ends = _build_previous_columns_starts_ends(noun_indices)
+		starts, ends = _build_previous_columns_starts_ends(noun_indices, device)
 	elif identify_type == "identify_next_column":
-		starts, ends = _build_next_column_starts_ends(noun_indices, first_pad_index)
+		starts, ends = _build_next_column_starts_ends(noun_indices, first_pad_index, device)
 	else:
 		raise ValueError(f"Unrecognized identify_type: {identify_type}")
 	
@@ -873,7 +867,7 @@ def populateConceptColumnStartAndEndIndexTensor_OptimisedSample(
 	
 	return starts, ends
 
-def _build_both_columns_starts_ends(noun_indices: torch.Tensor, first_pad_index: int):
+def _build_both_columns_starts_ends(noun_indices: torch.Tensor, first_pad_index: int, device):
 	"""
 	Equivalent to:
 	  conceptColumnStartIndexList = [0]
@@ -887,9 +881,9 @@ def _build_both_columns_starts_ends(noun_indices: torch.Tensor, first_pad_index:
 	N = noun_indices.shape[0]
 	
 	if N == 0:
-		# No nouns at all \u21d2 one big column from 0..pad
-		starts = torch.tensor([0], dtype=torch.long)
-		ends   = torch.tensor([first_pad_index], dtype=torch.long)
+		# No nouns at all \u2192 one big column from 0..pad
+		starts = torch.tensor([0], dtype=torch.long, device=device)
+		ends   = torch.tensor([first_pad_index], dtype=torch.long, device=device)
 		return starts, ends
 	
 	# Build the 'starts'
@@ -902,8 +896,8 @@ def _build_both_columns_starts_ends(noun_indices: torch.Tensor, first_pad_index:
 	if N > 1:
 		starts_middle = noun_indices[:N-1] + 1   # shape: (N-1,)
 	else:
-		starts_middle = torch.empty((0,), dtype=torch.long)
-	starts = torch.cat([torch.tensor([0], dtype=torch.long), starts_middle], dim=0)  # shape: N
+		starts_middle = torch.empty((0,), dtype=torch.long, device=device)
+	starts = torch.cat([torch.tensor([0], dtype=torch.long, device=device), starts_middle], dim=0)  # shape: N
 	
 	# Build the 'ends'
 	#   ends has length=N as well:
@@ -912,15 +906,15 @@ def _build_both_columns_starts_ends(noun_indices: torch.Tensor, first_pad_index:
 	if N > 1:
 		ends_middle = noun_indices[1:] - 1	   # shape: (N-1,)
 	else:
-		ends_middle = torch.empty((0,), dtype=torch.long)
+		ends_middle = torch.empty((0,), dtype=torch.long, device=device)
 	ends = torch.cat([
 		ends_middle,
-		torch.tensor([first_pad_index], dtype=torch.long)
+		torch.tensor([first_pad_index], dtype=torch.long, device=device)
 	], dim=0)  # shape: N
 	
 	return starts, ends
 	
-def _build_previous_columns_starts_ends(noun_indices: torch.Tensor):
+def _build_previous_columns_starts_ends(noun_indices: torch.Tensor, device):
 	"""
 	Equivalent to:
 	  conceptColumnStartIndexList = [0]
@@ -932,15 +926,15 @@ def _build_previous_columns_starts_ends(noun_indices: torch.Tensor):
 	N = noun_indices.shape[0]
 	
 	if N == 0:
-		# No nouns \u21d2 no columns
-		return torch.empty((0,), dtype=torch.long), torch.empty((0,), dtype=torch.long)
+		# No nouns \u2192 no columns
+		return torch.empty((0,), dtype=torch.long, device=device), torch.empty((0,), dtype=torch.long, device=device)
 	
 	# We end up with:
 	#   starts candidate = [0, n0+1, n1+1, ..., n_{N-1}+1]  (length N+1)
 	#   ends			 = [n0,	   n1,	 ..., n_{N-1}] (length N)
-	# Then pop the last start \u21d2 final starts is length=N
+	# Then pop the last start \u2192 final starts is length=N
 	candidate_starts = torch.cat([
-		torch.tensor([0], dtype=torch.long),
+		torch.tensor([0], dtype=torch.long, device=device),
 		noun_indices + 1
 	])  # shape: (N+1,)
 	
@@ -949,7 +943,7 @@ def _build_previous_columns_starts_ends(noun_indices: torch.Tensor):
 	return starts, ends
 
 
-def _build_next_column_starts_ends(noun_indices: torch.Tensor, first_pad_index: int):
+def _build_next_column_starts_ends(noun_indices: torch.Tensor, first_pad_index: int, device):
 	"""
 	Equivalent to:
 	  conceptColumnStartIndexList = []
@@ -966,19 +960,19 @@ def _build_next_column_starts_ends(noun_indices: torch.Tensor, first_pad_index: 
 		# Original code would produce mismatch (ends=[pad], starts=[]).
 		# If you truly want to replicate that (which triggers an assertion),
 		# just do that. Otherwise, define "no columns" if no nouns:
-		return torch.empty((0,), dtype=torch.long), torch.empty((0,), dtype=torch.long)
+		return torch.empty((0,), dtype=torch.long, device=device), torch.empty((0,), dtype=torch.long, device=device)
 	
 	# Final shape must be N columns.
 	# starts = [n0,	 n1,	 n2, ... n_{N-1}]   (length N)
 	# ends   = [n1 - 1, n2 - 1, ... n_{N-1}-1, pad] (length N)
 	starts = noun_indices
 	if N == 1:
-		ends = torch.tensor([first_pad_index], dtype=torch.long)
+		ends = torch.tensor([first_pad_index], dtype=torch.long, device=device)
 	else:
 		middle_ends = noun_indices[1:] - 1		   # shape: (N-1,)
 		ends = torch.cat([
 			middle_ends,
-			torch.tensor([first_pad_index], dtype=torch.long)
+			torch.tensor([first_pad_index], dtype=torch.long, device=device)
 		], dim=0)									# shape: (N,)
 	
 	return starts, ends
@@ -991,7 +985,7 @@ def _build_next_column_starts_ends(noun_indices: torch.Tensor, first_pad_index: 
 #		   (Vectorized approach)
 ########################################
 
-def populateTokenConceptIdsAndFirstNounIdx_OptimisedSample(noun_dict, char_to_token, pos_t_noun, seq_length, noun_pos_tags):
+def populateTokenConceptIdsAndFirstNounIdx_OptimisedSample(noun_dict, char_to_token, pos_t_noun, seq_length, noun_pos_tags, device):
 	"""
 	Original Step 4b:
 	  - loop from idx=0..seq_length-1
@@ -1023,10 +1017,10 @@ def populateTokenConceptIdsAndFirstNounIdx_OptimisedSample(noun_dict, char_to_to
 		noun_lemmas.append(lemma_list[i] if lemma_list[i] is not None else "")
 
 	# vectorized get_concept_id for the noun positions
-	noun_concept_ids = vectorized_get_concept_id(noun_dict, noun_lemmas)  # shape [num_nouns]
+	noun_concept_ids = vectorized_get_concept_id(noun_dict, noun_lemmas, device)  # shape [num_nouns]
 
 	# Now we scatter these IDs back into a full-length seq tensor
-	token_concept_ids = pt.ones(seq_length, dtype=pt.long) * localConceptColumnExpertsNoColumnID
+	token_concept_ids = pt.ones(seq_length, dtype=pt.long, device=device) * localConceptColumnExpertsNoColumnID
 	if noun_positions.shape[0] > 0:
 		token_concept_ids = token_concept_ids.scatter(0, noun_positions, noun_concept_ids)
 
@@ -1054,7 +1048,8 @@ def populateTokenConceptStartAndEndIndices_OptimisedSample(
 	conceptColumnEndIndexTensor, 
 	seq_length, 
 	first_noun_idx,
-	identify_type
+	identify_type,
+	device
 ):
 	"""
 	Original Step 5 logic:
@@ -1084,19 +1079,18 @@ def populateTokenConceptStartAndEndIndices_OptimisedSample(
 
 	  We'll return token_concept_start_indices, token_concept_end_indices as Tensors. 
 	"""
-
 	num_cols = conceptColumnStartIndexTensor.shape[0]
 	# If no columns exist, every token attends to self
 	if num_cols == 0:
-		token_concept_start_indices = pt.arange(seq_length, dtype=pt.long)
-		token_concept_end_indices   = pt.arange(seq_length, dtype=pt.long)
+		token_concept_start_indices = pt.arange(seq_length, dtype=pt.long, device=device)
+		token_concept_end_indices   = pt.arange(seq_length, dtype=pt.long, device=device)
 		return token_concept_start_indices, token_concept_end_indices
 
 	start_col_t = conceptColumnStartIndexTensor # shape [num_cols]
 	end_col_t   = conceptColumnEndIndexTensor 	# shape [num_cols]
 
 	# We'll build an array [0..seq_length-1]
-	token_positions = pt.arange(seq_length, dtype=pt.long)
+	token_positions = pt.arange(seq_length, dtype=pt.long, device=device)
 
 	# We'll figure out which column index each token belongs to, from left to right.
 	# For each token i, find the earliest col j such that i <= end_col_t[j].
@@ -1114,7 +1108,7 @@ def populateTokenConceptStartAndEndIndices_OptimisedSample(
 	any_true = less_equal_end.any(dim=1)			 # shape [seq_length]
 	first_true_idx = pt.argmax(less_equal_end.long(), dim=1)  # shape [seq_length]; 0 if no True or if first True is col0
 	# If no True, we have used up all columns -> attend to self
-	first_true_idx = pt.where(any_true, first_true_idx, pt.tensor(num_cols))  
+	first_true_idx = pt.where(any_true, first_true_idx, pt.tensor(num_cols, device=device))  
 	# so if there's no column that ends after i, we store 'num_cols' as a sentinel 
 	# meaning "no column left -> attend to self"
 
@@ -1131,25 +1125,25 @@ def populateTokenConceptStartAndEndIndices_OptimisedSample(
 
 	any_match = valid_range.any(dim=1)	 # shape [seq_length]
 	chosen_col_idx = pt.argmax(valid_range.long(), dim=1)  # first True along each row
-	chosen_col_idx = pt.where(any_match, chosen_col_idx, pt.tensor(num_cols))
+	chosen_col_idx = pt.where(any_match, chosen_col_idx, pt.tensor(num_cols, device=device))
 
 	# Now we handle the identify_type="identify_next_column" special rule 
 	# (tokens i < first_noun_idx => attend to self).
 	if identify_type == "identify_next_column":
 		# For i < first_noun_idx, chosen_col_idx = num_cols
 		mask_before_first_noun = token_positions < first_noun_idx
-		chosen_col_idx = pt.where(mask_before_first_noun, pt.tensor(num_cols), chosen_col_idx)
+		chosen_col_idx = pt.where(mask_before_first_noun, pt.tensor(num_cols, device=device), chosen_col_idx)
 
 	# Now gather the actual (start_idx, end_idx) from chosen_col_idx
 	# We'll make a new array that is shape [num_cols+1], where the last entry 
 	# is an invalid sentinel we interpret as self. 
 	# We'll store start_col_t, end_col_t for columns 0..num_cols-1,
 	# plus we store an identity index for the sentinel. 
-	start_extended = pt.cat([start_col_t, pt.arange(1)])  # shape [num_cols+1]
-	end_extended   = pt.cat([end_col_t,   pt.arange(1)])
+	start_extended = pt.cat([start_col_t, pt.arange(1, device=device)])  # shape [num_cols+1]
+	end_extended   = pt.cat([end_col_t,   pt.arange(1, device=device)])
 
-	# We want the sentinel to be "token index" => so let's set the last entry to -1 for now
-	# and we will do a final fix if the chosen column is the sentinel
+	# We want the sentinel to be "token index" => so let's set the last entry 
+	# to -1 for now
 	start_extended[-1] = -1
 	end_extended[-1]   = -1
 
@@ -1229,107 +1223,6 @@ def updateTokenConceptIds_OptimisedSample(token_concept_ids, token_concept_start
 	return token_concept_ids
 
 
-
-'''
-#localConceptColumnExpertsApplyToAllTokens:updateTokenConceptIds_Optimised is currently unverified
-def updateTokenConceptIds_OptimisedSample(
-	token_concept_ids, 
-	token_concept_start_indices, 
-	token_concept_end_indices
-):
-	"""
-	Original Step 6:
-	  - if localConceptColumnExpertsApplyToAllTokens,
-		for each idx, if token_concept_ids[idx] == localConceptColumnExpertsNoColumnID, 
-		we find the noun in [start..end], pick the first noun's ID, and set it.
-	
-	Vectorized approach:
-	  1) Identify all positions that are still 0 (localConceptColumnExpertsNoColumnID).
-	  2) For each such position, we look up the range [start..end].
-	  3) We find the *first* noun in that range (if any).
-	  4) If none is found, it remains 0, else we set the ID.
-
-	True \u201cpure\u201d vectorization for \u201cscan from start..end for the first noun\u201d is tricky. 
-	One approach is to create a big block for all positions, do a gather from the 
-	range [start..end], and find the first non-zero concept ID. 
-	We'll do a somewhat advanced approach with gather + cumulative checks.
-
-	If you do not want to implement a more complex gather+scan logic, you might 
-	do a small loop that only loops over the *tokens that need filling* 
-	rather than over every token. But below is a demonstration that avoids 
-	explicit Python for-loops over tokens.
-	"""
-	if not localConceptColumnExpertsApplyToAllTokens:
-		return token_concept_ids
-
-	# 1) We'll identify which tokens have 0
-	zero_mask = (token_concept_ids == localConceptColumnExpertsNoColumnID)
-	if not zero_mask.any():
-		# No updates needed
-		return token_concept_ids
-
-	# Build arrays for each token: we want the segment [s..e].
-	s = token_concept_start_indices
-	e = token_concept_end_indices
-	positions = pt.arange(token_concept_ids.shape[0]).unsqueeze(1)  # shape [seq_length, 1]
-	# We'll expand so that for each index i, we can build a range [s_i..e_i].
-	# That is tricky in a single shot. Instead, we can do a bounding approach up to max(e).
-
-	# We'll do something like:
-	#   max_end = e.max()
-	#   big_range = pt.arange(max_end+1).unsqueeze(0).expand(seq_length, max_end+1)
-	#   within_range_mask = (big_range >= s.unsqueeze(1)) & (big_range <= e.unsqueeze(1))
-	# shape [seq_length, max_end+1]
-	max_end = e.max().item()
-	big_range = pt.arange(max_end + 1).unsqueeze(0).expand(token_concept_ids.shape[0], -1)
-	within_range_mask = (big_range >= s.unsqueeze(1)) & (big_range <= e.unsqueeze(1))
-	# For positions i that have e_i < big_range dimension, that will be false automatically above e_i.
-
-	# Next, we gather token_concept_ids for the entire row i, but only up to max_end:
-	concept_ids_pad = token_concept_ids[:max_end+1]  # shape [max_end+1]
-	# Actually we want a 2D gather. We'll do an index-based gather:
-	# but we have row i and column big_range[i, *]. We can flatten?
-
-	# Easiest approach: replicate token_concept_ids in row dimension:
-	full_ids_expanded = token_concept_ids.unsqueeze(0).expand(token_concept_ids.shape[0], -1)
-	# shape [seq_length, seq_length]
-	# But we only need up to max_end, so let's do:
-	full_ids_expanded = full_ids_expanded[:, :max_end+1]  # shape [seq_length, max_end+1]
-
-	# Now for row i, `within_range_mask[i]` is True wherever index is in [s_i.. e_i].
-	# We'll zero out everything else. Then we look for the first non-zero concept ID 
-	# in that row's portion. 
-	# We'll do a boolean mask to keep only the elements in the range, then do something 
-	# like a cumsum to detect the first non-zero.
-	# For the row i, the \u201celement indices\u201d are big_range[i], and the concept IDs are full_ids_expanded[i].
-
-	in_range_ids = full_ids_expanded * within_range_mask.long()  # shape [seq_length, max_end+1]
-	# Now we want the first non-zero in each row.
-	# We can do "non_zero_mask = in_range_ids != 0" and then "argmax" trick. 
-	# But if there's no non-zero, we get 0. 
-	nonzero_mask = (in_range_ids != 0)
-
-	any_nonzero = nonzero_mask.any(dim=1)  # shape [seq_length]
-	# first_nonzero_idx = argmax(nonzero_mask, dim=1). But that will give the first True index in [0..max_end].
-	first_nonzero_idx = pt.argmax(nonzero_mask.long(), dim=1)  # shape [seq_length]
-
-	# If any_nonzero[i] is False => no concept ID in that column => remain 0.
-	# Otherwise, the ID is in_range_ids[i, first_nonzero_idx[i]].
-	gather_ids = in_range_ids[pt.arange(token_concept_ids.shape[0]), first_nonzero_idx]
-	# shape [seq_length]
-
-	# The final ID is either 0 if no noun found, or the ID if found
-	final_ids = pt.where(any_nonzero, gather_ids, pt.tensor(localConceptColumnExpertsNoColumnID))
-
-	# Now we only apply this update for positions that originally had zero_mask = True 
-	# (i.e. we only override tokens that had 0).
-	updated_token_concept_ids = pt.where(zero_mask, final_ids, token_concept_ids)
-
-	if(debugDetectLocalConceptColumns):
-		print("token_concept_ids = ", updated_token_concept_ids)
-	
-	return updated_token_concept_ids
-'''
 
 
 
@@ -1416,7 +1309,7 @@ def generateConceptColumnIndicesSerial(device, tokenizer, batch_input_ids, batch
 	batch_concept_end_indices = []
 	batch_concept_ids = []
 	
-	batch_size = len(batch_input_ids)
+	batch_size = batch_input_ids.shape[0]
 	for sample_index in range(batch_size):
 		input_ids_sample = batch_input_ids[sample_index]
 		offsets_sample = batch_offsets[sample_index]
@@ -1432,13 +1325,13 @@ def generateConceptColumnIndicesSerial(device, tokenizer, batch_input_ids, batch
 		char_to_token = createMappingFromCharacterPositionsToSpacyTokens(doc, offsets_sample)
 
 		#Step 4a: populate conceptColumnStartIndexTensor and conceptColumnEndIndexTensor
-		conceptColumnStartIndexTensor, conceptColumnEndIndexTensor = populateConceptColumnStartAndEndIndexTensor(tokenizer, char_to_token, seq_length, noun_pos_tags, identify_type, input_ids_sample)
+		conceptColumnStartIndexTensor, conceptColumnEndIndexTensor = populateConceptColumnStartAndEndIndexTensor(tokenizer, char_to_token, seq_length, noun_pos_tags, identify_type, input_ids_sample, device)
 
 		#Step 4b: populate token_concept_ids and first_noun_idx
-		token_concept_ids, first_noun_idx = populateTokenConceptIdsAndFirstNounIdx(noun_dict, char_to_token, seq_length, noun_pos_tags)
+		token_concept_ids, first_noun_idx = populateTokenConceptIdsAndFirstNounIdx(noun_dict, char_to_token, seq_length, noun_pos_tags, device)
 		
 		#Step 5: populate token_concept_start_indices and token_concept_end_indices
-		token_concept_start_indices, token_concept_end_indices = populateTokenConceptStartAndEndIndices(conceptColumnStartIndexTensor, conceptColumnEndIndexTensor, seq_length, first_noun_idx, identify_type)
+		token_concept_start_indices, token_concept_end_indices = populateTokenConceptStartAndEndIndices(conceptColumnStartIndexTensor, conceptColumnEndIndexTensor, seq_length, first_noun_idx, identify_type, device)
 
 		#Step 6: if localConceptColumnExpertsApplyToAllTokens, update token_concept_ids for non-noun tokens using the noun in their column
 		token_concept_ids = updateTokenConceptIds(seq_length, token_concept_ids, token_concept_start_indices, token_concept_end_indices) 
@@ -1454,10 +1347,6 @@ def generateConceptColumnIndicesSerial(device, tokenizer, batch_input_ids, batch
 	conceptColumnStartIndices = pt.stack(batch_concept_start_indices)  # Shape: [batch_size, seq_length]
 	conceptColumnEndIndices = pt.stack(batch_concept_end_indices)	  # Shape: [batch_size, seq_length]
 	conceptColumnIDs = pt.stack(batch_concept_ids)	  # Shape: [batch_size, seq_length]
-
-	conceptColumnStartIndices = conceptColumnStartIndices.to(device)
-	conceptColumnEndIndices = conceptColumnEndIndices.to(device)
-	conceptColumnIDs = conceptColumnIDs.to(device)
 
 	if(debugDetectLocalConceptColumns):
 		print("batch_input_ids = ", batch_input_ids)
@@ -1502,7 +1391,7 @@ def createMappingFromCharacterPositionsToSpacyTokens(doc, offsets_sample):
 					foundToken = True
 					break
 			if not foundToken:
-				print("not foundToken: start_char = ", start_char, ", end_char = ", end_char)  
+				#print("not foundToken: start_char = ", start_char, ", end_char = ", end_char)  
 				char_to_token.append(None)
 	
 	if(debugDetectLocalConceptColumns):
@@ -1510,7 +1399,7 @@ def createMappingFromCharacterPositionsToSpacyTokens(doc, offsets_sample):
 	
 	return char_to_token
 
-def populateConceptColumnStartAndEndIndexTensor(tokenizer, char_to_token, seq_length, noun_pos_tags, identify_type, input_ids_sample):
+def populateConceptColumnStartAndEndIndexTensor(tokenizer, char_to_token, seq_length, noun_pos_tags, identify_type, input_ids_sample, device):
 	#Step 4a: populate conceptColumnStartIndexTensor and conceptColumnEndIndexTensor
 
 	# Initialize lists for concept columns
@@ -1532,7 +1421,7 @@ def populateConceptColumnStartAndEndIndexTensor(tokenizer, char_to_token, seq_le
 			pos_list.append(1)
 		else:
 			pos_list.append(0)
-	pos_t_noun = pt.tensor(pos_list, dtype=pt.long)  # shape [seq_length]
+	pos_t_noun = pt.tensor(pos_list, dtype=pt.long, device=device)  # shape [seq_length]
 	
 	for idx in range(seq_length):
 		token = char_to_token[idx]
@@ -1584,12 +1473,12 @@ def populateConceptColumnStartAndEndIndexTensor(tokenizer, char_to_token, seq_le
 	
 	return conceptColumnStartIndexList, conceptColumnEndIndexList
 
-def populateTokenConceptIdsAndFirstNounIdx(noun_dict, char_to_token, seq_length, noun_pos_tags):
+def populateTokenConceptIdsAndFirstNounIdx(noun_dict, char_to_token, seq_length, noun_pos_tags, device):
 	#Step 4b: populate token_concept_ids and first_noun_idx
 		
 	# Track conceptColumnIDs for each token
 	concept_indices_list = []  # Indices of concept words in tokens
-	token_concept_ids = pt.ones(seq_length, dtype=pt.long)*localConceptColumnExpertsNoColumnID
+	token_concept_ids = pt.ones(seq_length, dtype=pt.long, device=device)*localConceptColumnExpertsNoColumnID
 	first_noun_idx = 0
 	foundFirstNoun = False
 	
@@ -1610,12 +1499,12 @@ def populateTokenConceptIdsAndFirstNounIdx(noun_dict, char_to_token, seq_length,
 					
 	return token_concept_ids, first_noun_idx
 		
-def populateTokenConceptStartAndEndIndices(conceptColumnStartIndexList, conceptColumnEndIndexList, seq_length, first_noun_idx, identify_type):
+def populateTokenConceptStartAndEndIndices(conceptColumnStartIndexList, conceptColumnEndIndexList, seq_length, first_noun_idx, identify_type, device):
 	#Step 5: populate token_concept_start_indices and token_concept_end_indices
 
 	# For each token, assign its concept column start and end indices
-	token_concept_start_indices = pt.zeros(seq_length, dtype=pt.long)
-	token_concept_end_indices = pt.zeros(seq_length, dtype=pt.long)
+	token_concept_start_indices = pt.zeros(seq_length, dtype=pt.long, device=device)
+	token_concept_end_indices = pt.zeros(seq_length, dtype=pt.long, device=device)
 
 	# Assign concept columns to tokens
 	current_concept_idx = 0
@@ -1671,6 +1560,7 @@ def updateTokenConceptIds(seq_length, token_concept_ids, token_concept_start_ind
 		print("token_concept_ids = ", token_concept_ids)
 	
 	return token_concept_ids
+
 						
 
 

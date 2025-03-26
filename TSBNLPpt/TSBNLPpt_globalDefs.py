@@ -232,7 +232,7 @@ if(useAlgorithmTransformer):
 		debugDetectLocalConceptColumns = False
 		debugDetectLocalConceptColumnsTime = False
 		localConceptColumnExpertsApplyToAllTokens = False	#requires higher processing power and GPU RAM (but same CPU RAM and SSD storage) #else restrict to nouns: else only apply concept experts to concept features (noun) tokens, not contextual features (non-nouns)
-		if(localConceptColumnExperts):
+		if(localConceptColumnExperts):	
 			localConceptColumnExpertsStructure = "nnParameterList"	#default	#measure no significant performance advantage over nnParameter
 			#localConceptColumnExpertsStructure = "nnParameter"	#orig
 			
